@@ -17,7 +17,7 @@
             <action android:name="android.speech.RecognitionService" />
         </intent>
         <intent>
-            <action android.intent.action.TTS_SERVICE" />
+            <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
         <intent>
             <action android:name="android.intent.action.VIEW" />
