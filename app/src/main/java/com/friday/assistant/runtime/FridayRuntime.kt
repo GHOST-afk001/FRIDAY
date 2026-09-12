@@ -20,11 +20,20 @@ object FridayRuntime {
         private set
 
     private val listeners = CopyOnWriteArrayList<(RuntimeStatus) -> Unit>()
+    private val eventHistory = ArrayDeque<RuntimeStatus>()
+    private val historyLock = Any()
 
     fun update(stage: String, detail: String, healthy: Boolean = true) {
-        status = RuntimeStatus(stage, detail, healthy, System.currentTimeMillis())
-        listeners.forEach { runCatching { it(status) } }
+        val next = RuntimeStatus(stage, detail, healthy, System.currentTimeMillis())
+        status = next
+        synchronized(historyLock) {
+            eventHistory.addLast(next)
+            while (eventHistory.size > 30) eventHistory.removeFirst()
+        }
+        listeners.forEach { runCatching { it(next) } }
     }
+
+    fun history(): List<RuntimeStatus> = synchronized(historyLock) { eventHistory.toList().asReversed() }
 
     fun observe(listener: (RuntimeStatus) -> Unit): AutoCloseable {
         listeners += listener
@@ -52,8 +61,8 @@ object DeviceTelemetry {
         val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, 0) ?: 0
         val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
         val percent = if (scale > 0) ((level * 100f) / scale).toInt().coerceIn(0, 100) else 0
-        val status = battery?.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN)
-        val charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+        val state = battery?.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN)
+        val charging = state == BatteryManager.BATTERY_STATUS_CHARGING || state == BatteryManager.BATTERY_STATUS_FULL
         val temp = (battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0) / 10f
         val health = when (battery?.getIntExtra(BatteryManager.EXTRA_HEALTH, BatteryManager.BATTERY_HEALTH_UNKNOWN)) {
             BatteryManager.BATTERY_HEALTH_GOOD -> "GOOD"
