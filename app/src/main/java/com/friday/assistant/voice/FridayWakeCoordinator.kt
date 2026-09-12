@@ -53,12 +53,16 @@ object FridayWakeCoordinator {
         }
     }
 
-    fun isRunning(): Boolean = synchronized(lock) { detector != null }
+    fun isRunning(): Boolean = synchronized(lock) { detector?.isRunning() == true }
 
     private fun ensureStartedLocked() {
-        if (!wakeEnabled || detector != null) return
+        if (!wakeEnabled) return
+        if (detector?.isRunning() == true) return
+        detector?.stop()
+        detector = null
+
         val context = contextRef?.get() ?: return
-        val service = serviceRef?.get() ?: return
+        if (serviceRef?.get() == null) return
         detector = FridayWakeDetector(context) { confidence ->
             pauseForSpeech()
             mainHandler.post {
