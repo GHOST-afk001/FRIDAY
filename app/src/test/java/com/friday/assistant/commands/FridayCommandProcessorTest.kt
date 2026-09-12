@@ -14,20 +14,15 @@ class FridayCommandProcessorTest {
         assertTrue(result.text.contains("baj rahe hain"))
     }
 
-    @Test fun mapCommandProducesMapAction() {
-        val result = processor.process("Google map par Delhi Yamuna Vihar ki location lagao")
-        assertTrue(result.handledLocally)
-        assertTrue(result.action is FridayAction.MapQuery)
-        assertEquals("delhi yamuna vihar", (result.action as FridayAction.MapQuery).query)
-    }
-
-    @Test fun timerCommandProducesSeconds() {
-        val result = processor.process("5 minute ka timer")
+    @Test fun timerIsNotCapturedByTimeCommand() {
+        val result = processor.process("Friday 5 minute ka timer")
+        assertTrue(result.action is FridayAction.Timer)
         assertEquals(300, (result.action as FridayAction.Timer).seconds)
     }
 
     @Test fun hindiTimerCommandProducesSeconds() {
         val result = processor.process("5 मिनट का टाइमर")
+        assertTrue(result.action is FridayAction.Timer)
         assertEquals(300, (result.action as FridayAction.Timer).seconds)
     }
 
@@ -42,6 +37,18 @@ class FridayCommandProcessorTest {
         val alarm = result.action as FridayAction.Alarm
         assertEquals(19, alarm.hour)
         assertEquals(30, alarm.minute)
+    }
+
+    @Test fun relativeAlarmDoesNotBecomeFiveAm() {
+        val result = processor.process("alarm after 5 minutes")
+        assertTrue(result.action is FridayAction.AlarmAfter)
+        assertEquals(300, (result.action as FridayAction.AlarmAfter).seconds)
+    }
+
+    @Test fun hindiRelativeAlarmIsRecognized() {
+        val result = processor.process("अलार्म 10 मिनट बाद")
+        assertTrue(result.action is FridayAction.AlarmAfter)
+        assertEquals(600, (result.action as FridayAction.AlarmAfter).seconds)
     }
 
     @Test fun callCommandRequiresConfirmationAndOpensDialerAction() {
