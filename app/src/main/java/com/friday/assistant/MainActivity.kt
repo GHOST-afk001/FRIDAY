@@ -189,14 +189,13 @@ class MainActivity : ComponentActivity() {
         fun requestOrStart() {
             startListening = { voiceManager.start() }
             val micGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-            if (micGranted) {
+            val contactsGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+            if (micGranted && contactsGranted) {
                 voiceManager.start()
             } else {
                 val permissions = buildList {
-                    add(Manifest.permission.RECORD_AUDIO)
-                    if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
-                        add(Manifest.permission.READ_CONTACTS)
-                    }
+                    if (!micGranted) add(Manifest.permission.RECORD_AUDIO)
+                    if (!contactsGranted) add(Manifest.permission.READ_CONTACTS)
                 }.toTypedArray()
                 permissionLauncher.launch(permissions)
             }
