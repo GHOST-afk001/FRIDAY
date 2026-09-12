@@ -27,6 +27,7 @@ class FridayWakeDetector(
         private const val BYTES_PER_SAMPLE = 2
         private const val THRESHOLD = 0.55f
         private const val COOLDOWN_MS = 1_800L
+        private const val RMS_GATE = 0.008f
     }
 
     private val running = AtomicBoolean(false)
@@ -44,11 +45,19 @@ class FridayWakeDetector(
 
     fun isRunning(): Boolean = running.get()
 
-    /** Signal shutdown and wait from a non-detector thread when mic handoff must be strict. */
-    fun stopAndWait(timeoutMs: Long = 1500L) {
+    /**
+     * Stops the worker and returns only when its finally block has released AudioRecord.
+     * A timeout is a failure, never permission to start another microphone owner.
+     */
+    fun stopAndWait(timeoutMs: Long = 3000L): Boolean {
         stop()
-        if (Thread.currentThread() !== thread) {
-            stoppedLatch?.await(timeoutMs, TimeUnit.MILLISECONDS)
+        if (Thread.currentThread() === thread) return !running.get()
+        val latch = stoppedLatch ?: return !running.get()
+        return try {
+            latch.await(timeoutMs, TimeUnit.MILLISECONDS) && !running.get()
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
         }
     }
 
@@ -63,17 +72,18 @@ class FridayWakeDetector(
     private fun loop() {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             running.set(false)
+            stoppedLatch?.countDown()
             return
         }
 
         var engineClass: Class<*>? = null
         var engine: Any? = null
+        var localRecorder: AudioRecord? = null
         try {
             engineClass = Class.forName("com.voicute.wakeword.WakeWordEngine")
             engine = engineClass.getConstructor(Context::class.java).newInstance(context)
             if (!(engineClass.getMethod("isLoaded").invoke(engine) as? Boolean ?: false)) {
                 Log.w(TAG, "Wake model unavailable; system assistant invocation remains available.")
-                running.set(false)
                 return
             }
 
@@ -93,25 +103,21 @@ class FridayWakeDetector(
                 .setBufferSizeInBytes(max(minBuffer, needed * BYTES_PER_SAMPLE * 2))
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) builder.setContext(context)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) builder.setPrivacySensitive(true)
-            val localRecorder = builder.build()
+            localRecorder = builder.build()
 
-            if (localRecorder.state != AudioRecord.STATE_INITIALIZED) {
-                localRecorder.release()
-                error("AudioRecord failed to initialize")
-            }
-
+            if (localRecorder.state != AudioRecord.STATE_INITIALIZED) error("AudioRecord failed to initialize")
             recorder = localRecorder
             localRecorder.startRecording()
             if (localRecorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) error("AudioRecord failed to start")
 
             val ring = ShortArray(needed)
             val frame = ShortArray(needed)
+            val chunk = ShortArray(1600)
             var writeIndex = 0
             var filled = 0
             var lastWake = 0L
             var consecutiveWord = ""
             var consecutiveCount = 0
-            val chunk = ShortArray(1600)
 
             while (running.get()) {
                 val read = localRecorder.read(chunk, 0, chunk.size, AudioRecord.READ_BLOCKING)
@@ -137,6 +143,20 @@ class FridayWakeDetector(
                     val tail = ring.size - writeIndex
                     System.arraycopy(ring, writeIndex, frame, 0, tail)
                     System.arraycopy(ring, 0, frame, tail, writeIndex)
+                }
+
+                // Cheap speech-energy gate. It is deliberately permissive; the wake model
+                // remains authoritative so quiet speech is not rejected by an aggressive VAD.
+                var energy = 0.0
+                for (sample in frame) {
+                    val normalized = sample / 32768.0
+                    energy += normalized * normalized
+                }
+                val rms = kotlin.math.sqrt(energy / frame.size).toFloat()
+                if (rms < RMS_GATE) {
+                    consecutiveWord = ""
+                    consecutiveCount = 0
+                    continue
                 }
 
                 val result = process.invoke(engine, frame) ?: continue
@@ -173,9 +193,9 @@ class FridayWakeDetector(
         } catch (e: Exception) {
             Log.e(TAG, "Wake detector stopped", e)
         } finally {
-            try { recorder?.stop() } catch (_: Exception) {}
-            try { recorder?.release() } catch (_: Exception) {}
-            recorder = null
+            try { localRecorder?.stop() } catch (_: Exception) {}
+            try { localRecorder?.release() } catch (_: Exception) {}
+            if (recorder === localRecorder) recorder = null
             try { engineClass?.getMethod("close")?.invoke(engine) } catch (_: Exception) {}
             running.set(false)
             stoppedLatch?.countDown()
