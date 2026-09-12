@@ -32,12 +32,13 @@ class FridayCommandProcessor {
         if (command.contains("messages") || command.contains("message app")) return FridayResponse("Messages khol rahi hoon.", FridayAction.Messages)
 
         parseMap(command)?.let { return FridayResponse(if (it.second) "Maps mein route khol rahi hoon." else "Maps mein location dikha rahi hoon.", FridayAction.MapQuery(it.first, it.second)) }
-        parseCall(command)?.let { target ->
+        val normalized = command.replace(Regex("^\\s*(?:hey\\s+)?friday\\b\\s*"), "").trim()
+        parseCall(normalized)?.let { target ->
             val compact = target.filter { it.isDigit() || it == '+' }
             val action = if (compact.length in 7..15 && target.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }) FridayAction.DialNumber(compact) else FridayAction.DialContact(target)
             return FridayResponse("${target.trim()} ke liye dialer khol rahi hoon.", action, needsConfirmation = true)
         }
-        parseSms(command, raw)?.let { (name, message) -> return FridayResponse("Message ready hai. ${name.trim()} ko bhejne se pehle preview dikhati hoon.", FridayAction.SmsContact(name.trim(), message), needsConfirmation = true) }
+        parseSms(normalized, raw)?.let { (name, message) -> return FridayResponse("Message ready hai. ${name.trim()} ko bhejne se pehle preview dikhati hoon.", FridayAction.SmsContact(name.trim(), message), needsConfirmation = true) }
         return FridayResponse("", handledLocally = false)
     }
 
@@ -51,9 +52,9 @@ class FridayCommandProcessor {
         val number = tokens[numberIndex].toLongOrNull() ?: return null
         val unit = tokens.getOrNull(numberIndex + 1)?.trim(',', '.', ':')?.lowercase(Locale.ROOT) ?: return null
         val multiplier = when (unit) {
-            "hour", "hours", "hr", "hrs" -> 3600L
-            "minute", "minutes", "min", "mins" -> 60L
-            "second", "seconds", "sec", "secs" -> 1L
+            "hour", "hours", "hr", "hrs", "ghanta", "ghante", "घंटा", "घंटे" -> 3600L
+            "minute", "minutes", "min", "mins", "minut", "minute", "मिनट" -> 60L
+            "second", "seconds", "sec", "secs", "second", "सेकंड" -> 1L
             else -> return null
         }
         return (number * multiplier).takeIf { it in 1L..86400L }?.toInt()
@@ -83,15 +84,21 @@ class FridayCommandProcessor {
     }
 
     private fun parseCall(c: String): String? {
-        val marker = Regex("(?:call\\s+(?:karo|kar)?|phone\\s+karo|फोन)").find(c) ?: return null
-        return c.substring(marker.range.last + 1).trim().takeIf { it.isNotBlank() }
+        val afterVerb = Regex("^(?:call|phone|dial)\\s+(?:(?:karo|kar|please)\\s+)?(.+)$").find(c)?.groupValues?.get(1)?.trim()
+        if (!afterVerb.isNullOrBlank()) return afterVerb
+        return Regex("^(.+?)\\s+(?:ko\\s+)?(?:call|phone|dial)\\s+(?:karo|kar|please)?\\s*$", RegexOption.IGNORE_CASE)
+            .find(c)?.groupValues?.get(1)?.trim()
     }
 
     private fun parseSms(c: String, raw: String): Pair<String, String>? {
-        val rest = Regex("(?:message|text|sms|msg)\\s+(?:karo|kar)?\\s*(.*)", RegexOption.IGNORE_CASE).find(raw)?.groupValues?.get(1)?.trim() ?: return null
-        if (rest.isBlank()) return null
-        val toMatch = Regex("^(?:to|ko)\\s+([A-Za-z][A-Za-z ]{1,30}?)(?:\\s+(?:that|ki|bolo|bolna|message|text)\\s+|\\s*[:,;-]\\s*)(.+)$", RegexOption.IGNORE_CASE).find(rest)
-        return toMatch?.groupValues?.let { it[1].trim() to it[2].trim() }
+        val normalizedRaw = raw.trim().replace(Regex("^\\s*(?:hey\\s+)?friday\\b\\s*", RegexOption.IGNORE_CASE), "").trim()
+        val forms = listOf(
+            Regex("^(?:message|text|sms|msg)\\s+(?:karo|kar)?\\s*(?:to|ko)\\s+([A-Za-z][A-Za-z ]{1,30}?)(?:\\s+(?:that|ki|bolo|bolna|message|text)\\s+|\\s*[:,;-]\\s*)(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^([A-Za-z][A-Za-z ]{1,30}?)\\s+ko\\s+(?:message|text|sms|msg)\\s+(?:karo|kar)?(?:\\s+(?:ki|that|bolo|bolna))?\\s+(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^(?:message|text|sms|msg)\\s+([A-Za-z][A-Za-z ]{1,30}?)\\s*[:,;-]\\s*(.+)$", RegexOption.IGNORE_CASE)
+        )
+        val source = if (normalizedRaw.isNotBlank()) normalizedRaw else c
+        return forms.firstNotNullOfOrNull { it.find(source)?.groupValues?.let { g -> g[1].trim() to g[2].trim() } }
     }
 
     private fun prettyDuration(seconds: Int): String = when { seconds % 3600 == 0 -> "${seconds / 3600} hour"; seconds % 60 == 0 -> "${seconds / 60} minute"; else -> "$seconds second" }
