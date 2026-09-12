@@ -8,11 +8,12 @@ import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 
-/** TTS tuned for natural Hindi + Indian English mixed speech. */
+/** Crash-safe Android TTS wrapper for mixed Hindi + Indian English speech. */
 class TTSManager(context: Context, private val onUnavailable: () -> Unit) : TextToSpeech.OnInitListener {
+    private val appContext = context.applicationContext
     private val lock = Any()
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var tts: TextToSpeech? = TextToSpeech(context.applicationContext, this)
+    private var tts: TextToSpeech? = null
     private var ready = false
     private var destroyed = false
     private var pending: Pair<String, () -> Unit>? = null
@@ -20,11 +21,28 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
     private val speechGeneration = AtomicLong(0L)
 
     init {
-        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String) = Unit
-            override fun onDone(utteranceId: String) = complete(utteranceId)
-            override fun onError(utteranceId: String) = complete(utteranceId)
-        })
+        initializeSafely()
+    }
+
+    private fun initializeSafely() {
+        try {
+            val engine = TextToSpeech(appContext, this)
+            synchronized(lock) {
+                if (destroyed) {
+                    engine.shutdown()
+                    return
+                }
+                tts = engine
+            }
+            engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String) = Unit
+                override fun onDone(utteranceId: String) = complete(utteranceId)
+                override fun onError(utteranceId: String) = complete(utteranceId)
+            })
+        } catch (_: Throwable) {
+            synchronized(lock) { ready = false; tts = null }
+            mainHandler.post { if (!destroyed) onUnavailable() }
+        }
     }
 
     override fun onInit(status: Int) {
@@ -39,12 +57,13 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
             return
         }
 
-        tts?.setSpeechRate(0.88f)
-        tts?.setPitch(1.0f)
+        runCatching {
+            tts?.setSpeechRate(0.88f)
+            tts?.setPitch(1.0f)
+        }
         queued?.let { speakNow(it.first, it.second, speechGeneration.incrementAndGet()) }
     }
 
-    /** Starts a new utterance generation and invalidates any older speech callback chain. */
     fun speak(text: String, onDone: () -> Unit = {}) {
         if (text.isBlank()) {
             mainHandler.post(onDone)
@@ -56,15 +75,13 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
                 mainHandler.post(onDone)
                 return
             }
-            // A new answer supersedes an older answer. This prevents stale onDone callbacks
-            // from reopening STT or speaking the tail of an older response a second time.
             completionCallbacks.clear()
             if (!ready) {
                 pending = text to onDone
                 return
             }
         }
-        tts?.stop()
+        runCatching { tts?.stop() }
         speakNow(text, onDone, generation)
     }
 
@@ -74,18 +91,11 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
             mainHandler.post { if (speechGeneration.get() == generation) onDone() }
             return
         }
-
         val segments = splitByScript(text)
         speakSegment(engine, segments, 0, onDone, generation)
     }
 
-    private fun speakSegment(
-        engine: TextToSpeech,
-        segments: List<String>,
-        index: Int,
-        onDone: () -> Unit,
-        generation: Long
-    ) {
+    private fun speakSegment(engine: TextToSpeech, segments: List<String>, index: Int, onDone: () -> Unit, generation: Long) {
         if (speechGeneration.get() != generation) return
         if (index >= segments.size) {
             mainHandler.post { if (speechGeneration.get() == generation && !destroyed) onDone() }
@@ -97,33 +107,28 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
 
         val segment = segments[index]
         val target = if (containsDevanagari(segment)) Locale.forLanguageTag("hi-IN") else Locale.forLanguageTag("en-IN")
-        val available = engine.isLanguageAvailable(target)
-        if (available >= TextToSpeech.LANG_AVAILABLE) engine.language = target
-
-        val preferred = engine.voices?.firstOrNull { voice ->
-            !voice.isNetworkConnectionRequired &&
-                voice.locale.language == target.language &&
-                voice.name.lowercase(Locale.ROOT).let { name ->
-                    name.contains("female") || name.contains("fem") || name.contains("woman") ||
-                        name.contains("samantha") || name.contains("zira")
-                }
+        runCatching {
+            if (engine.isLanguageAvailable(target) >= TextToSpeech.LANG_AVAILABLE) engine.language = target
+            val preferred = engine.voices?.firstOrNull { voice ->
+                !voice.isNetworkConnectionRequired &&
+                    voice.locale.language == target.language &&
+                    voice.name.lowercase(Locale.ROOT).let { name ->
+                        name.contains("female") || name.contains("fem") || name.contains("woman") ||
+                            name.contains("samantha") || name.contains("zira")
+                    }
+            }
+            if (preferred != null) engine.voice = preferred
         }
-        if (preferred != null) engine.voice = preferred
 
         val utteranceId = "friday-${generation}-${index}-${System.nanoTime()}"
         synchronized(lock) {
             if (destroyed || speechGeneration.get() != generation) return
             completionCallbacks[utteranceId] = {
-                if (speechGeneration.get() == generation && !destroyed) {
-                    speakSegment(engine, segments, index + 1, onDone, generation)
-                }
+                if (speechGeneration.get() == generation && !destroyed) speakSegment(engine, segments, index + 1, onDone, generation)
             }
         }
-
-        // QUEUE_FLUSH only for the first segment; subsequent segments are chained with ADD.
-        // This avoids stale flush callbacks from causing duplicate final responses.
         val queueMode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-        val result = engine.speak(segment, queueMode, null, utteranceId)
+        val result = runCatching { engine.speak(segment, queueMode, null, utteranceId) }.getOrDefault(TextToSpeech.ERROR)
         if (result != TextToSpeech.SUCCESS) complete(utteranceId)
     }
 
@@ -131,14 +136,12 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
         val result = mutableListOf<String>()
         val builder = StringBuilder()
         var devanagari: Boolean? = null
-
         fun flush() {
             if (builder.isNotEmpty()) {
                 result += builder.toString()
                 builder.setLength(0)
             }
         }
-
         for (char in text) {
             val current = char in '\u0900'..'\u097F'
             if (devanagari == null) devanagari = current
@@ -160,16 +163,16 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
     }
 
     fun shutdown() {
-        synchronized(lock) {
+        val engine = synchronized(lock) {
             if (destroyed) return
             destroyed = true
             ready = false
             pending = null
             completionCallbacks.clear()
             speechGeneration.incrementAndGet()
+            tts.also { tts = null }
         }
-        tts?.stop()
-        tts?.shutdown()
-        tts = null
+        runCatching { engine?.stop() }
+        runCatching { engine?.shutdown() }
     }
 }
