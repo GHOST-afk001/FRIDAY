@@ -7,7 +7,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 
-/** Female-leaning assistant TTS using voices already installed on the user's phone. */
+/** TTS tuned for natural Hindi + Indian English mixed speech. */
 class TTSManager(context: Context, private val onUnavailable: () -> Unit) : TextToSpeech.OnInitListener {
     private val lock = Any()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -36,15 +36,11 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
             queued?.second?.let { callback -> mainHandler.post(callback) }
             return
         }
-        tts?.setSpeechRate(0.92f)
-        tts?.setPitch(1.02f)
-        val preferred = tts?.voices?.firstOrNull { voice ->
-            !voice.isNetworkConnectionRequired &&
-                (voice.locale.language == "hi" || voice.locale.language == "en") &&
-                voice.name.lowercase(Locale.ROOT).contains("female")
-        }
-        if (preferred != null) tts?.voice = preferred
-        else tts?.language = Locale.forLanguageTag("en-IN")
+
+        // Slightly slower and lower-pitch than the stock assistant defaults.
+        // The actual installed phone voice remains authoritative.
+        tts?.setSpeechRate(0.88f)
+        tts?.setPitch(1.0f)
         queued?.let { speakNow(it.first, it.second) }
     }
 
@@ -73,21 +69,84 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
             mainHandler.post(onDone)
             return
         }
-        val hindi = text.any { it in '\u0900'..'\u097F' }
-        val target = if (hindi) Locale.forLanguageTag("hi-IN") else Locale.forLanguageTag("en-IN")
+
+        val segments = splitByScript(text)
+        speakSegment(engine, segments, 0, onDone)
+    }
+
+    private fun speakSegment(
+        engine: TextToSpeech,
+        segments: List<String>,
+        index: Int,
+        onDone: () -> Unit
+    ) {
+        if (index >= segments.size) {
+            mainHandler.post(onDone)
+            return
+        }
+        synchronized(lock) { if (destroyed) { mainHandler.post(onDone); return } }
+
+        val segment = segments[index]
+        val target = if (containsDevanagari(segment)) Locale.forLanguageTag("hi-IN") else Locale.forLanguageTag("en-IN")
         val available = engine.isLanguageAvailable(target)
-        if (available >= TextToSpeech.LANG_AVAILABLE) engine.language = target
+        if (available >= TextToSpeech.LANG_AVAILABLE) {
+            engine.language = target
+        }
+
+        // Prefer an installed female voice for the requested language when the engine exposes
+        // a gender hint in its voice name. Otherwise keep the engine's normal regional voice.
+        val preferred = engine.voices?.firstOrNull { voice ->
+            !voice.isNetworkConnectionRequired &&
+                voice.locale.language == target.language &&
+                voice.name.lowercase(Locale.ROOT).let { name ->
+                    name.contains("female") || name.contains("fem") || name.contains("woman") ||
+                        name.contains("samantha") || name.contains("zira")
+                }
+        }
+        if (preferred != null) engine.voice = preferred
+
         val utteranceId = "friday-response-${System.nanoTime()}"
         synchronized(lock) {
             if (destroyed) {
                 mainHandler.post(onDone)
                 return
             }
-            completionCallbacks[utteranceId] = onDone
+            completionCallbacks[utteranceId] = {
+                speakSegment(engine, segments, index + 1, onDone)
+            }
         }
-        val result = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        val result = engine.speak(segment, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
         if (result != TextToSpeech.SUCCESS) complete(utteranceId)
     }
+
+    /** Keep Hindi in hi-IN and English/Hinglish fragments in en-IN for much cleaner pronunciation. */
+    private fun splitByScript(text: String): List<String> {
+        val result = mutableListOf<String>()
+        val builder = StringBuilder()
+        var devanagari: Boolean? = null
+
+        fun flush() {
+            if (builder.isNotEmpty()) {
+                result += builder.toString()
+                builder.setLength(0)
+            }
+        }
+
+        for (char in text) {
+            val current = char in '\u0900'..'\u097F'
+            if (devanagari == null) devanagari = current
+            if (current != devanagari && builder.isNotEmpty()) {
+                flush()
+                devanagari = current
+            }
+            builder.append(char)
+        }
+        flush()
+
+        return result.filter { it.isNotBlank() }.ifEmpty { listOf(text) }
+    }
+
+    private fun containsDevanagari(text: String): Boolean = text.any { it in '\u0900'..'\u097F' }
 
     private fun complete(utteranceId: String) {
         val callback = synchronized(lock) { completionCallbacks.remove(utteranceId) }
