@@ -45,13 +45,15 @@ class FridayCommandProcessor {
 
     private fun parseTimer(c: String): Int? {
         if (!c.contains("timer") && !c.contains("टाइमर")) return null
-        val numberMatch = Regex("\\b[0-9]+\\b").find(c) ?: return null
-        val number = numberMatch.value.toLongOrNull() ?: return null
-        val unit = c.substring(numberMatch.range.last + 1).trimStart().split(Regex("\\s+|\\bka\\b|\\bfor\\b"), limit = 2).firstOrNull() ?: return null
-        val multiplier = when {
-            unit.startsWith("hour") || unit.startsWith("hr") -> 3600L
-            unit.startsWith("minute") || unit.startsWith("min") -> 60L
-            unit.startsWith("second") || unit.startsWith("sec") -> 1L
+        val tokens = c.split(Regex("\\s+")).filter { it.isNotBlank() }
+        val numberIndex = tokens.indexOfFirst { it.toLongOrNull() != null }
+        if (numberIndex < 0) return null
+        val number = tokens[numberIndex].toLongOrNull() ?: return null
+        val unit = tokens.getOrNull(numberIndex + 1)?.trim(',', '.', ':')?.lowercase(Locale.ROOT) ?: return null
+        val multiplier = when (unit) {
+            "hour", "hours", "hr", "hrs" -> 3600L
+            "minute", "minutes", "min", "mins" -> 60L
+            "second", "seconds", "sec", "secs" -> 1L
             else -> return null
         }
         return (number * multiplier).takeIf { it in 1L..86400L }?.toInt()
