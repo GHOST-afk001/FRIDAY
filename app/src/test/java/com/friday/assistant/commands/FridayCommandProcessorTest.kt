@@ -17,7 +17,7 @@ class FridayCommandProcessorTest {
         val result = processor.process("Google map par Delhi Yamuna Vihar ki location lagao")
         assertTrue(result.handledLocally)
         assertTrue(result.action is FridayAction.MapQuery)
-        assertEquals("delhi yamuna vihar ki location lagao", (result.action as FridayAction.MapQuery).query)
+        assertEquals("delhi yamuna vihar", (result.action as FridayAction.MapQuery).query)
     }
 
     @Test fun timerCommandProducesSeconds() {
