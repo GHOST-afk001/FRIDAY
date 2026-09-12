@@ -6,6 +6,7 @@ import android.os.Looper
 import com.friday.assistant.commands.FridayCommandProcessor
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicLong
 
 class FridayAgent(context: Context) {
     private val appContext = context.applicationContext
@@ -15,6 +16,7 @@ class FridayAgent(context: Context) {
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val memoryLock = Any()
+    private val requestGeneration = AtomicLong(0L)
     @Volatile private var closed = false
     @Volatile private var activeRequest: Future<*>? = null
 
@@ -24,7 +26,7 @@ class FridayAgent(context: Context) {
 
     fun hasApiKey() = !closed && gemini.isConfigured()
 
-    fun clearApiKey() = gemini.clearApiKey()
+    fun clearApiKey() = if (!closed) gemini.clearApiKey() else Unit
 
     fun handle(input: String, callback: (String, Boolean) -> Unit) {
         if (closed) return
@@ -39,21 +41,24 @@ class FridayAgent(context: Context) {
             if (!closed) callback("Main samajh rahi hoon, Boss. Is task ke liye online AI brain configure nahi hai. App Settings mein Gemini API key add kar sakte hain.", false)
             return
         }
+
+        val myGeneration = requestGeneration.incrementAndGet()
         activeRequest?.cancel(true)
         activeRequest = executor.submit {
             try {
-                if (closed || Thread.currentThread().isInterrupted) return@submit
+                if (closed || Thread.currentThread().isInterrupted || requestGeneration.get() != myGeneration) return@submit
                 val history = loadHistory()
                 val result = gemini.ask(input, history)
-                if (closed || Thread.currentThread().isInterrupted) return@submit
+                if (closed || Thread.currentThread().isInterrupted || requestGeneration.get() != myGeneration) return@submit
                 val answer = result.getOrElse { "Online brain abhi available nahi hai. Main local mode mein hoon, Boss." }
                 remember("user", input)
                 remember("assistant", answer)
                 mainHandler.post {
-                    if (!closed) callback(answer, false)
+                    if (!closed && requestGeneration.get() == myGeneration) callback(answer, false)
                 }
             } finally {
-                activeRequest = null
+                // Never clear a newer request's Future from an older request's finally block.
+                if (requestGeneration.get() == myGeneration) activeRequest = null
             }
         }
     }
@@ -62,6 +67,7 @@ class FridayAgent(context: Context) {
     fun close() {
         if (closed) return
         closed = true
+        requestGeneration.incrementAndGet()
         activeRequest?.cancel(true)
         activeRequest = null
         gemini.cancel()
