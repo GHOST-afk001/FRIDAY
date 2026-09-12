@@ -10,6 +10,8 @@ import java.lang.ref.WeakReference
  * SpeechRecognizer and AudioRecord must never be intentionally active at the same time.
  */
 object FridayWakeCoordinator {
+    private enum class State { STOPPED, WAKE_LISTENING, RELEASING_WAKE, SPEECH_ACTIVE, RELEASING_SPEECH }
+
     private val lock = Any()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var contextRef: WeakReference<Context>? = null
@@ -17,6 +19,7 @@ object FridayWakeCoordinator {
     private var detector: FridayWakeDetector? = null
     private var wakeEnabled = false
     private var generation = 0L
+    private var state = State.STOPPED
 
     fun start(service: FridayVoiceInteractionService) {
         synchronized(lock) {
@@ -24,6 +27,7 @@ object FridayWakeCoordinator {
             serviceRef = WeakReference(service)
             wakeEnabled = true
             generation++
+            state = State.WAKE_LISTENING
             ensureStartedLocked()
         }
     }
@@ -33,6 +37,7 @@ object FridayWakeCoordinator {
         synchronized(lock) {
             wakeEnabled = false
             generation++
+            state = State.SPEECH_ACTIVE
             mainHandler.removeCallbacksAndMessages(null)
             detector?.stop()
         }
@@ -44,6 +49,7 @@ object FridayWakeCoordinator {
         synchronized(lock) {
             wakeEnabled = true
             generation++
+            state = State.RELEASING_SPEECH
             oldDetector = detector
             oldDetector?.stop()
         }
@@ -51,16 +57,31 @@ object FridayWakeCoordinator {
             val released = oldDetector?.stopAndWait(3000L) ?: true
             mainHandler.post {
                 synchronized(lock) {
-                    if (!wakeEnabled) return@post
-                    if (serviceRef?.get() == null) return@post
+                    if (!wakeEnabled || state != State.RELEASING_SPEECH) return@synchronized
+                    if (serviceRef?.get() == null) return@synchronized
                     if (released) {
+                        state = State.WAKE_LISTENING
                         ensureStartedLocked()
                     } else {
                         // A timeout is not success. Retry recovery later instead of opening
                         // a second microphone owner while the old recorder may still exist.
                         mainHandler.postDelayed({
                             synchronized(lock) {
-                                if (wakeEnabled && serviceRef?.get() != null) ensureStartedLocked()
+                                if (wakeEnabled && state == State.RELEASING_SPEECH && serviceRef?.get() != null) {
+                                    val retry = detector
+                                    Thread({
+                                        val retryReleased = retry?.stopAndWait(3000L) ?: true
+                                        mainHandler.post {
+                                            synchronized(lock) {
+                                                if (!wakeEnabled || state != State.RELEASING_SPEECH) return@synchronized
+                                                if (retryReleased) {
+                                                    state = State.WAKE_LISTENING
+                                                    ensureStartedLocked()
+                                                }
+                                            }
+                                        }
+                                    }, "friday-wake-recovery").start()
+                                }
                             }
                         }, 1000L)
                     }
@@ -73,6 +94,7 @@ object FridayWakeCoordinator {
         synchronized(lock) {
             wakeEnabled = false
             generation++
+            state = State.STOPPED
             mainHandler.removeCallbacksAndMessages(null)
             detector?.stop()
             detector = null
@@ -81,10 +103,10 @@ object FridayWakeCoordinator {
         }
     }
 
-    fun isRunning(): Boolean = synchronized(lock) { detector?.isRunning() == true }
+    fun isRunning(): Boolean = synchronized(lock) { state == State.WAKE_LISTENING && detector?.isRunning() == true }
 
     private fun ensureStartedLocked() {
-        if (!wakeEnabled) return
+        if (!wakeEnabled || state != State.WAKE_LISTENING) return
         if (detector?.isRunning() == true) return
         detector?.stop()
         detector = null
@@ -96,10 +118,11 @@ object FridayWakeCoordinator {
             var accepted = false
             val detectorToStop: FridayWakeDetector?
             synchronized(lock) {
-                if (wakeEnabled && generation == callbackGeneration) {
+                if (wakeEnabled && state == State.WAKE_LISTENING && generation == callbackGeneration) {
                     accepted = true
                     wakeEnabled = false
                     generation++
+                    state = State.RELEASING_WAKE
                     detectorToStop = detector
                     detector?.stop()
                 } else detectorToStop = null
@@ -112,7 +135,7 @@ object FridayWakeCoordinator {
                 val released = detectorToStop?.stopAndWait(3000L) ?: true
                 mainHandler.post {
                     val service = synchronized(lock) {
-                        if (wakeEnabled || !released) return@synchronized null
+                        if (wakeEnabled || state != State.RELEASING_WAKE || !released) return@synchronized null
                         serviceRef?.get()
                     }
                     if (service != null) {
