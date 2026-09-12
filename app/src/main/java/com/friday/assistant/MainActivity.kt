@@ -27,6 +27,7 @@ import androidx.core.content.ContextCompat
 import com.friday.assistant.ai.FridayAgent
 import com.friday.assistant.commands.AppLauncher
 import com.friday.assistant.commands.FridayCommandProcessor
+import com.friday.assistant.power.FridayPowerManager
 import com.friday.assistant.voice.TTSManager
 import com.friday.assistant.voice.VoiceManager
 
@@ -41,7 +42,6 @@ class MainActivity : ComponentActivity() {
     private val microphonePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) startListening?.invoke() else updateStatus("Microphone permission is required for FRIDAY voice features.")
     }
-    private val contactsPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     private val roleLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,9 +60,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun openPowerSettings() {
+        val requestIntent = FridayPowerManager.createOptimizationIntent(this)
+        val intent = requestIntent ?: FridayPowerManager.createBatterySettingsIntent()
+        runCatching { startActivity(intent) }
+            .onFailure { updateStatus("Battery settings are not available on this device.") }
+    }
+
     @Composable
     private fun FridayApp() {
-        var status by remember { mutableStateOf("Hands-free setup ready") }
+        var status by remember { mutableStateOf(powerStatus()) }
         var recognized by remember { mutableStateOf("") }
         var response by remember { mutableStateOf("Hello Boss. Main Friday hoon. Say 'Friday' when hands-free mode is enabled.") }
         var showKeyDialog by remember { mutableStateOf(false) }
@@ -87,11 +94,11 @@ class MainActivity : ComponentActivity() {
                         status = "Thinking..."
                         agent.handle(text) { answer, _ ->
                             response = answer
-                            status = "Hands-free setup ready"
+                            status = powerStatus()
                             ttsManager.speak(answer)
                         }
                     }
-                    status = "Hands-free setup ready"
+                    status = powerStatus()
                 }
                 override fun onError(message: String) { status = message }
             })
@@ -119,6 +126,8 @@ class MainActivity : ComponentActivity() {
                         OutlinedButton(onClick = ::requestAssistantRole) { Text("ENABLE HANDS-FREE") }
                         OutlinedButton(onClick = { showKeyDialog = true }) { Text("AI BRAIN") }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(onClick = ::openPowerSettings) { Text("BATTERY / BACKGROUND") }
                     Spacer(Modifier.height(18.dp))
                     Text(status, color = Color(0xFFB8D6E3), textAlign = TextAlign.Center)
                     Spacer(Modifier.height(22.dp))
@@ -143,9 +152,16 @@ class MainActivity : ComponentActivity() {
                 confirmButton = {
                     TextButton(onClick = { agent.configureApiKey(apiKey); apiKey = ""; showKeyDialog = false; response = "Online brain configured, Boss." }) { Text("SAVE") }
                 },
-                dismissButton = { TextButton(onClick = { agent.clearApiKey(); showKeyDialog = false }) { Text("CLEAR") } }
+                dismissButton = { TextButton(onClick = { agent.clearApiKey(); showKeyDialog = false }) { Text("CLEAR") }
+                }
             )
         }
+    }
+
+    private fun powerStatus(): String = if (FridayPowerManager.isIgnoringBatteryOptimizations(this)) {
+        "Ready • Battery unrestricted"
+    } else {
+        "Ready • Battery optimization is enabled"
     }
 
     @Composable
