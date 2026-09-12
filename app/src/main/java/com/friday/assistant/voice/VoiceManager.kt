@@ -3,35 +3,70 @@ package com.friday.assistant.voice
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import java.util.Locale
 
-/** Lifecycle-aware wrapper for Android's free on-device/system speech service. */
+/** Lifecycle-aware wrapper for Android's system speech service. */
 class VoiceManager(context: Context, private val listener: Listener) {
     interface Listener { fun onListening(); fun onResult(text: String); fun onError(message: String) }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val recognizer = if (SpeechRecognizer.isRecognitionAvailable(context)) SpeechRecognizer.createSpeechRecognizer(context) else null
+    private var destroyed = false
 
-    init { recognizer?.setRecognitionListener(object : RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) = listener.onListening()
-        override fun onResults(results: Bundle?) { listener.onResult(results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()) }
-        override fun onError(error: Int) = listener.onError(errorMessage(error))
-        override fun onBeginningOfSpeech() {} ; override fun onBufferReceived(buffer: ByteArray?) {} ; override fun onEndOfSpeech() {}
-        override fun onEvent(eventType: Int, params: Bundle?) {} ; override fun onPartialResults(partialResults: Bundle?) {}
-        override fun onRmsChanged(rmsdB: Float) {}
-    }) }
-
-    fun start() {
-        if (recognizer == null) { listener.onError("Speech recognition is not available on this device."); return }
-        recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "hi-IN")
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Friday")
+    init {
+        recognizer?.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) = listener.onListening()
+            override fun onResults(results: Bundle?) {
+                listener.onResult(results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty())
+            }
+            override fun onError(error: Int) = listener.onError(errorMessage(error))
+            override fun onBeginningOfSpeech() {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
+            override fun onEndOfSpeech() {}
+            override fun onEvent(eventType: Int, params: Bundle?) {}
+            override fun onPartialResults(partialResults: Bundle?) {}
+            override fun onRmsChanged(rmsdB: Float) {}
         })
     }
-    fun destroy() = recognizer?.destroy()
+
+    fun start() {
+        if (destroyed) return
+        runOnMain {
+            if (destroyed) return@runOnMain
+            if (recognizer == null) {
+                listener.onError("Speech recognition is not available on this device.")
+                return@runOnMain
+            }
+            recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "hi-IN")
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Friday")
+            })
+        }
+    }
+
+    fun destroy() {
+        if (destroyed) return
+        destroyed = true
+        runOnMain {
+            try { recognizer?.cancel() } catch (_: Exception) {}
+            try { recognizer?.destroy() } catch (_: Exception) {}
+        }
+    }
+
+    private fun runOnMain(block: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) block() else mainHandler.post(block)
+    }
+
     private fun errorMessage(error: Int) = when (error) {
         SpeechRecognizer.ERROR_AUDIO -> "Audio recording failed. Please try again."
         SpeechRecognizer.ERROR_CLIENT -> "Speech recognition was interrupted. Please try again."
