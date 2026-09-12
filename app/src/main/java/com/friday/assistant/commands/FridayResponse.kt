@@ -1,10 +1,10 @@
 package com.friday.assistant.commands
 
-/** Structured result from the local planner. The launcher performs the actual Android hand-off. */
 data class FridayResponse(
     val text: String,
     val action: FridayAction? = null,
-    val needsConfirmation: Boolean = false
+    val needsConfirmation: Boolean = false,
+    val handledLocally: Boolean = true
 )
 
 sealed interface FridayAction {
