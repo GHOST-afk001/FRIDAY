@@ -20,10 +20,10 @@ class FridayVoiceInteractionService : VoiceInteractionService() {
     }
 
     internal fun showFridaySessionFromWake(confidence: Float) {
-        if (!FridayWakeCoordinator.isRunning()) {
-            val args = Bundle().apply { putFloat("friday_wake_confidence", confidence) }
-            showSession(args, 0)
-        }
+        // The coordinator already validated the wake generation and microphone handoff.
+        // Do not gate this on isRunning(): a valid detector shutdown is expected here.
+        val args = Bundle().apply { putFloat("friday_wake_confidence", confidence) }
+        showSession(args, 0)
     }
 
     internal fun runOnMainThread(block: () -> Unit) {
