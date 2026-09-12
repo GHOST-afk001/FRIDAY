@@ -9,6 +9,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,7 +19,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -46,7 +47,6 @@ import com.friday.assistant.runtime.RuntimeStatus
 import com.friday.assistant.security.ActionPolicyValidator
 import com.friday.assistant.voice.TTSManager
 import com.friday.assistant.voice.VoiceManager
-import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -133,15 +133,17 @@ class MainActivity : ComponentActivity() {
         val localProcessor = remember { processor }
         SideEffect { statusUpdater = { status = it } }
 
-        LaunchedEffect(Unit) {
-            while (true) {
-                telemetry = DeviceTelemetry.snapshot(applicationContext)
-                notificationAccess = hasNotificationAccess()
-                delay(1000L)
-            }
-        }
-
         DisposableEffect(Unit) {
+            val telemetryHandler = Handler(Looper.getMainLooper())
+            val telemetryLoop = object : Runnable {
+                override fun run() {
+                    telemetry = DeviceTelemetry.snapshot(applicationContext)
+                    notificationAccess = hasNotificationAccess()
+                    telemetryHandler.postDelayed(this, 1000L)
+                }
+            }
+            telemetryHandler.post(telemetryLoop)
+
             val runtimeSubscription = FridayRuntime.observe { runtime = it }
             val notificationSubscription = FridayNotifications.observe { notifications = it }
             agent = FridayAgent(applicationContext)
@@ -258,6 +260,7 @@ class MainActivity : ComponentActivity() {
                 }
             })
             onDispose {
+                telemetryHandler.removeCallbacks(telemetryLoop)
                 statusUpdater = null
                 runtimeSubscription.close()
                 notificationSubscription.close()
@@ -288,9 +291,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    item {
-                        HeaderPanel(telemetry, onlineBrain, runtime)
-                    }
+                    item { HeaderPanel(telemetry, onlineBrain, runtime) }
                     item {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             MetricCard("BATTERY", "${telemetry.batteryPercent}%", if (telemetry.charging) "CHARGING" else "ON BATTERY", Modifier.weight(1f))
@@ -314,7 +315,7 @@ class MainActivity : ComponentActivity() {
                                 Text("V6 AUTONOMOUS", color = Color(0xFF35E8FF), fontSize = 10.sp)
                             }
                             Spacer(Modifier.height(6.dp))
-                            Text("FRIDAY exposes high-level decision stages here; private chain-of-thought is never displayed. The HUD shows what the system is actually doing, not fabricated reasoning text.", color = Color(0xFF9EB2BF), fontSize = 11.sp)
+                            Text("FRIDAY shows high-level decision stages here; private chain-of-thought is never displayed. The HUD reports real system stages instead of invented reasoning text.", color = Color(0xFF9EB2BF), fontSize = 11.sp)
                             Spacer(Modifier.height(8.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 SmallStatus("CONTEXT", runtime.stage in setOf("CONTEXT", "PLANNING", "AI THINKING", "RESPONSE READY"))
@@ -348,7 +349,7 @@ class MainActivity : ComponentActivity() {
                     }
                     item {
                         HudSection("SYSTEM HEALTH") {
-                            HealthRow("AI brain", if (onlineBrain) "READY" else "LOCAL CORE / KEY NEEDED", onlineBrain || !onlineBrain)
+                            HealthRow("AI brain", if (onlineBrain) "READY" else "LOCAL CORE / KEY NEEDED", true)
                             HealthRow("Voice engine", "READY", true)
                             HealthRow("Battery optimization", if (FridayPowerManager.isIgnoringBatteryOptimizations(this@MainActivity)) "UNRESTRICTED" else "RESTRICTED", true)
                             HealthRow("Notification bridge", if (notificationAccess) "CONNECTED" else "DISABLED", notificationAccess)
@@ -377,9 +378,7 @@ class MainActivity : ComponentActivity() {
                             OutlinedButton(onClick = ::openNotificationAccess, modifier = Modifier.weight(1f)) { Text("NOTIFICATIONS") }
                         }
                     }
-                    item {
-                        Text("FRIDAY • ULTRON-INSPIRED LIVE HUD • ${nowTime()}", color = Color(0xFF4B6675), fontSize = 9.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
-                    }
+                    item { Text("FRIDAY • ULTRON-INSPIRED LIVE HUD • ${nowTime()}", color = Color(0xFF4B6675), fontSize = 9.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
                 }
             }
         }
@@ -450,11 +449,11 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun HudSection(title: String, content: @Composable ColumnScope.() -> Unit) {
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF070D16)), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFF14313F), RoundedCornerShape(14.dp))) {
-            Column(Modifier.padding(13.dp), content = {
+            Column(Modifier.padding(13.dp)) {
                 Text(title, color = Color(0xFF35E8FF), fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.8.sp)
                 Spacer(Modifier.height(7.dp))
                 content()
-            })
+            }
         }
     }
 
@@ -498,7 +497,7 @@ class MainActivity : ComponentActivity() {
     private fun HealthRow(label: String, value: String, healthy: Boolean) {
         Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(label, color = Color(0xFF77909B), fontSize = 10.sp)
-            Text("${if (healthy) "●" else "●"} $value", color = if (healthy) Color(0xFF4CFF9A) else Color(0xFFFF5266), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text("● $value", color = if (healthy) Color(0xFF4CFF9A) else Color(0xFFFF5266), fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
     }
 
