@@ -20,12 +20,8 @@ class FridayCommandProcessor {
 
         parseTimer(normalized)?.let { return FridayResponse("Timer ${prettyDuration(it)} ka set kar rahi hoon.", FridayAction.Timer(it)) }
         parseAlarm(normalized)?.let { alarm ->
-            return if (alarm is FridayAction.AlarmAfter) {
-                FridayResponse("Alarm ${prettyDuration(alarm.seconds)} baad set kar rahi hoon.", alarm)
-            } else {
-                val clock = alarm as FridayAction.Alarm
-                FridayResponse("Alarm ${String.format(Locale.US, "%02d:%02d", clock.hour, clock.minute)} ke liye set kar rahi hoon.", clock)
-            }
+            return if (alarm is FridayAction.AlarmAfter) FridayResponse("Alarm ${prettyDuration(alarm.seconds)} baad set kar rahi hoon.", alarm)
+            else { val clock = alarm as FridayAction.Alarm; FridayResponse("Alarm ${String.format(Locale.US, "%02d:%02d", clock.hour, clock.minute)} ke liye set kar rahi hoon.", clock) }
         }
 
         if (normalized.contains("flashlight") || normalized.contains("torch") || normalized.contains("फ्लैशलाइट")) return if (normalized.contains("off") || normalized.contains("band")) FridayResponse("Torch off kar rahi hoon.", FridayAction.FlashlightOff) else FridayResponse("Torch on kar rahi hoon.", FridayAction.FlashlightOn)
@@ -106,12 +102,14 @@ class FridayCommandProcessor {
     }
 
     private fun parseCall(c: String): String? {
+        Regex("^(.+?)\\s+(?:ko|को)\\s+(?:call|phone|dial)(?:\\s+(?:karo|kar|please|करो|कर))?\\s*$", RegexOption.IGNORE_CASE)
+            .find(c)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
         val afterVerb = Regex("^(?:call|phone|dial)\\s+(.+)$", RegexOption.IGNORE_CASE).find(c)?.groupValues?.get(1)?.trim()
         if (!afterVerb.isNullOrBlank()) {
-            val target = afterVerb.replace(Regex("\\s+(?:karo|kar|please)$", RegexOption.IGNORE_CASE), "").trim()
+            val target = afterVerb.replace(Regex("\\s+(?:karo|kar|please|करो|कर)$", RegexOption.IGNORE_CASE), "").trim()
             if (target.isNotBlank() && target.lowercase(Locale.ROOT) !in setOf("karo", "kar", "please")) return target
         }
-        val beforeVerb = Regex("^(.+?)\\s+(?:ko|को\\s+)?(?:call|phone|dial)(?:\\s+(?:karo|kar|please|करो|कर))?\\s*$", RegexOption.IGNORE_CASE)
+        val beforeVerb = Regex("^(.+?)\\s+(?:call|phone|dial)(?:\\s+(?:karo|kar|please|करो|कर))?\\s*$", RegexOption.IGNORE_CASE)
             .find(c)?.groupValues?.get(1)?.trim()
         return beforeVerb?.takeIf { it.isNotBlank() && it.lowercase(Locale.ROOT) !in setOf("karo", "kar", "please") }
     }
