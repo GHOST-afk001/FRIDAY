@@ -1,6 +1,8 @@
 package com.friday.assistant.voice
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
@@ -8,6 +10,7 @@ import java.util.Locale
 /** Female-leaning assistant TTS using voices already installed on the user's phone. */
 class TTSManager(context: Context, private val onUnavailable: () -> Unit) : TextToSpeech.OnInitListener {
     private val lock = Any()
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var tts: TextToSpeech? = TextToSpeech(context.applicationContext, this)
     private var ready = false
     private var destroyed = false
@@ -29,8 +32,8 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
             if (!ready) null else pending.also { pending = null }
         }
         if (!ready) {
-            onUnavailable()
-            queued?.second?.invoke()
+            mainHandler.post { if (!destroyed) onUnavailable() }
+            queued?.second?.let { callback -> mainHandler.post(callback) }
             return
         }
         tts?.setSpeechRate(0.92f)
@@ -47,16 +50,16 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
 
     fun speak(text: String, onDone: () -> Unit = {}) {
         if (text.isBlank()) {
-            onDone()
+            mainHandler.post(onDone)
             return
         }
         synchronized(lock) {
             if (destroyed) {
-                onDone()
+                mainHandler.post(onDone)
                 return
             }
             if (!ready) {
-                pending?.second?.invoke()
+                pending?.second?.let { mainHandler.post(it) }
                 pending = text to onDone
                 return
             }
@@ -67,7 +70,7 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
     private fun speakNow(text: String, onDone: () -> Unit) {
         val engine = synchronized(lock) { if (destroyed || !ready) return else tts }
         if (engine == null) {
-            onDone()
+            mainHandler.post(onDone)
             return
         }
         val hindi = text.any { it in '\u0900'..'\u097F' }
@@ -77,7 +80,7 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
         val utteranceId = "friday-response-${System.nanoTime()}"
         synchronized(lock) {
             if (destroyed) {
-                onDone()
+                mainHandler.post(onDone)
                 return
             }
             completionCallbacks[utteranceId] = onDone
@@ -88,7 +91,7 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
 
     private fun complete(utteranceId: String) {
         val callback = synchronized(lock) { completionCallbacks.remove(utteranceId) }
-        callback?.invoke()
+        callback?.let { mainHandler.post(it) }
     }
 
     fun shutdown() {
@@ -102,7 +105,7 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
             completionCallbacks.clear()
             listOfNotNull(pendingCallback) + activeCallbacks
         }
-        callbacks.forEach { it.invoke() }
+        callbacks.forEach { mainHandler.post(it) }
         tts?.stop()
         tts?.shutdown()
         tts = null
