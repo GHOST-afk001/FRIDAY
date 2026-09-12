@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build-debug-apk:
-    name: Build debug APK
+    name: Build Friday debug APK
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -27,8 +27,8 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK packages
-        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      - name: Install Android 16 SDK
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
 
       - name: Prepare optional offline Hey Friday wake runtime
         shell: bash
@@ -54,7 +54,7 @@ jobs:
           }
           EOF
 
-      - name: Validate Kotlin/Java sources
+      - name: Run unit tests
         run: ./gradlew --no-daemon test
 
       - name: Build debug APK
