@@ -2,6 +2,7 @@ package com.friday.assistant.voice
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -15,7 +16,7 @@ class VoiceManager(context: Context, private val listener: Listener) {
     interface Listener { fun onListening(); fun onResult(text: String); fun onError(message: String) }
 
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val recognizer = if (SpeechRecognizer.isRecognitionAvailable(context)) SpeechRecognizer.createSpeechRecognizer(context) else null
+    private val recognizer = createRecognizer(context)
     private var destroyed = false
 
     init {
@@ -61,6 +62,13 @@ class VoiceManager(context: Context, private val listener: Listener) {
             try { recognizer?.cancel() } catch (_: Exception) {}
             try { recognizer?.destroy() } catch (_: Exception) {}
         }
+    }
+
+    private fun createRecognizer(context: Context): SpeechRecognizer? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
+            return runCatching { SpeechRecognizer.createOnDeviceSpeechRecognizer(context) }.getOrNull()
+        }
+        return if (SpeechRecognizer.isRecognitionAvailable(context)) SpeechRecognizer.createSpeechRecognizer(context) else null
     }
 
     private fun runOnMain(block: () -> Unit) {
