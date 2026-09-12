@@ -33,7 +33,12 @@ class FridayCommandProcessor {
 
         parseMap(command)?.let { return FridayResponse(if (it.second) "Maps mein route khol rahi hoon." else "Maps mein location dikha rahi hoon.", FridayAction.MapQuery(it.first, it.second)) }
         parseCall(command)?.let { target ->
-            val action = if (target.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }) FridayAction.DialNumber(target.filter { it.isDigit() || it == '+' }) else FridayAction.DialContact(target)
+            val compact = target.filter { it.isDigit() || it == '+' }
+            val action = if (compact.length >= 7 && compact.length <= 15 && target.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }) {
+                FridayAction.DialNumber(compact)
+            } else {
+                FridayAction.DialContact(target)
+            }
             return FridayResponse("${target.trim()} ke liye dialer khol rahi hoon.", action, needsConfirmation = true)
         }
         parseSms(command, raw)?.let { (name, message) -> return FridayResponse("Message ready hai. ${name.trim()} ko bhejne se pehle preview dikhati hoon.", FridayAction.SmsContact(name.trim(), message), needsConfirmation = true) }
@@ -49,12 +54,14 @@ class FridayCommandProcessor {
     }
 
     private fun parseAlarm(c: String): Pair<Int, Int>? {
-        if (!c.contains("alarm") && !c.contains("अलार्म") && !c.contains("baje") && !c.contains("wake me")) return null
-        val match = Regex("(\\d{1,2})(?:[:.](\\d{1,2}))?\\s*(am|pm|baje)?").find(c) ?: return null
-        var hour = match.groupValues[1].toIntOrNull() ?: return null
-        val minute = match.groupValues[2].toIntOrNull() ?: 0
-        if (match.groupValues[3] == "pm" && hour < 12) hour += 12
-        if (match.groupValues[3] == "am" && hour == 12) hour = 0
+        if (!(c.contains("alarm") || c.contains("अलार्म") || c.contains("wake me"))) return null
+        val timeMatch = Regex("(?<!\\d)(\\d{1,2})(?:[:.](\\d{1,2}))?\\s*(am|pm)?\\b").find(c) ?: return null
+        var hour = timeMatch.groupValues[1].toIntOrNull() ?: return null
+        val minute = timeMatch.groupValues[2].toIntOrNull() ?: 0
+        val meridiem = timeMatch.groupValues[3]
+        if (meridiem == "pm" && hour < 12) hour += 12
+        if (meridiem == "am" && hour == 12) hour = 0
+        if (meridiem.isBlank() && hour !in 0..23) return null
         return if (hour in 0..23 && minute in 0..59) hour to minute else null
     }
 
@@ -70,16 +77,15 @@ class FridayCommandProcessor {
     }
 
     private fun parseCall(c: String): String? {
-        if (!(c.startsWith("call ") || c.contains("call karo") || c.contains("call kar") || c.contains("phone karo") || c.contains("फोन"))) return null
-        return c.replace(Regex(".*?(?:call karo|call kar|call|phone karo|फोन)\\s*"), "", ignoreCase = true).trim().takeIf { it.isNotBlank() }
+        val marker = Regex("(?:call\\s+(?:karo|kar)?|phone\\s+karo|फोन)").find(c) ?: return null
+        return c.substring(marker.range.last + 1).trim().takeIf { it.isNotBlank() }
     }
 
     private fun parseSms(c: String, raw: String): Pair<String, String>? {
-        val keyword = listOf("message", "text", "sms", "msg", "message karo", "message kar").firstOrNull { c.contains(it) } ?: return null
-        val rest = raw.substringAfter(keyword, "").trim()
+        val rest = Regex("(?:message|text|sms|msg)\\s+(?:karo|kar)?\\s*(.*)", RegexOption.IGNORE_CASE).find(raw)?.groupValues?.get(1)?.trim() ?: return null
         if (rest.isBlank()) return null
-        val toMatch = Regex("(?:to|ko)\\s+([A-Za-z][A-Za-z ]{1,30})\\s+(?:that|ki|bolo|bolna|message|text)?\\s*(.*)", RegexOption.IGNORE_CASE).find(rest)
-        return if (toMatch != null) toMatch.groupValues[1].trim() to toMatch.groupValues[2].trim() else null
+        val toMatch = Regex("^(?:to|ko)\\s+([A-Za-z][A-Za-z ]{1,30}?)(?:\\s+(?:that|ki|bolo|bolna|message|text)\\s+|\\s*[:,;-]\\s*)(.+)$", RegexOption.IGNORE_CASE).find(rest)
+        return toMatch?.groupValues?.let { it[1].trim() to it[2].trim() }
     }
 
     private fun prettyDuration(seconds: Int): String = when { seconds % 3600 == 0 -> "${seconds / 3600} hour"; seconds % 60 == 0 -> "${seconds / 60} minute"; else -> "$seconds second" }
