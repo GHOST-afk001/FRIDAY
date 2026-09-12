@@ -26,6 +26,11 @@ class FridayCommandProcessorTest {
         assertEquals(300, (result.action as FridayAction.Timer).seconds)
     }
 
+    @Test fun hindiTimerCommandProducesSeconds() {
+        val result = processor.process("5 मिनट का टाइमर")
+        assertEquals(300, (result.action as FridayAction.Timer).seconds)
+    }
+
     @Test fun timerCommandRejectsOutOfRangeDuration() {
         val result = processor.process("99999 minutes ka timer")
         assertFalse(result.handledLocally)
@@ -46,8 +51,24 @@ class FridayCommandProcessorTest {
         assertEquals("rahul", (result.action as FridayAction.DialContact).name)
     }
 
+    @Test fun naturalHindiCallCommandRequiresConfirmation() {
+        val result = processor.process("Friday mummy ko call karo")
+        assertTrue(result.needsConfirmation)
+        assertTrue(result.action is FridayAction.DialContact)
+        assertEquals("mummy", (result.action as FridayAction.DialContact).name)
+    }
+
     @Test fun smsCommandRequiresConfirmationAndKeepsMessage() {
         val result = processor.process("message karo to Rahul ki main 10 minute late hoon")
+        assertTrue(result.needsConfirmation)
+        assertTrue(result.action is FridayAction.SmsContact)
+        val sms = result.action as FridayAction.SmsContact
+        assertEquals("Rahul", sms.name)
+        assertEquals("main 10 minute late hoon", sms.message)
+    }
+
+    @Test fun naturalHindiSmsCommandRequiresConfirmationAndKeepsMessage() {
+        val result = processor.process("Friday Rahul ko message karo ki main 10 minute late hoon")
         assertTrue(result.needsConfirmation)
         assertTrue(result.action is FridayAction.SmsContact)
         val sms = result.action as FridayAction.SmsContact
