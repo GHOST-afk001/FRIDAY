@@ -29,17 +29,7 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
         setUiEnabled(false)
         launcher = AppLauncher(appContext)
         processor = FridayCommandProcessor()
-        agent = FridayAgent(appContext)
         tts = TTSManager(appContext) {}
-        voice = VoiceManager(appContext, object : VoiceManager.Listener {
-            override fun onListening() = Unit
-            override fun onResult(text: String) { handle(text) }
-            override fun onError(message: String) {
-                if (!sessionActive.get()) return
-                voice.destroy()
-                respond(message, finish = true)
-            }
-        })
     }
 
     override fun onShow(args: Bundle?, showFlags: Int) {
@@ -48,6 +38,11 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
         sessionActive.set(true)
         interactionGeneration++
         pendingConfirmation = null
+        // VoiceManager and FridayAgent are deliberately recreated per interaction.
+        // cleanupAndResumeWake() destroys/closes them, and a VoiceInteractionSession object
+        // may be shown again by the system after onHide().
+        agent = FridayAgent(appContext)
+        voice = createVoiceManager()
         FridayWakeCoordinator.pauseForSpeech()
         val fromWake = args?.containsKey("friday_wake_confidence") == true
         if (fromWake) {
@@ -57,6 +52,16 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
             voice.start()
         }
     }
+
+    private fun createVoiceManager(): VoiceManager = VoiceManager(appContext, object : VoiceManager.Listener {
+        override fun onListening() = Unit
+        override fun onResult(text: String) { handle(text) }
+        override fun onError(message: String) {
+            if (!sessionActive.get() || cleanedUp.get()) return
+            voice.destroy()
+            respond(message, finish = true)
+        }
+    })
 
     private fun startListeningIfCurrent() {
         if (sessionActive.get() && !cleanedUp.get()) voice.start()
@@ -158,8 +163,12 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
 
     private fun cleanupAndResumeWake() {
         if (!cleanedUp.compareAndSet(false, true)) return
-        try { voice.destroy() } catch (_: Exception) {}
-        try { agent.close() } catch (_: Exception) {}
+        if (::voice.isInitialized) {
+            try { voice.destroy() } catch (_: Exception) {}
+        }
+        if (::agent.isInitialized) {
+            try { agent.close() } catch (_: Exception) {}
+        }
         interactionGeneration++
         mainHandler.removeCallbacksAndMessages(null)
         // The coordinator verifies the wake worker has released AudioRecord; the delay is
