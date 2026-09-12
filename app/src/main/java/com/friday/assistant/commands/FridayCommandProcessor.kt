@@ -111,18 +111,16 @@ class FridayCommandProcessor {
             val target = afterVerb.replace(Regex("\\s+(?:karo|kar|please)$", RegexOption.IGNORE_CASE), "").trim()
             if (target.isNotBlank() && target.lowercase(Locale.ROOT) !in setOf("karo", "kar", "please")) return target
         }
-        val beforeVerb = Regex("^(.+?)\\s+(?:ko\\s+)?(?:call|phone|dial)(?:\\s+(?:karo|kar|please))?\\s*$", RegexOption.IGNORE_CASE)
+        val beforeVerb = Regex("^(.+?)\\s+(?:ko|को\\s+)?(?:call|phone|dial)(?:\\s+(?:karo|kar|please|करो|कर))?\\s*$", RegexOption.IGNORE_CASE)
             .find(c)?.groupValues?.get(1)?.trim()
         return beforeVerb?.takeIf { it.isNotBlank() && it.lowercase(Locale.ROOT) !in setOf("karo", "kar", "please") }
     }
 
     private fun parseSms(c: String, raw: String): Pair<String, String>? {
         val normalizedRaw = raw.trim().replace(Regex("^\\s*(?:hey\\s+)?friday\\b\\s*", RegexOption.IGNORE_CASE), "").trim()
-        // Devanagari names can contain combining marks (\p{M}); matching \p{L} alone
-        // incorrectly rejects names such as "राहुल".
         val forms = listOf(
-            Regex("^(?:message|text|sms|msg)\\s+(?:karo|kar)?\\s*(?:to|ko)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{1,30}?)(?:\\s+(?:that|ki|bolo|bolna|message|text)\\s+|\\s*[:,;-]\\s*)(.+)$", RegexOption.IGNORE_CASE),
-            Regex("^([\\p{L}\\p{M}][\\p{L}\\p{M} ]{1,30}?)\\s+ko\\s+(?:message|text|sms|msg)\\s+(?:karo|kar)?(?:\\s+(?:ki|that|bolo|bolna))?\\s+(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^(?:message|text|sms|msg)\\s+(?:(?:karo|kar|करो|कर))?\\s*(?:to|ko|को)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{1,30}?)(?:\\s+(?:that|ki|कि|bolo|bolna|message|text)\\s+|\\s*[:,;-]\\s*)(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^([\\p{L}\\p{M}][\\p{L}\\p{M} ]{1,30}?)\\s+(?:ko|को)\\s+(?:message|text|sms|msg)\\s+(?:(?:karo|kar|करो|कर))?(?:\\s+(?:ki|कि|that|bolo|bolna))?\\s+(.+)$", RegexOption.IGNORE_CASE),
             Regex("^(?:message|text|sms|msg)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{1,30}?)\\s*[:,;-]\\s*(.+)$", RegexOption.IGNORE_CASE)
         )
         val source = if (normalizedRaw.isNotBlank()) normalizedRaw else c
