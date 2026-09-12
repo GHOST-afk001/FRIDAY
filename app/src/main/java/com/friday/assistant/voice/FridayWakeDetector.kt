@@ -13,19 +13,12 @@ import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 
-/**
- * Offline wake-word bridge.
- *
- * The actual classifier is the open-source Voicute ONNX wake-word runtime, fetched by CI
- * from its public repository and compiled into the APK. Reflection keeps the core app buildable
- * even when the optional runtime/model is not present locally.
- */
+/** Offline custom-wake bridge. The optional classifier is fetched and bundled by CI. */
 class FridayWakeDetector(
     private val context: Context,
     private val onWake: (Float) -> Unit
 ) {
     companion object { private const val TAG = "FridayWakeDetector" }
-
     private val running = AtomicBoolean(false)
     private var thread: Thread? = null
     private var recorder: AudioRecord? = null
@@ -38,41 +31,26 @@ class FridayWakeDetector(
     fun stop() {
         running.set(false)
         try { recorder?.stop() } catch (_: Exception) {}
-        recorder?.release()
-        recorder = null
-        thread?.interrupt()
-        thread = null
+        recorder?.release(); recorder = null
+        thread?.interrupt(); thread = null
     }
 
     private fun loop() {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             running.set(false); return
         }
-
         try {
             val engineClass = Class.forName("com.voicute.wakeword.WakeWordEngine")
             val engine = engineClass.getConstructor(Context::class.java).newInstance(context)
-            val isLoaded = engineClass.getMethod("isLoaded").invoke(engine) as? Boolean ?: false
-            if (!isLoaded) {
-                Log.w(TAG, "Wake model unavailable; assistant invocation remains available.")
+            if (!(engineClass.getMethod("isLoaded").invoke(engine) as? Boolean ?: false)) {
+                Log.w(TAG, "Wake model unavailable; system assistant invocation remains available.")
                 running.set(false); return
             }
-            val needed = max(16080, (engineClass.getMethod("getAudioSamplesNeeded").invoke(engine) as? Int ?: 16080))
+            val needed = max(16080, engineClass.getMethod("getAudioSamplesNeeded").invoke(engine) as? Int ?: 16080)
             val process: Method = engineClass.getMethod("process", ShortArray::class.java)
-
-            val minBuffer = AudioRecord.getMinBufferSize(
-                16000,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT
-            )
-            val bufferSize = max(minBuffer, needed * 2)
-            val localRecorder = AudioRecord(
-                MediaRecorder.AudioSource.VOICE_RECOGNITION,
-                16000,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-                bufferSize
-            )
+            val minBuffer = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+            val localRecorder = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, 16000,
+                AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, max(minBuffer, needed * 2))
             recorder = localRecorder
             localRecorder.startRecording()
 
@@ -84,19 +62,19 @@ class FridayWakeDetector(
             while (running.get()) {
                 val read = localRecorder.read(chunk, 0, chunk.size, AudioRecord.READ_BLOCKING)
                 if (read <= 0) continue
-                for (i in 0 until read) {
-                    if (ringCount < ring.size) {
-                        ring[ringCount++] = chunk[i]
-                    } else {
-                        System.arraycopy(ring, 1600, ring, 0, ring.size - 1600)
-                        ring[ring.size - 1600] = chunk[i]
-                        // refill the tail with the remaining chunk below
-                        for (j in i + 1 until read) {
-                            System.arraycopy(ring, 1600, ring, 0, ring.size - 1600)
-                            ring[ring.size - 1600] = chunk[j]
-                        }
-                        break
+                if (ringCount < ring.size) {
+                    val copy = minOf(read, ring.size - ringCount)
+                    System.arraycopy(chunk, 0, ring, ringCount, copy)
+                    ringCount += copy
+                    if (copy < read) {
+                        val remaining = read - copy
+                        System.arraycopy(ring, remaining, ring, 0, ring.size - remaining)
+                        System.arraycopy(chunk, copy, ring, ring.size - remaining, remaining)
                     }
+                } else {
+                    val keep = minOf(read, ring.size)
+                    if (keep < ring.size) System.arraycopy(ring, keep, ring, 0, ring.size - keep)
+                    System.arraycopy(chunk, read - keep, ring, ring.size - keep, keep)
                 }
                 if (ringCount < ring.size) continue
 
@@ -105,10 +83,7 @@ class FridayWakeDetector(
                 val probability = result.javaClass.getField("probability").getFloat(result)
                 if (word.contains("friday", ignoreCase = true) && probability >= 0.55f) {
                     val now = SystemClock.elapsedRealtime()
-                    if (now - lastWake > 1800) {
-                        lastWake = now
-                        onWake(probability)
-                    }
+                    if (now - lastWake > 1800) { lastWake = now; onWake(probability) }
                 }
             }
         } catch (e: ClassNotFoundException) {
