@@ -55,6 +55,12 @@ class VoiceManager(context: Context, private val listener: Listener) {
         }
     }
 
+    /** Cancel the current capture but keep the recognizer reusable for another tap. */
+    fun cancel() {
+        if (destroyed) return
+        runOnMain { try { recognizer?.cancel() } catch (_: Exception) {} }
+    }
+
     fun destroy() {
         if (destroyed) return
         destroyed = true
