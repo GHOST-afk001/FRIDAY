@@ -35,6 +35,8 @@ class FridayWakeDetector(
         thread = Thread({ loop() }, "friday-wake-detector").also { it.start() }
     }
 
+    fun isRunning(): Boolean = running.get()
+
     fun stop() {
         running.set(false)
         try { recorder?.stop() } catch (_: Exception) {}
@@ -63,11 +65,7 @@ class FridayWakeDetector(
 
             val needed = max(16080, engineClass.getMethod("getAudioSamplesNeeded").invoke(engine) as? Int ?: 16080)
             val process: Method = engineClass.getMethod("process", ShortArray::class.java)
-            val minBuffer = AudioRecord.getMinBufferSize(
-                SAMPLE_RATE,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT
-            )
+            val minBuffer = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
             if (minBuffer <= 0) error("Invalid AudioRecord minimum buffer: $minBuffer")
 
             val format = AudioFormat.Builder()
@@ -90,9 +88,7 @@ class FridayWakeDetector(
 
             recorder = localRecorder
             localRecorder.startRecording()
-            if (localRecorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
-                error("AudioRecord failed to start")
-            }
+            if (localRecorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) error("AudioRecord failed to start")
 
             val ring = ShortArray(needed)
             var writeIndex = 0
@@ -133,7 +129,7 @@ class FridayWakeDetector(
                 val result = process.invoke(engine, frame) ?: continue
                 val word = result.javaClass.getField("wakeWord").get(result) as? String ?: ""
                 val probability = result.javaClass.getField("probability").getFloat(result)
-                val requiredFrames = (result.javaClass.getField("recommendedConsFrames").getInt(result)).coerceIn(1, 8)
+                val requiredFrames = result.javaClass.getField("recommendedConsFrames").getInt(result).coerceIn(1, 8)
 
                 if (word.contains("friday", ignoreCase = true) && probability >= THRESHOLD) {
                     if (word.equals(consecutiveWord, ignoreCase = true)) consecutiveCount++
@@ -142,8 +138,6 @@ class FridayWakeDetector(
                         consecutiveCount = 1
                     }
                 } else {
-                    // A short gap is not enough to create a trigger; a new positive
-                    // sequence must build its own consecutive-frame evidence.
                     consecutiveWord = ""
                     consecutiveCount = 0
                 }
