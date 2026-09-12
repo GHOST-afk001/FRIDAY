@@ -9,10 +9,16 @@ import java.net.URL
 class GeminiProvider(context: Context) {
     private val keyStore = SecureApiKeyStore(context)
     private val model = "gemini-2.5-flash"
+    @Volatile private var activeConnection: HttpURLConnection? = null
 
     fun isConfigured(): Boolean = !keyStore.read().isNullOrBlank()
     fun setApiKey(key: String) = keyStore.save(key.trim())
     fun clearApiKey() = keyStore.clear()
+
+    /** Interrupt the currently running HTTP request, if any. */
+    fun cancel() {
+        activeConnection?.disconnect()
+    }
 
     fun ask(prompt: String, history: List<Pair<String, String>> = emptyList()): Result<String> {
         val apiKey = keyStore.read() ?: return Result.failure(IllegalStateException("Gemini API key is not configured."))
@@ -30,8 +36,7 @@ class GeminiProvider(context: Context) {
                 .put("contents", contents)
                 .put("generationConfig", JSONObject().put("temperature", 0.55).put("maxOutputTokens", 900))
 
-            val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
-            val connection = (url.openConnection() as HttpURLConnection).apply {
+            val connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 12000
                 readTimeout = 30000
@@ -40,12 +45,13 @@ class GeminiProvider(context: Context) {
                 setRequestProperty("x-goog-api-key", apiKey)
                 setRequestProperty("Cache-Control", "no-store")
             }
+            activeConnection = connection
             try {
                 connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
                 val code = connection.responseCode
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
                 val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (code !in 200..299) error("Gemini HTTP $code: $response")
+                if (code !in 200..299) error("Gemini HTTP $code")
                 val root = JSONObject(response)
                 val candidates = root.optJSONArray("candidates") ?: error("Gemini returned no candidates")
                 val text = candidates.getJSONObject(0).optJSONObject("content")
@@ -53,6 +59,7 @@ class GeminiProvider(context: Context) {
                 if (text.isBlank()) error("Gemini returned an empty response")
                 text.trim()
             } finally {
+                if (activeConnection === connection) activeConnection = null
                 connection.disconnect()
             }
         }
