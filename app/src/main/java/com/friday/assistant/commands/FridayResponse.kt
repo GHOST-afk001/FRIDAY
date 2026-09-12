@@ -22,6 +22,7 @@ sealed interface FridayAction {
     data object VolumeDown : FridayAction
     data class Timer(val seconds: Int) : FridayAction
     data class Alarm(val hour: Int, val minute: Int) : FridayAction
+    data class AlarmAfter(val seconds: Int) : FridayAction
     data class MapQuery(val query: String, val navigation: Boolean = false) : FridayAction
     data class DialNumber(val number: String) : FridayAction
     data class DialContact(val name: String) : FridayAction
