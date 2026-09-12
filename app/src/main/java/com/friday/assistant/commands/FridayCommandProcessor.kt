@@ -74,7 +74,7 @@ class FridayCommandProcessor {
         if (!(c.contains("alarm") || c.contains("अलार्म") || c.contains("wake me"))) return null
 
         val relative = Regex("(?:alarm|अलार्म)\\s+(?:after|in|me|mein|baad|ke baad|में|बाद)\\s+(\\d+)\\s*(hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs|घंटा|घंटे|मिनट|सेकंड)", RegexOption.IGNORE_CASE).find(c)
-            ?: Regex("(?:alarm|अलार्म)\\s+(\\d+)\\s*(?:minutes?|mins?|minute|seconds?|secs?|second|hours?|hrs?|hour|मिनट|सेकंड|घंटा|घंटे)\\s*(?:baad|later|में|बाद)", RegexOption.IGNORE_CASE).find(c)
+            ?: Regex("(?:alarm|अलार्म)\\s+(\\d+)\\s*(hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs|घंटा|घंटे|मिनट|सेकंड)\\s*(?:baad|later|mein|में|बाद)", RegexOption.IGNORE_CASE).find(c)
         if (relative != null) {
             val value = relative.groupValues[1].toLongOrNull() ?: return null
             val unit = relative.groupValues[2].lowercase(Locale.ROOT)
