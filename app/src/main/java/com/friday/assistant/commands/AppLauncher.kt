@@ -6,13 +6,14 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.media.AudioManager
 import android.net.Uri
 import android.provider.AlarmClock
 import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.provider.Settings
-import android.media.AudioManager
 import androidx.core.content.ContextCompat
+import java.util.Calendar
 
 /** Executes only public Android intents/APIs and reports whether the hand-off succeeded. */
 class AppLauncher(private val context: Context) {
@@ -39,6 +40,14 @@ class AppLauncher(private val context: Context) {
                 putExtra(AlarmClock.EXTRA_MINUTES, action.minute)
                 putExtra(AlarmClock.EXTRA_SKIP_UI, true)
             })
+            is FridayAction.AlarmAfter -> {
+                val target = Calendar.getInstance().apply { add(Calendar.SECOND, action.seconds) }
+                start(Intent(AlarmClock.ACTION_SET_ALARM).apply {
+                    putExtra(AlarmClock.EXTRA_HOUR, target.get(Calendar.HOUR_OF_DAY))
+                    putExtra(AlarmClock.EXTRA_MINUTES, target.get(Calendar.MINUTE))
+                    putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                })
+            }
             is FridayAction.MapQuery -> {
                 val uri = if (action.navigation) Uri.parse("google.navigation:q=${Uri.encode(action.query)}")
                 else Uri.parse("geo:0,0?q=${Uri.encode(action.query)}")
