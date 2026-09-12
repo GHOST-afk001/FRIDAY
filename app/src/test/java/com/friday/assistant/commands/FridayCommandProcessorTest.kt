@@ -51,6 +51,11 @@ class FridayCommandProcessorTest {
         assertEquals("rahul", (result.action as FridayAction.DialContact).name)
     }
 
+    @Test fun incompleteCallCommandDoesNotInventContact() {
+        val result = processor.process("call karo")
+        assertFalse(result.handledLocally)
+    }
+
     @Test fun naturalHindiCallCommandRequiresConfirmation() {
         val result = processor.process("Friday mummy ko call karo")
         assertTrue(result.needsConfirmation)
@@ -74,6 +79,15 @@ class FridayCommandProcessorTest {
         val sms = result.action as FridayAction.SmsContact
         assertEquals("Rahul", sms.name)
         assertEquals("main 10 minute late hoon", sms.message)
+    }
+
+    @Test fun unicodeSmsContactNameIsPreserved() {
+        val result = processor.process("राहुल को message करो कि मैं 10 minute late hoon")
+        assertTrue(result.needsConfirmation)
+        assertTrue(result.action is FridayAction.SmsContact)
+        val sms = result.action as FridayAction.SmsContact
+        assertEquals("राहुल", sms.name)
+        assertEquals("मैं 10 minute late hoon", sms.message)
     }
 
     @Test fun unknownTaskHandsOffToAi() {
