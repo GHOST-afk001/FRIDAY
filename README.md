@@ -21,7 +21,7 @@ FRIDAY V2 targets Android 16 (API 36) and uses Android Gradle Plugin 8.11.x / Gr
 
 ## Important Android reality
 
-A third-party Android app cannot guarantee unrestricted microphone access forever. The most reliable system path is to become the user's selected Assistant app. Android controls background microphone/audio access and may impose additional Samsung/One UI battery restrictions. Android's selected `VoiceInteractionService` is intended to remain available for hotwording, while heavier interaction work belongs in the session service. citeturn0search0turn0search5
+A third-party Android app cannot guarantee unrestricted microphone access forever. The most reliable system path is to become the user's selected Assistant app. Android controls background microphone/audio access and may impose additional Samsung/One UI battery restrictions. Android's selected `VoiceInteractionService` is intended to remain available for hotwording, while heavier interaction work belongs in the session service.
 
 The critical FRIDAY rule is **one microphone owner at a time**:
 
@@ -42,11 +42,11 @@ WAKE_LISTENING
   ONNX AudioRecord owns mic again
 ```
 
-Android documents that multiple microphone captures can be muted/compete according to audio-input priority, so relying on accidental concurrent capture is not a valid design. `SpeechRecognizer` must also be destroyed when no longer needed. citeturn0search3turn0search11
+Android can mute competing microphone captures according to audio-input priority, so relying on accidental concurrent capture is not a valid design. `SpeechRecognizer` must also be destroyed when no longer needed.
 
 ## Battery / Samsung behavior
 
-FRIDAY now checks whether Android has placed the app on the battery-optimization allowlist and exposes a user-facing battery/background settings entry. A direct `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` flow is only used when the required manifest permission is present; otherwise FRIDAY safely opens the general battery optimization settings. This is an optional reliability aid, not a substitute for correct VoiceInteraction lifecycle handling. Android explicitly notes that most apps should prefer normal platform power-management facilities and that battery exemptions can increase battery use. citeturn3search0turn3search1
+FRIDAY now checks whether Android has placed the app on the battery-optimization allowlist and exposes a user-facing battery/background settings entry. A direct `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` flow is only used when the required manifest permission is present; otherwise FRIDAY safely opens the general battery optimization settings. This is an optional reliability aid, not a substitute for correct VoiceInteraction lifecycle handling.
 
 ## Build
 
