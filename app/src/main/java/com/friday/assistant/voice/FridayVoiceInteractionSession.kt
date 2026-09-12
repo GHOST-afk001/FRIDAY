@@ -43,12 +43,10 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
         agent = FridayAgent(appContext)
         voice = createVoiceManager()
         FridayWakeCoordinator.pauseForSpeech()
-        val fromWake = args?.containsKey("friday_wake_confidence") == true
-        if (fromWake) {
-            tts.speak("Yes Boss.") { mainHandler.post { startListeningIfCurrent() } }
-        } else {
-            voice.start()
-        }
+
+        // Do not speak a fixed wake acknowledgement. It used to become the repeated line
+        // the user heard and also delayed the first real command. Go straight to listening.
+        startListeningIfCurrent()
     }
 
     private fun createVoiceManager(): VoiceManager = VoiceManager(appContext, object : VoiceManager.Listener {
@@ -56,7 +54,6 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
         override fun onResult(text: String) { handle(text) }
         override fun onError(message: String) {
             if (!sessionActive.get() || cleanedUp.get()) return
-            voice.destroy()
             respond(message, finish = true)
         }
     })
@@ -68,7 +65,16 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
     private fun handle(text: String) {
         if (!sessionActive.get() || cleanedUp.get()) return
         val currentGeneration = ++interactionGeneration
-        voice.destroy()
+
+        // Keep the recognizer reusable between turns. Destroying it here was the main reason
+        // a hands-free session stopped after one utterance and forced a microphone tap again.
+        voice.cancel()
+
+        if (shouldEndConversation(text)) {
+            pendingConfirmation = null
+            respond("Okay Boss. Hands-free session ended.", finish = true)
+            return
+        }
 
         pendingConfirmation?.let { pending ->
             when (normalizeConfirmation(text)) {
@@ -77,12 +83,12 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
                     when (val outcome = policy.validate(pending)) {
                         is ActionPolicyValidator.Outcome.Approved -> execute(outcome.action)
                         is ActionPolicyValidator.Outcome.RequiresConfirmation -> execute(outcome.action)
-                        is ActionPolicyValidator.Outcome.Rejected -> respond(outcome.reason, finish = true)
+                        is ActionPolicyValidator.Outcome.Rejected -> respond(outcome.reason, finish = false)
                     }
                 }
                 false -> {
                     pendingConfirmation = null
-                    respond("Okay Boss, cancelled.", finish = true)
+                    respond("Okay Boss, cancelled.", finish = false)
                 }
                 null -> {
                     respond("I didn't get a yes or no, Boss. The action is still waiting for confirmation.", finish = false)
@@ -110,10 +116,10 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
                         scheduleConfirmationExpiry(currentGeneration)
                         respond("${local.text} ${outcome.prompt} Say yes or no, Boss.", finish = false)
                     }
-                    is ActionPolicyValidator.Outcome.Rejected -> respond(outcome.reason, finish = true)
+                    is ActionPolicyValidator.Outcome.Rejected -> respond(outcome.reason, finish = false)
                 }
             } else {
-                respond(local.text, finish = true)
+                respond(local.text, finish = false)
             }
             return
         }
@@ -121,30 +127,38 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
         agent.handle(text) { answer, _ ->
             mainHandler.post {
                 if (!sessionActive.get() || cleanedUp.get() || interactionGeneration != currentGeneration) return@post
-                respond(answer, finish = true)
+                respond(answer, finish = false)
             }
         }
     }
 
     private fun execute(action: FridayAction, successText: String = "Done, Boss.") {
-        if (launcher.launch(action)) respond(successText, finish = true)
-        else respond("I couldn't complete that action on this phone, Boss.", finish = true)
+        if (launcher.launch(action)) respond(successText, finish = false)
+        else respond("I couldn't complete that action on this phone, Boss.", finish = false)
     }
 
     private fun scheduleConfirmationExpiry(generation: Long) {
         mainHandler.postDelayed({
             if (sessionActive.get() && interactionGeneration == generation && pendingConfirmation != null) {
                 pendingConfirmation = null
-                respond("Confirmation timed out, Boss. I didn't perform the action.", finish = true)
+                respond("Confirmation timed out, Boss. I didn't perform the action.", finish = false)
             }
         }, 45_000L)
     }
 
     private fun normalizeConfirmation(text: String): Boolean? {
         val value = text.trim().lowercase(Locale.ROOT)
-        if (value in setOf("yes", "haan", "ha", "han", "okay", "ok", "kar do", "do it", "sure")) return true
-        if (value in setOf("no", "nahi", "nahin", "cancel", "mat karo", "don't", "nope")) return false
+        if (value in setOf("yes", "haan", "ha", "han", "okay", "ok", "kar do", "do it", "sure", "ji")) return true
+        if (value in setOf("no", "nahi", "nahin", "cancel", "mat karo", "don't", "nope", "nahi karo")) return false
         return null
+    }
+
+    private fun shouldEndConversation(text: String): Boolean {
+        val value = text.trim().lowercase(Locale.ROOT)
+        return value in setOf(
+            "stop", "stop friday", "goodbye", "bye", "good night", "bas", "bas friday",
+            "band ho jao", "band karo", "hands free off", "handsfree off", "standby"
+        )
     }
 
     private fun respond(text: String, finish: Boolean) {
@@ -155,7 +169,8 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
                 if (finish) {
                     sessionActive.set(false)
                     finish()
-                } else if (pendingConfirmation != null) {
+                } else {
+                    // Continuous conversation: after FRIDAY speaks, immediately reopen STT.
                     startListeningIfCurrent()
                 }
             }
