@@ -72,13 +72,18 @@ object FridayWakeCoordinator {
         if (serviceRef?.get() == null) return
         val callbackGeneration = generation
         detector = FridayWakeDetector(context) { confidence ->
+            var accepted = false
             synchronized(lock) {
-                if (!wakeEnabled || generation != callbackGeneration) return@FridayWakeDetector
-                wakeEnabled = false
-                generation++
-                detector?.stop()
-                detector = null
+                if (wakeEnabled && generation == callbackGeneration) {
+                    accepted = true
+                    wakeEnabled = false
+                    generation++
+                    detector?.stop()
+                    detector = null
+                }
             }
+            if (!accepted) return@FridayWakeDetector
+
             // Give AudioRecord's release/finally path time to complete before the
             // system SpeechRecognizer is allowed to request the microphone.
             mainHandler.postDelayed({
