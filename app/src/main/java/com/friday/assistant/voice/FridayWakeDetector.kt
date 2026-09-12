@@ -11,6 +11,8 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import java.lang.reflect.Method
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 
@@ -29,16 +31,26 @@ class FridayWakeDetector(
 
     private val running = AtomicBoolean(false)
     private val wakeDelivered = AtomicBoolean(false)
-    private var thread: Thread? = null
-    private var recorder: AudioRecord? = null
+    @Volatile private var thread: Thread? = null
+    @Volatile private var recorder: AudioRecord? = null
+    @Volatile private var stoppedLatch: CountDownLatch? = null
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
         wakeDelivered.set(false)
+        stoppedLatch = CountDownLatch(1)
         thread = Thread({ loop() }, "friday-wake-detector").also { it.start() }
     }
 
     fun isRunning(): Boolean = running.get()
+
+    /** Signal shutdown and wait from a non-detector thread when mic handoff must be strict. */
+    fun stopAndWait(timeoutMs: Long = 1500L) {
+        stop()
+        if (Thread.currentThread() !== thread) {
+            stoppedLatch?.await(timeoutMs, TimeUnit.MILLISECONDS)
+        }
+    }
 
     fun stop() {
         running.set(false)
@@ -46,7 +58,6 @@ class FridayWakeDetector(
         try { recorder?.release() } catch (_: Exception) {}
         recorder = null
         thread?.interrupt()
-        thread = null
     }
 
     private fun loop() {
@@ -94,6 +105,7 @@ class FridayWakeDetector(
             if (localRecorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) error("AudioRecord failed to start")
 
             val ring = ShortArray(needed)
+            val frame = ShortArray(needed)
             var writeIndex = 0
             var filled = 0
             var lastWake = 0L
@@ -119,14 +131,12 @@ class FridayWakeDetector(
 
                 if (filled < ring.size || !running.get()) continue
 
-                val frame = if (writeIndex == 0) {
-                    ring.copyOf()
+                if (writeIndex == 0) {
+                    System.arraycopy(ring, 0, frame, 0, ring.size)
                 } else {
-                    ShortArray(ring.size).also {
-                        val tail = ring.size - writeIndex
-                        System.arraycopy(ring, writeIndex, it, 0, tail)
-                        System.arraycopy(ring, 0, it, tail, writeIndex)
-                    }
+                    val tail = ring.size - writeIndex
+                    System.arraycopy(ring, writeIndex, frame, 0, tail)
+                    System.arraycopy(ring, 0, frame, tail, writeIndex)
                 }
 
                 val result = process.invoke(engine, frame) ?: continue
@@ -168,6 +178,7 @@ class FridayWakeDetector(
             recorder = null
             try { engineClass?.getMethod("close")?.invoke(engine) } catch (_: Exception) {}
             running.set(false)
+            stoppedLatch?.countDown()
         }
     }
 }
