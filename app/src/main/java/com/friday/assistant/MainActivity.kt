@@ -84,12 +84,18 @@ class MainActivity : ComponentActivity() {
             voiceManager = VoiceManager(applicationContext, object : VoiceManager.Listener {
                 override fun onListening() { status = "Listening..." }
                 override fun onResult(text: String) {
+                    // Stop microphone capture before FRIDAY speaks or launches an action.
+                    voiceManager.cancel()
                     recognized = text
                     val local = localProcessor.process(text)
                     if (local.handledLocally) {
                         response = local.text
-                        ttsManager.speak(local.text)
-                        local.action?.let { if (!appLauncher.launch(it)) { response = "I couldn't complete that action on this phone."; ttsManager.speak(response) } }
+                        local.action?.let {
+                            if (!appLauncher.launch(it)) {
+                                response = "I couldn't complete that action on this phone."
+                            }
+                        }
+                        ttsManager.speak(response)
                     } else {
                         status = "Thinking..."
                         agent.handle(text) { answer, _ ->
@@ -100,7 +106,10 @@ class MainActivity : ComponentActivity() {
                     }
                     status = powerStatus()
                 }
-                override fun onError(message: String) { status = message }
+                override fun onError(message: String) {
+                    voiceManager.cancel()
+                    status = message
+                }
             })
             onDispose { statusUpdater = null; voiceManager.destroy(); ttsManager.shutdown() }
         }
