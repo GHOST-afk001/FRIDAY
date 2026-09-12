@@ -1,10 +1,13 @@
 package com.friday.assistant.voice
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.service.voice.VoiceInteractionSession
 import com.friday.assistant.ai.FridayAgent
 import com.friday.assistant.commands.AppLauncher
 import com.friday.assistant.commands.FridayCommandProcessor
+import java.util.concurrent.atomic.AtomicBoolean
 
 class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInteractionSession(appContext) {
     private lateinit var voice: VoiceManager
@@ -12,6 +15,8 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
     private lateinit var launcher: AppLauncher
     private lateinit var processor: FridayCommandProcessor
     private lateinit var agent: FridayAgent
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val cleanedUp = AtomicBoolean(false)
 
     override fun onCreate() {
         super.onCreate()
@@ -29,6 +34,8 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
 
     override fun onShow(args: android.os.Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
+        // Manual assistant invocations also need exclusive microphone ownership.
+        FridayWakeCoordinator.pauseForSpeech()
         voice.start()
     }
 
@@ -49,14 +56,21 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
     }
 
     override fun onHide() {
-        try { voice.destroy() } catch (_: Exception) {}
-        finish()
+        cleanupAndResumeWake()
         super.onHide()
     }
 
     override fun onDestroy() {
-        try { voice.destroy() } catch (_: Exception) {}
+        cleanupAndResumeWake()
         try { tts.shutdown() } catch (_: Exception) {}
         super.onDestroy()
+    }
+
+    private fun cleanupAndResumeWake() {
+        if (!cleanedUp.compareAndSet(false, true)) return
+        try { voice.destroy() } catch (_: Exception) {}
+        // Give the system speech service a short window to release its input device
+        // before the local ONNX AudioRecord is opened again.
+        mainHandler.postDelayed({ FridayWakeCoordinator.resumeAfterSpeech() }, 250L)
     }
 }
