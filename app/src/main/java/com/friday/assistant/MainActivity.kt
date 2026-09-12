@@ -73,12 +73,14 @@ class MainActivity : ComponentActivity() {
         var response by remember { mutableStateOf("Hello Boss. Main Friday hoon. Say 'Hey Friday' when hands-free mode is enabled.") }
         var showKeyDialog by remember { mutableStateOf(false) }
         var apiKey by remember { mutableStateOf("") }
+        var onlineBrain by remember { mutableStateOf(false) }
         val appLauncher = remember { AppLauncher(applicationContext) }
         val localProcessor = remember { processor }
         SideEffect { statusUpdater = { status = it } }
 
         DisposableEffect(Unit) {
             agent = FridayAgent(applicationContext)
+            onlineBrain = agent.hasApiKey()
             ttsManager = TTSManager(applicationContext) { status = "Text-to-speech is unavailable on this device." }
             voiceManager = VoiceManager(applicationContext, object : VoiceManager.Listener {
                 override fun onListening() { status = "Listening..." }
@@ -125,7 +127,7 @@ class MainActivity : ComponentActivity() {
                     Box(Modifier.size(190.dp).clip(CircleShape).background(Color(0xFF07121B)).border(2.dp, Color(0xFF39E7FF), CircleShape), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("◉", color = Color(0xFF39E7FF), fontSize = 54.sp)
-                            Text("ONLINE", color = Color(0xFF9FEFFF), fontSize = 12.sp, letterSpacing = 3.sp)
+                            Text(if (onlineBrain) "ONLINE AI" else "LOCAL CORE", color = Color(0xFF9FEFFF), fontSize = 12.sp, letterSpacing = 3.sp)
                         }
                     }
                     Spacer(Modifier.height(22.dp))
@@ -151,8 +153,8 @@ class MainActivity : ComponentActivity() {
                 onDismissRequest = { showKeyDialog = false },
                 title = { Text("Online AI brain") },
                 text = { Column { Text("Optional Gemini API key. It is encrypted with Android Keystore and is not bundled into the APK."); Spacer(Modifier.height(12.dp)); OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, label = { Text("Gemini API key") }, visualTransformation = PasswordVisualTransformation()) } },
-                confirmButton = { TextButton(onClick = { agent.configureApiKey(apiKey); apiKey = ""; showKeyDialog = false; response = "Online brain configured, Boss." }) { Text("SAVE") } },
-                dismissButton = { TextButton(onClick = { agent.clearApiKey(); showKeyDialog = false }) { Text("CLEAR") } }
+                confirmButton = { TextButton(onClick = { agent.configureApiKey(apiKey); onlineBrain = agent.hasApiKey(); apiKey = ""; showKeyDialog = false; response = if (onlineBrain) "Online brain configured, Boss." else "No valid online brain key is configured." }) { Text("SAVE") } },
+                dismissButton = { TextButton(onClick = { agent.clearApiKey(); onlineBrain = false; showKeyDialog = false }) { Text("CLEAR") } }
             )
         }
     }
