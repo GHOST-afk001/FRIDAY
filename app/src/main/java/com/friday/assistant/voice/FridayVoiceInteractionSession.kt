@@ -26,9 +26,16 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
         agent = FridayAgent(appContext)
         tts = TTSManager(appContext) {}
         voice = VoiceManager(appContext, object : VoiceManager.Listener {
-            override fun onListening() { tts.speak("Yes Boss.") }
+            override fun onListening() {
+                // Do not speak while SpeechRecognizer owns the microphone; TTS audio
+                // can be captured as input and contaminate the user's command.
+            }
             override fun onResult(text: String) { handle(text) }
-            override fun onError(message: String) { tts.speak(message); finish() }
+            override fun onError(message: String) {
+                voice.destroy()
+                tts.speak(message)
+                finish()
+            }
         })
     }
 
@@ -40,6 +47,8 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
     }
 
     private fun handle(text: String) {
+        // Release speech capture before FRIDAY speaks or executes the next step.
+        voice.destroy()
         val local = processor.process(text)
         if (local.handledLocally) {
             if (local.action != null) {
