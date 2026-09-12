@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.friday.assistant.ai.FridayAgent
 import com.friday.assistant.commands.AppLauncher
+import com.friday.assistant.commands.FridayAction
 import com.friday.assistant.commands.FridayCommandProcessor
 import com.friday.assistant.power.FridayPowerManager
 import com.friday.assistant.voice.TTSManager
@@ -74,6 +75,7 @@ class MainActivity : ComponentActivity() {
         var showKeyDialog by remember { mutableStateOf(false) }
         var apiKey by remember { mutableStateOf("") }
         var onlineBrain by remember { mutableStateOf(false) }
+        var pendingConfirmation by remember { mutableStateOf<FridayAction?>(null) }
         val appLauncher = remember { AppLauncher(applicationContext) }
         val localProcessor = remember { processor }
         SideEffect { statusUpdater = { status = it } }
@@ -87,11 +89,46 @@ class MainActivity : ComponentActivity() {
                 override fun onResult(text: String) {
                     voiceManager.cancel()
                     recognized = text
+
+                    val pending = pendingConfirmation
+                    if (pending != null) {
+                        val normalized = text.trim().lowercase()
+                        when {
+                            normalized.matches(Regex("^(yes|yeah|yep|haan|ha|ji|confirm|do it|kar do)$")) -> {
+                                pendingConfirmation = null
+                                val ok = appLauncher.launch(pending)
+                                response = if (ok) "Done, Boss." else "I couldn't complete that action on this phone."
+                                status = powerStatus()
+                                ttsManager.speak(response)
+                            }
+                            normalized.matches(Regex("^(no|nope|nah|nahi|नहीं|cancel|mat karo)$")) -> {
+                                pendingConfirmation = null
+                                response = "Okay Boss, cancelled."
+                                status = powerStatus()
+                                ttsManager.speak(response)
+                            }
+                            else -> {
+                                response = "Boss, please say yes or no."
+                                status = "Confirmation required"
+                                ttsManager.speak(response)
+                            }
+                        }
+                        return
+                    }
+
                     val local = localProcessor.process(text)
                     if (local.handledLocally) {
                         response = local.text
-                        local.action?.let { if (!appLauncher.launch(it)) response = "I couldn't complete that action on this phone." }
-                        ttsManager.speak(response)
+                        val action = local.action
+                        if (action != null && local.needsConfirmation) {
+                            pendingConfirmation = action
+                            status = "Confirmation required"
+                            ttsManager.speak(response)
+                        } else {
+                            action?.let { if (!appLauncher.launch(it)) response = "I couldn't complete that action on this phone." }
+                            status = powerStatus()
+                            ttsManager.speak(response)
+                        }
                     } else {
                         status = "Thinking..."
                         agent.handle(text) { answer, _ ->
@@ -127,7 +164,7 @@ class MainActivity : ComponentActivity() {
                     Box(Modifier.size(190.dp).clip(CircleShape).background(Color(0xFF07121B)).border(2.dp, Color(0xFF39E7FF), CircleShape), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("◉", color = Color(0xFF39E7FF), fontSize = 54.sp)
-                            Text(if (onlineBrain) "ONLINE AI" else "LOCAL CORE", color = Color(0xFF9FEFFF), fontSize = 12.sp, letterSpacing = 3.sp)
+                            Text(if (onlineBrain) "AI READY" else "LOCAL CORE", color = Color(0xFF9FEFFF), fontSize = 12.sp, letterSpacing = 3.sp)
                         }
                     }
                     Spacer(Modifier.height(22.dp))
