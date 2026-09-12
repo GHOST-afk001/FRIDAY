@@ -7,6 +7,7 @@ import com.friday.assistant.commands.FridayCommandProcessor
 import com.friday.assistant.core.AutonomousBrain
 import com.friday.assistant.core.FridayCompanion
 import com.friday.assistant.core.Emotion
+import com.friday.assistant.runtime.FridayRuntime
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicLong
@@ -35,16 +36,20 @@ class FridayAgent(context: Context) {
 
     fun handle(input: String, callback: (String, Boolean) -> Unit) {
         if (closed) return
+        FridayRuntime.update("UNDERSTANDING", "Interpreting your request", true)
         val localResult = local.process(input)
         if (localResult.handledLocally) {
             remember("user", input)
             remember("assistant", localResult.text)
+            FridayRuntime.update("ACTION READY", localResult.text.take(100), true)
             if (!closed) callback(localResult.text, true)
             return
         }
 
+        FridayRuntime.update("CONTEXT", "Loading recent conversation context", true)
         val history = loadHistory()
         val context = companion.contextFor(input, history)
+        FridayRuntime.update("PLANNING", "Selecting the safest useful response path", true)
         val decision = autonomousBrain.decide(input, history)
 
         // Local emotional fallbacks are used only when the online brain is unavailable.
@@ -52,10 +57,13 @@ class FridayAgent(context: Context) {
             companionReply(context.emotion)?.let { answer ->
                 remember("user", input)
                 remember("assistant", answer)
+                FridayRuntime.update("RESPONSE READY", "Local emotional core handled the request", true)
                 if (!closed) callback(answer, false)
                 return
             }
-            if (!closed) callback("Main tumhari baat samajh rahi hoon, Boss. AI brain abhi configure nahi hai, lekin local FRIDAY core active hai.", false)
+            val answer = "Main tumhari baat samajh rahi hoon, Boss. AI brain abhi configure nahi hai, lekin local FRIDAY core active hai."
+            FridayRuntime.update("BRAIN LIMITED", "Gemini key is not configured; local core remains active", false)
+            if (!closed) callback(answer, false)
             return
         }
 
@@ -65,6 +73,7 @@ class FridayAgent(context: Context) {
         activeRequest = executor.submit {
             try {
                 if (closed || Thread.currentThread().isInterrupted || requestGeneration.get() != myGeneration) return@submit
+                FridayRuntime.update("AI THINKING", "Gemini is processing context and intent", true)
                 val enrichedInput = buildString {
                     append(context.systemGuidance)
                     append("\nDecision mode: ")
@@ -76,11 +85,17 @@ class FridayAgent(context: Context) {
                 }
                 val result = gemini.ask(enrichedInput, history)
                 if (closed || Thread.currentThread().isInterrupted || requestGeneration.get() != myGeneration) return@submit
-                val answer = result.getOrElse { "AI brain se connection nahi ho paya. Local FRIDAY core abhi active hai, Boss." }
+                val answer = result.getOrElse {
+                    FridayRuntime.update("BRAIN ERROR", "AI connection failed; no action was claimed", false)
+                    "AI brain se connection nahi ho paya. Local FRIDAY core abhi active hai, Boss."
+                }
                 remember("user", input)
                 remember("assistant", answer)
                 mainHandler.post {
-                    if (!closed && requestGeneration.get() == myGeneration) callback(answer, false)
+                    if (!closed && requestGeneration.get() == myGeneration) {
+                        FridayRuntime.update("RESPONSE READY", "AI response verified and ready for speech", true)
+                        callback(answer, false)
+                    }
                 }
             } finally {
                 if (requestGeneration.get() == myGeneration) activeRequest = null
@@ -105,6 +120,7 @@ class FridayAgent(context: Context) {
         gemini.cancel()
         executor.shutdownNow()
         mainHandler.removeCallbacksAndMessages(null)
+        FridayRuntime.update("IDLE", "FRIDAY brain stopped", true)
     }
 
     private fun remember(role: String, text: String) {
