@@ -35,17 +35,26 @@ object FridayWakeCoordinator {
             generation++
             mainHandler.removeCallbacksAndMessages(null)
             detector?.stop()
-            detector = null
         }
     }
 
-    /** Re-acquire the wake microphone only after SpeechRecognizer has been destroyed. */
+    /** Re-acquire the wake microphone only after the previous detector has actually stopped. */
     fun resumeAfterSpeech() {
+        val oldDetector: FridayWakeDetector?
         synchronized(lock) {
             wakeEnabled = true
             generation++
-            ensureStartedLocked()
+            oldDetector = detector
+            oldDetector?.stop()
         }
+        Thread({
+            oldDetector?.stopAndWait(1500L)
+            mainHandler.post {
+                synchronized(lock) {
+                    if (wakeEnabled) ensureStartedLocked()
+                }
+            }
+        }, "friday-wake-resume").start()
     }
 
     fun stop() {
@@ -73,26 +82,30 @@ object FridayWakeCoordinator {
         val callbackGeneration = generation
         detector = FridayWakeDetector(context) { confidence ->
             var accepted = false
+            val detectorToStop: FridayWakeDetector?
             synchronized(lock) {
                 if (wakeEnabled && generation == callbackGeneration) {
                     accepted = true
                     wakeEnabled = false
                     generation++
+                    detectorToStop = detector
                     detector?.stop()
-                    detector = null
-                }
+                } else detectorToStop = null
             }
             if (!accepted) return@FridayWakeDetector
 
-            // Give AudioRecord's release/finally path time to complete before the
-            // system SpeechRecognizer is allowed to request the microphone.
-            mainHandler.postDelayed({
-                synchronized(lock) {
-                    if (wakeEnabled) return@postDelayed
-                    if (serviceRef?.get() == null) return@postDelayed
+            // Never rely on a fixed sleep: wait for the detector worker's finally block,
+            // which owns the definitive AudioRecord release, before opening speech input.
+            Thread({
+                detectorToStop?.stopAndWait(1500L)
+                mainHandler.post {
+                    synchronized(lock) {
+                        if (wakeEnabled) return@post
+                        if (serviceRef?.get() == null) return@post
+                    }
+                    serviceRef?.get()?.showFridaySessionFromWake(confidence)
                 }
-                serviceRef?.get()?.showFridaySessionFromWake(confidence)
-            }, 300L)
+            }, "friday-wake-handoff").start()
         }.also { it.start() }
     }
 }
