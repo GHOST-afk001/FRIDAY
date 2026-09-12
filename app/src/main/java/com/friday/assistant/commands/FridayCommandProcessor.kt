@@ -72,7 +72,6 @@ class FridayCommandProcessor {
 
     private fun parseAlarm(c: String): FridayAction? {
         if (!(c.contains("alarm") || c.contains("अलार्म") || c.contains("wake me"))) return null
-
         val relative = Regex("(?:alarm|अलार्म)\\s+(?:after|in|me|mein|baad|ke baad|में|बाद)\\s+(\\d+)\\s*(hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs|घंटा|घंटे|मिनट|सेकंड)", RegexOption.IGNORE_CASE).find(c)
             ?: Regex("(?:alarm|अलार्म)\\s+(\\d+)\\s*(hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs|घंटा|घंटे|मिनट|सेकंड)\\s*(?:baad|later|mein|में|बाद)", RegexOption.IGNORE_CASE).find(c)
         if (relative != null) {
@@ -85,7 +84,6 @@ class FridayCommandProcessor {
             }
             return (value * multiplier).takeIf { it in 60L..86400L }?.toInt()?.let { FridayAction.AlarmAfter(it) }
         }
-
         val timeMatch = Regex("(?<!\\d)(\\d{1,2})(?:[:.](\\d{1,2}))?\\s*(am|pm)?\\b").find(c) ?: return null
         var hour = timeMatch.groupValues[1].toIntOrNull() ?: return null
         val minute = timeMatch.groupValues[2].toIntOrNull() ?: 0
@@ -120,10 +118,13 @@ class FridayCommandProcessor {
 
     private fun parseSms(c: String, raw: String): Pair<String, String>? {
         val normalizedRaw = raw.trim().replace(Regex("^\\s*(?:hey\\s+)?friday\\b\\s*", RegexOption.IGNORE_CASE), "").trim()
+        // Use Unicode letters + combining marks: Devanagari names such as "राहुल" contain
+        // combining vowel signs that are not matched by \p{L} alone.
+        val nameChars = "[\\p{L}\\p{M}]"
         val forms = listOf(
-            Regex("^(?:message|text|sms|msg)\\s+(?:karo|kar)?\\s*(?:to|ko)\\s+([\\p{L}][\\p{L} ]{1,30}?)(?:\\s+(?:that|ki|bolo|bolna|message|text)\\s+|\\s*[:,;-]\\s*)(.+)$", RegexOption.IGNORE_CASE),
-            Regex("^([\\p{L}][\\p{L} ]{1,30}?)\\s+ko\\s+(?:message|text|sms|msg)\\s+(?:karo|kar)?(?:\\s+(?:ki|that|bolo|bolna))?\\s+(.+)$", RegexOption.IGNORE_CASE),
-            Regex("^(?:message|text|sms|msg)\\s+([\\p{L}][\\p{L} ]{1,30}?)\\s*[:,;-]\\s*(.+)$", RegexOption.IGNORE_CASE)
+            Regex("^(?:message|text|sms|msg)\\s+(?:karo|kar)?\\s*(?:to|ko)\\s+($nameChars(?:$nameChars|[ ]|){1,30}?)(?:\\s+(?:that|ki|bolo|bolna|message|text)\\s+|\\s*[:,;-]\\s*)(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^($nameChars(?:$nameChars|[ ]){1,30}?)\\s+ko\\s+(?:message|text|sms|msg)\\s+(?:karo|kar)?(?:\\s+(?:ki|that|bolo|bolna))?\\s+(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^(?:message|text|sms|msg)\\s+($nameChars(?:$nameChars|[ ]){1,30}?)\\s*[:,;-]\\s*(.+)$", RegexOption.IGNORE_CASE)
         )
         val source = if (normalizedRaw.isNotBlank()) normalizedRaw else c
         return forms.firstNotNullOfOrNull { it.find(source)?.groupValues?.let { g -> g[1].trim() to g[2].trim() } }
