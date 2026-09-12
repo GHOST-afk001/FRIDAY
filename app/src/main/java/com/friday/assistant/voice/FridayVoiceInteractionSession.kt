@@ -88,6 +88,7 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
     private fun cleanupAndResumeWake() {
         if (!cleanedUp.compareAndSet(false, true)) return
         try { voice.destroy() } catch (_: Exception) {}
+        try { agent.close() } catch (_: Exception) {}
         // SpeechRecognizer is destroyed above; wait briefly for the system audio service
         // to release the input device before reopening the local ONNX microphone.
         mainHandler.removeCallbacksAndMessages(null)
