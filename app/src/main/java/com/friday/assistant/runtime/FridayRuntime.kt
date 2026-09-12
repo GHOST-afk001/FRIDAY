@@ -56,56 +56,76 @@ data class DeviceSnapshot(
 )
 
 object DeviceTelemetry {
+    private fun emptySnapshot(): DeviceSnapshot = DeviceSnapshot(
+        batteryPercent = 0,
+        charging = false,
+        batteryTempC = 0f,
+        batteryHealth = "UNKNOWN",
+        storageUsedGb = 0L,
+        storageTotalGb = 0L,
+        ramUsedGb = 0L,
+        ramTotalGb = 0L,
+        network = "UNKNOWN",
+        interactive = false
+    )
+
     fun snapshot(context: Context): DeviceSnapshot {
-        val battery = context.registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
-        val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, 0) ?: 0
-        val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
-        val percent = if (scale > 0) ((level * 100f) / scale).toInt().coerceIn(0, 100) else 0
-        val state = battery?.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN)
-        val charging = state == BatteryManager.BATTERY_STATUS_CHARGING || state == BatteryManager.BATTERY_STATUS_FULL
-        val temp = (battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0) / 10f
-        val health = when (battery?.getIntExtra(BatteryManager.EXTRA_HEALTH, BatteryManager.BATTERY_HEALTH_UNKNOWN)) {
-            BatteryManager.BATTERY_HEALTH_GOOD -> "GOOD"
-            BatteryManager.BATTERY_HEALTH_OVERHEAT -> "OVERHEAT"
-            BatteryManager.BATTERY_HEALTH_DEAD -> "DEAD"
-            BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> "OVER VOLTAGE"
-            BatteryManager.BATTERY_HEALTH_COLD -> "COLD"
-            else -> "UNKNOWN"
-        }
+        // Telemetry must never be allowed to take down the UI process. OEM Android builds
+        // can reject individual system-service calls, especially during early app startup.
+        return runCatching {
+            val battery = context.registerReceiver(
+                null,
+                android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED)
+            )
+            val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, 0) ?: 0
+            val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+            val percent = if (scale > 0) ((level * 100f) / scale).toInt().coerceIn(0, 100) else 0
+            val state = battery?.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN)
+            val charging = state == BatteryManager.BATTERY_STATUS_CHARGING || state == BatteryManager.BATTERY_STATUS_FULL
+            val temp = (battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0) / 10f
+            val health = when (battery?.getIntExtra(BatteryManager.EXTRA_HEALTH, BatteryManager.BATTERY_HEALTH_UNKNOWN)) {
+                BatteryManager.BATTERY_HEALTH_GOOD -> "GOOD"
+                BatteryManager.BATTERY_HEALTH_OVERHEAT -> "OVERHEAT"
+                BatteryManager.BATTERY_HEALTH_DEAD -> "DEAD"
+                BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> "OVER VOLTAGE"
+                BatteryManager.BATTERY_HEALTH_COLD -> "COLD"
+                else -> "UNKNOWN"
+            }
 
-        val stat = StatFs(android.os.Environment.getDataDirectory().path)
-        val total = stat.totalBytes
-        val free = stat.availableBytes
-        val used = (total - free).coerceAtLeast(0)
+            val stat = StatFs(android.os.Environment.getDataDirectory().path)
+            val total = stat.totalBytes
+            val free = stat.availableBytes
+            val used = (total - free).coerceAtLeast(0)
 
-        val activity = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-        val memory = android.app.ActivityManager.MemoryInfo()
-        activity.getMemoryInfo(memory)
-        val totalRam = memory.totalMem.coerceAtLeast(1)
-        val usedRam = (totalRam - memory.availMem).coerceAtLeast(0)
+            val activity = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+            val memory = android.app.ActivityManager.MemoryInfo()
+            activity?.getMemoryInfo(memory)
+            val totalRam = memory.totalMem.coerceAtLeast(1)
+            val usedRam = (totalRam - memory.availMem).coerceAtLeast(0)
 
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val caps = cm.getNetworkCapabilities(cm.activeNetwork)
-        val network = when {
-            caps == null -> "OFFLINE"
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "MOBILE DATA"
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ETHERNET"
-            else -> "CONNECTED"
-        }
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val caps = cm?.getNetworkCapabilities(cm.activeNetwork)
+            val network = when {
+                caps == null -> "OFFLINE"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "MOBILE DATA"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ETHERNET"
+                else -> "CONNECTED"
+            }
 
-        val power = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-        return DeviceSnapshot(
-            batteryPercent = percent,
-            charging = charging,
-            batteryTempC = temp,
-            batteryHealth = health,
-            storageUsedGb = used / 1_000_000_000L,
-            storageTotalGb = total / 1_000_000_000L,
-            ramUsedGb = usedRam / 1_000_000_000L,
-            ramTotalGb = totalRam / 1_000_000_000L,
-            network = network,
-            interactive = power.isInteractive
-        )
+            val power = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+            DeviceSnapshot(
+                batteryPercent = percent,
+                charging = charging,
+                batteryTempC = temp,
+                batteryHealth = health,
+                storageUsedGb = used / 1_000_000_000L,
+                storageTotalGb = total / 1_000_000_000L,
+                ramUsedGb = usedRam / 1_000_000_000L,
+                ramTotalGb = totalRam / 1_000_000_000L,
+                network = network,
+                interactive = power?.isInteractive ?: false
+            )
+        }.getOrElse { emptySnapshot() }
     }
 }
