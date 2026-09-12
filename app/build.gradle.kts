@@ -35,7 +35,7 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.1")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     testImplementation("org.jetbrains.kotlin:kotlin-test:2.1.20")
     debugImplementation(libs.androidx.ui.tooling)
 }
