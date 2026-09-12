@@ -22,6 +22,8 @@ class FridayWakeDetector(
         private const val TAG = "FridayWakeDetector"
         private const val SAMPLE_RATE = 16_000
         private const val BYTES_PER_SAMPLE = 2
+        private const val THRESHOLD = 0.55f
+        private const val COOLDOWN_MS = 1_800L
     }
 
     private val running = AtomicBoolean(false)
@@ -48,9 +50,11 @@ class FridayWakeDetector(
             return
         }
 
+        var engineClass: Class<*>? = null
+        var engine: Any? = null
         try {
-            val engineClass = Class.forName("com.voicute.wakeword.WakeWordEngine")
-            val engine = engineClass.getConstructor(Context::class.java).newInstance(context)
+            engineClass = Class.forName("com.voicute.wakeword.WakeWordEngine")
+            engine = engineClass.getConstructor(Context::class.java).newInstance(context)
             if (!(engineClass.getMethod("isLoaded").invoke(engine) as? Boolean ?: false)) {
                 Log.w(TAG, "Wake model unavailable; system assistant invocation remains available.")
                 running.set(false)
@@ -90,11 +94,12 @@ class FridayWakeDetector(
                 error("AudioRecord failed to start")
             }
 
-            // Circular buffer prevents the previous shifting logic from corrupting frames.
             val ring = ShortArray(needed)
             var writeIndex = 0
             var filled = 0
             var lastWake = 0L
+            var consecutiveWord = ""
+            var consecutiveCount = 0
             val chunk = ShortArray(1600)
 
             while (running.get()) {
@@ -128,10 +133,27 @@ class FridayWakeDetector(
                 val result = process.invoke(engine, frame) ?: continue
                 val word = result.javaClass.getField("wakeWord").get(result) as? String ?: ""
                 val probability = result.javaClass.getField("probability").getFloat(result)
-                if (word.contains("friday", ignoreCase = true) && probability >= 0.55f) {
+                val requiredFrames = (result.javaClass.getField("recommendedConsFrames").getInt(result)).coerceIn(1, 8)
+
+                if (word.contains("friday", ignoreCase = true) && probability >= THRESHOLD) {
+                    if (word.equals(consecutiveWord, ignoreCase = true)) consecutiveCount++
+                    else {
+                        consecutiveWord = word
+                        consecutiveCount = 1
+                    }
+                } else {
+                    // A short gap is not enough to create a trigger; a new positive
+                    // sequence must build its own consecutive-frame evidence.
+                    consecutiveWord = ""
+                    consecutiveCount = 0
+                }
+
+                if (consecutiveCount >= requiredFrames) {
                     val now = SystemClock.elapsedRealtime()
-                    if (now - lastWake > 1800) {
+                    if (now - lastWake > COOLDOWN_MS) {
                         lastWake = now
+                        consecutiveWord = ""
+                        consecutiveCount = 0
                         onWake(probability)
                     }
                 }
@@ -146,6 +168,7 @@ class FridayWakeDetector(
             try { recorder?.stop() } catch (_: Exception) {}
             try { recorder?.release() } catch (_: Exception) {}
             recorder = null
+            try { engineClass?.getMethod("close")?.invoke(engine) } catch (_: Exception) {}
             running.set(false)
         }
     }
