@@ -44,6 +44,7 @@ class FridayAgent(context: Context) {
 
         val myGeneration = requestGeneration.incrementAndGet()
         activeRequest?.cancel(true)
+        gemini.cancel()
         activeRequest = executor.submit {
             try {
                 if (closed || Thread.currentThread().isInterrupted || requestGeneration.get() != myGeneration) return@submit
@@ -57,7 +58,6 @@ class FridayAgent(context: Context) {
                     if (!closed && requestGeneration.get() == myGeneration) callback(answer, false)
                 }
             } finally {
-                // Never clear a newer request's Future from an older request's finally block.
                 if (requestGeneration.get() == myGeneration) activeRequest = null
             }
         }
