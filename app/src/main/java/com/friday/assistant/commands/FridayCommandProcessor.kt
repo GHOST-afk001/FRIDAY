@@ -53,8 +53,8 @@ class FridayCommandProcessor {
         val unit = tokens.getOrNull(numberIndex + 1)?.trim(',', '.', ':')?.lowercase(Locale.ROOT) ?: return null
         val multiplier = when (unit) {
             "hour", "hours", "hr", "hrs", "ghanta", "ghante", "घंटा", "घंटे" -> 3600L
-            "minute", "minutes", "min", "mins", "minut", "minute", "मिनट" -> 60L
-            "second", "seconds", "sec", "secs", "second", "सेकंड" -> 1L
+            "minute", "minutes", "min", "mins", "minut", "मिनट" -> 60L
+            "second", "seconds", "sec", "secs", "सेकंड" -> 1L
             else -> return null
         }
         return (number * multiplier).takeIf { it in 1L..86400L }?.toInt()
