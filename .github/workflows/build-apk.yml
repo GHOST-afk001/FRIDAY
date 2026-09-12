@@ -1,0 +1,72 @@
+name: Build Friday debug APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-debug-apk:
+    name: Build Friday debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 16 SDK
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Prepare optional offline Hey Friday wake runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          VOICUTE_COMMIT="29727d350960b45015f57644b8d67058dc47a2e5"
+          git clone --depth 1 https://github.com/voicute/onnx-wakeword.git /tmp/onnx-wakeword
+          git -C /tmp/onnx-wakeword fetch --depth 1 origin "$VOICUTE_COMMIT"
+          git -C /tmp/onnx-wakeword checkout --detach "$VOICUTE_COMMIT"
+          mkdir -p app/src/main/java/com/voicute/wakeword app/src/main/assets
+          cp /tmp/onnx-wakeword/android/app/src/main/java/com/voicute/wakeword/WakeWordEngine.java app/src/main/java/com/voicute/wakeword/
+          MEL_FILE="$(find /tmp/onnx-wakeword/models -name 'melspectrogram.onnx' -print -quit)"
+          WAKE_FILE="$(find /tmp/onnx-wakeword/models -name 'hey_friday.onnx' -print -quit)"
+          test -n "$MEL_FILE"
+          test -n "$WAKE_FILE"
+          cp "$MEL_FILE" app/src/main/assets/melspectrogram.onnx
+          cp "$WAKE_FILE" app/src/main/assets/hey_friday.onnx
+          cat > app/src/main/assets/model_info.json <<'EOF'
+          {
+            "model_type": "multi_keyword",
+            "keywords": ["Hey Friday"],
+            "model_file": "hey_friday.onnx",
+            "mel_time": 98,
+            "cons_frames": 3,
+            "n_mels": 32
+          }
+          EOF
+
+      - name: Run unit tests
+        run: ./gradlew --no-daemon test
+
+      - name: Build debug APK
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: friday-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
