@@ -43,7 +43,18 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
         cleanedUp.set(false)
         sessionActive.set(true)
         FridayWakeCoordinator.pauseForSpeech()
-        voice.start()
+        val fromWake = args?.containsKey("friday_wake_confidence") == true
+        if (fromWake) {
+            // Speak the acknowledgment before opening SpeechRecognizer so the
+            // assistant's own voice can never be captured as the command.
+            tts.speak("Yes Boss.") {
+                mainHandler.post {
+                    if (sessionActive.get()) voice.start()
+                }
+            }
+        } else {
+            voice.start()
+        }
     }
 
     private fun handle(text: String) {
@@ -89,8 +100,8 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
         if (!cleanedUp.compareAndSet(false, true)) return
         try { voice.destroy() } catch (_: Exception) {}
         try { agent.close() } catch (_: Exception) {}
-        // SpeechRecognizer is destroyed above; wait briefly for the system audio service
-        // to release the input device before reopening the local ONNX microphone.
+        // SpeechRecognizer is destroyed above; the coordinator then waits for
+        // the wake worker's definitive AudioRecord release before restarting it.
         mainHandler.removeCallbacksAndMessages(null)
         mainHandler.postDelayed({ FridayWakeCoordinator.resumeAfterSpeech() }, 250L)
     }
