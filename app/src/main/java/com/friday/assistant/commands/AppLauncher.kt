@@ -46,11 +46,11 @@ class AppLauncher(private val context: Context) {
             }
             is FridayAction.DialNumber -> start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${action.number}")))
             is FridayAction.DialContact -> {
-                val number = findContactNumber(action.name) ?: return false
+                val number = findUniqueContactNumber(action.name) ?: return false
                 start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(number)}")))
             }
             is FridayAction.SmsContact -> {
-                val number = findContactNumber(action.name) ?: return false
+                val number = findUniqueContactNumber(action.name) ?: return false
                 start(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(number)}")).apply {
                     putExtra("sms_body", action.message)
                 })
@@ -86,14 +86,37 @@ class AppLauncher(private val context: Context) {
         return true
     }
 
-    private fun findContactNumber(name: String): String? {
+    /** Resolve only an exact match or a single unambiguous partial match. */
+    private fun findUniqueContactNumber(name: String): String? {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return null
-        val projection = arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER)
-        val selection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
-        context.contentResolver.query(
+        val requested = name.trim()
+        if (requested.isBlank()) return null
+        val projection = arrayOf(
+            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+            ContactsContract.CommonDataKinds.Phone.NUMBER
+        )
+        val exactSelection = "LOWER(${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME}) = ?"
+        val exact = context.contentResolver.query(
             ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-            projection, selection, arrayOf("%$name%"), null
-        )?.use { cursor -> if (cursor.moveToFirst()) return cursor.getString(0) }
-        return null
+            projection, exactSelection, arrayOf(requested.lowercase()), null
+        )?.use { cursor ->
+            val numbers = mutableListOf<String>()
+            val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            while (cursor.moveToNext() && numberIndex >= 0) numbers += cursor.getString(numberIndex)
+            numbers.distinct().singleOrNull()
+        }
+        if (exact != null) return exact
+
+        val partialSelection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
+        return context.contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            projection, partialSelection, arrayOf("%$requested%"), null
+        )?.use { cursor ->
+            val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            if (numberIndex < 0) return@use null
+            val numbers = mutableSetOf<String>()
+            while (cursor.moveToNext()) numbers += cursor.getString(numberIndex)
+            numbers.singleOrNull()
+        }
     }
 }
