@@ -71,7 +71,7 @@ class MainActivity : ComponentActivity() {
     private fun FridayApp() {
         var status by remember { mutableStateOf(powerStatus()) }
         var recognized by remember { mutableStateOf("") }
-        var response by remember { mutableStateOf("Hello Boss. Main Friday hoon. Say 'Friday' when hands-free mode is enabled.") }
+        var response by remember { mutableStateOf("Hello Boss. Main Friday hoon. Say 'Hey Friday' when hands-free mode is enabled.") }
         var showKeyDialog by remember { mutableStateOf(false) }
         var apiKey by remember { mutableStateOf("") }
         val appLauncher = remember { AppLauncher(applicationContext) }
@@ -91,9 +91,7 @@ class MainActivity : ComponentActivity() {
                     if (local.handledLocally) {
                         response = local.text
                         local.action?.let {
-                            if (!appLauncher.launch(it)) {
-                                response = "I couldn't complete that action on this phone."
-                            }
+                            if (!appLauncher.launch(it)) response = "I couldn't complete that action on this phone."
                         }
                         ttsManager.speak(response)
                     } else {
