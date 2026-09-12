@@ -1,6 +1,7 @@
 package com.friday.assistant.voice
 
 import android.content.Context
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.service.voice.VoiceInteractionSession
@@ -17,6 +18,7 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
     private lateinit var agent: FridayAgent
     private val mainHandler = Handler(Looper.getMainLooper())
     private val cleanedUp = AtomicBoolean(false)
+    private val sessionActive = AtomicBoolean(false)
 
     override fun onCreate() {
         super.onCreate()
@@ -26,50 +28,58 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
         agent = FridayAgent(appContext)
         tts = TTSManager(appContext) {}
         voice = VoiceManager(appContext, object : VoiceManager.Listener {
-            override fun onListening() {
-                // Do not speak while SpeechRecognizer owns the microphone; TTS audio
-                // can be captured as input and contaminate the user's command.
-            }
+            override fun onListening() = Unit
             override fun onResult(text: String) { handle(text) }
             override fun onError(message: String) {
+                if (!sessionActive.get()) return
                 voice.destroy()
-                tts.speak(message)
-                finish()
+                respond(message)
             }
         })
     }
 
-    override fun onShow(args: android.os.Bundle?, showFlags: Int) {
+    override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
-        // Manual assistant invocations also need exclusive microphone ownership.
+        cleanedUp.set(false)
+        sessionActive.set(true)
         FridayWakeCoordinator.pauseForSpeech()
         voice.start()
     }
 
     private fun handle(text: String) {
-        // Release speech capture before FRIDAY speaks or executes the next step.
+        if (!sessionActive.get()) return
         voice.destroy()
         val local = processor.process(text)
         if (local.handledLocally) {
             if (local.action != null) {
-                if (launcher.launch(local.action)) tts.speak(local.text)
-                else tts.speak("I couldn't complete that action on this phone, Boss.")
-            } else tts.speak(local.text)
-            finish()
+                if (launcher.launch(local.action)) respond(local.text)
+                else respond("I couldn't complete that action on this phone, Boss.")
+            } else respond(local.text)
             return
         }
         agent.handle(text) { answer, _ ->
-            tts.speak(answer)
-            finish()
+            if (!sessionActive.get()) return@handle
+            respond(answer)
+        }
+    }
+
+    private fun respond(text: String) {
+        if (!sessionActive.get()) return
+        tts.speak(text) {
+            mainHandler.post {
+                if (sessionActive.compareAndSet(true, false)) finish()
+            }
         }
     }
 
     override fun onHide() {
+        sessionActive.set(false)
         cleanupAndResumeWake()
         super.onHide()
     }
 
     override fun onDestroy() {
+        sessionActive.set(false)
         cleanupAndResumeWake()
         try { tts.shutdown() } catch (_: Exception) {}
         super.onDestroy()
@@ -78,8 +88,9 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
     private fun cleanupAndResumeWake() {
         if (!cleanedUp.compareAndSet(false, true)) return
         try { voice.destroy() } catch (_: Exception) {}
-        // Give the system speech service a short window to release its input device
-        // before the local ONNX AudioRecord is opened again.
+        // SpeechRecognizer is destroyed above; wait briefly for the system audio service
+        // to release the input device before reopening the local ONNX microphone.
+        mainHandler.removeCallbacksAndMessages(null)
         mainHandler.postDelayed({ FridayWakeCoordinator.resumeAfterSpeech() }, 250L)
     }
 }
