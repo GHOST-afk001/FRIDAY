@@ -11,7 +11,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import java.util.Locale
 
-/** Lifecycle-aware one-shot wrapper for Android's system speech service. */
+/** Lifecycle-aware, crash-safe one-shot wrapper for Android SpeechRecognizer. */
 class VoiceManager(context: Context, private val listener: Listener) {
     interface Listener { fun onListening(); fun onResult(text: String); fun onError(message: String) }
 
@@ -23,34 +23,32 @@ class VoiceManager(context: Context, private val listener: Listener) {
     private var fallbackAttempted = false
     private var generation = 0L
 
-    init {
-        runOnMain { createRecognizerLocked(preferOnDevice = true) }
-    }
+    init { runOnMain { runCatching { createRecognizerLocked(true) }.onFailure { listener.onError("Speech recognition could not be initialized.") } } }
 
     fun start() {
         runOnMain {
             if (destroyed) return@runOnMain
-            if (recognizer == null) {
+            val current = recognizer
+            if (current == null) {
                 listener.onError("Speech recognition is not available on this device.")
                 return@runOnMain
             }
             val startGeneration = ++generation
             fallbackAttempted = false
-            recognizer?.setRecognitionListener(buildListener(recognizer!!, startGeneration))
-            try {
-                recognizer?.startListening(buildIntent())
-            } catch (_: Exception) {
+            runCatching {
+                current.setRecognitionListener(buildListener(current, startGeneration))
+                current.startListening(buildIntent())
+            }.onFailure {
                 if (startGeneration == generation && !destroyed) listener.onError("Speech recognition could not be started.")
             }
         }
     }
 
-    /** Cancel the current capture but keep the recognizer reusable for another turn. */
     fun cancel() {
         runOnMain {
             if (destroyed) return@runOnMain
             generation++
-            try { recognizer?.cancel() } catch (_: Exception) {}
+            runCatching { recognizer?.cancel() }
         }
     }
 
@@ -59,29 +57,27 @@ class VoiceManager(context: Context, private val listener: Listener) {
             if (destroyed) return@runOnMain
             destroyed = true
             generation++
-            try { recognizer?.cancel() } catch (_: Exception) {}
-            try { recognizer?.destroy() } catch (_: Exception) {}
+            runCatching { recognizer?.cancel() }
+            runCatching { recognizer?.destroy() }
             recognizer = null
         }
     }
 
     private fun createRecognizerLocked(preferOnDevice: Boolean) {
         if (destroyed || recognizer != null) return
-        if (preferOnDevice && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && SpeechRecognizer.isOnDeviceRecognitionAvailable(appContext)) {
+        if (preferOnDevice && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && runCatching { SpeechRecognizer.isOnDeviceRecognitionAvailable(appContext) }.getOrDefault(false)) {
             recognizer = runCatching { SpeechRecognizer.createOnDeviceSpeechRecognizer(appContext) }.getOrNull()
             usingOnDevice = recognizer != null
         }
-        if (recognizer == null && SpeechRecognizer.isRecognitionAvailable(appContext)) {
+        if (recognizer == null && runCatching { SpeechRecognizer.isRecognitionAvailable(appContext) }.getOrDefault(false)) {
             recognizer = runCatching { SpeechRecognizer.createSpeechRecognizer(appContext) }.getOrNull()
             usingOnDevice = false
         }
-        recognizer?.setRecognitionListener(buildListener(recognizer!!, generation))
+        recognizer?.let { current -> current.setRecognitionListener(buildListener(current, generation)) }
     }
 
     private fun buildListener(owner: SpeechRecognizer, expectedGeneration: Long) = object : RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) {
-            if (owner === recognizer && !destroyed && expectedGeneration == generation) listener.onListening()
-        }
+        override fun onReadyForSpeech(params: Bundle?) { if (owner === recognizer && !destroyed && expectedGeneration == generation) listener.onListening() }
         override fun onResults(results: Bundle?) {
             if (owner !== recognizer || destroyed || expectedGeneration != generation) return
             listener.onResult(results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty())
@@ -113,21 +109,20 @@ class VoiceManager(context: Context, private val listener: Listener) {
         runOnMain {
             if (destroyed || expectedGeneration != generation) return@runOnMain
             val old = recognizer
-            try { old?.cancel() } catch (_: Exception) {}
-            try { old?.destroy() } catch (_: Exception) {}
+            runCatching { old?.cancel() }
+            runCatching { old?.destroy() }
             recognizer = null
             usingOnDevice = false
-            createRecognizerLocked(preferOnDevice = false)
-            if (recognizer == null) {
+            runCatching { createRecognizerLocked(false) }.onFailure { listener.onError("The speech service could not be restarted.") }
+            val current = recognizer
+            if (current == null) {
                 listener.onError("The on-device speech service failed and no system speech service is available.")
                 return@runOnMain
             }
-            recognizer?.setRecognitionListener(buildListener(recognizer!!, expectedGeneration))
-            try {
-                recognizer?.startListening(buildIntent())
-            } catch (_: Exception) {
-                if (!destroyed && expectedGeneration == generation) listener.onError("The fallback speech service could not be started.")
-            }
+            runCatching {
+                current.setRecognitionListener(buildListener(current, expectedGeneration))
+                current.startListening(buildIntent())
+            }.onFailure { if (!destroyed && expectedGeneration == generation) listener.onError("The fallback speech service could not be started.") }
         }
     }
 
@@ -143,7 +138,7 @@ class VoiceManager(context: Context, private val listener: Listener) {
 
     private fun speechLocale(): String {
         val tag = Locale.getDefault().toLanguageTag()
-        return if (tag.startsWith("hi", ignoreCase = true) || tag.startsWith("en", ignoreCase = true)) tag else "en-IN"
+        return if (tag.startsWith("hi", true) || tag.startsWith("en", true)) tag else "en-IN"
     }
 
     private fun runOnMain(block: () -> Unit) {
