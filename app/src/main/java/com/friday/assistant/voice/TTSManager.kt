@@ -41,7 +41,7 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
                 voice.name.lowercase(Locale.ROOT).contains("female")
         }
         if (preferred != null) tts?.voice = preferred
-        else tts?.language = Locale("en", "IN")
+        else tts?.language = Locale.forLanguageTag("en-IN")
         queued?.let { speakNow(it.first, it.second) }
     }
 
@@ -71,7 +71,7 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
             return
         }
         val hindi = text.any { it in '\u0900'..'\u097F' }
-        val target = if (hindi) Locale("hi", "IN") else Locale("en", "IN")
+        val target = if (hindi) Locale.forLanguageTag("hi-IN") else Locale.forLanguageTag("en-IN")
         val available = engine.isLanguageAvailable(target)
         if (available >= TextToSpeech.LANG_AVAILABLE) engine.language = target
         val utteranceId = "friday-response-${System.nanoTime()}"
@@ -96,10 +96,11 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
             if (destroyed) return
             destroyed = true
             ready = false
-            pending?.second?.let { listOf(it) }.orEmpty() + completionCallbacks.values.toList().also {
-                pending = null
-                completionCallbacks.clear()
-            }
+            val pendingCallback = pending?.second
+            val activeCallbacks = completionCallbacks.values.toList()
+            pending = null
+            completionCallbacks.clear()
+            listOfNotNull(pendingCallback) + activeCallbacks
         }
         callbacks.forEach { it.invoke() }
         tts?.stop()
