@@ -1,8 +1,9 @@
 package com.friday.assistant.ai
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import com.friday.assistant.commands.FridayCommandProcessor
-import com.friday.assistant.commands.FridayResponse
 import java.util.concurrent.Executors
 
 class FridayAgent(context: Context) {
@@ -11,6 +12,8 @@ class FridayAgent(context: Context) {
     private val gemini = GeminiProvider(appContext)
     private val historyPrefs = appContext.getSharedPreferences("friday_memory", Context.MODE_PRIVATE)
     private val executor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val memoryLock = Any()
 
     fun configureApiKey(key: String) = gemini.setApiKey(key)
     fun hasApiKey() = gemini.isConfigured()
@@ -34,19 +37,23 @@ class FridayAgent(context: Context) {
             val answer = result.getOrElse { "Online brain abhi available nahi hai. Main local mode mein hoon, Boss." }
             remember("user", input)
             remember("assistant", answer)
-            callback(answer, false)
+            mainHandler.post { callback(answer, false) }
         }
     }
 
     private fun remember(role: String, text: String) {
-        val items = loadHistory().toMutableList()
-        items.add(role to text.take(1200))
-        val trimmed = items.takeLast(12)
-        val encoded = trimmed.joinToString("\n") { "${it.first}|${it.second.replace("\\n", " ")}" }
-        historyPrefs.edit().putString("history", encoded).apply()
+        synchronized(memoryLock) {
+            val items = loadHistoryLocked().toMutableList()
+            items.add(role to text.take(1200))
+            val trimmed = items.takeLast(12)
+            val encoded = trimmed.joinToString("\n") { "${it.first}|${it.second.replace("\n", " ")}" }
+            historyPrefs.edit().putString("history", encoded).apply()
+        }
     }
 
-    private fun loadHistory(): List<Pair<String, String>> = historyPrefs.getString("history", "").orEmpty()
+    private fun loadHistory(): List<Pair<String, String>> = synchronized(memoryLock) { loadHistoryLocked() }
+
+    private fun loadHistoryLocked(): List<Pair<String, String>> = historyPrefs.getString("history", "").orEmpty()
         .lineSequence().mapNotNull {
             val p = it.indexOf('|')
             if (p <= 0) null else it.substring(0, p) to it.substring(p + 1)
