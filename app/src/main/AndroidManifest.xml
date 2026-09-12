@@ -26,6 +26,7 @@
     </queries>
 
     <application
+        android:name=".FridayApplication"
         android:allowBackup="true"
         android:label="@string/app_name"
         android:theme="@style/Theme.Friday"
