@@ -48,10 +48,22 @@ object FridayWakeCoordinator {
             oldDetector?.stop()
         }
         Thread({
-            oldDetector?.stopAndWait(1500L)
+            val released = oldDetector?.stopAndWait(3000L) ?: true
             mainHandler.post {
                 synchronized(lock) {
-                    if (wakeEnabled) ensureStartedLocked()
+                    if (!wakeEnabled) return@post
+                    if (serviceRef?.get() == null) return@post
+                    if (released) {
+                        ensureStartedLocked()
+                    } else {
+                        // A timeout is not success. Retry recovery later instead of opening
+                        // a second microphone owner while the old recorder may still exist.
+                        mainHandler.postDelayed({
+                            synchronized(lock) {
+                                if (wakeEnabled && serviceRef?.get() != null) ensureStartedLocked()
+                            }
+                        }, 1000L)
+                    }
                 }
             }
         }, "friday-wake-resume").start()
@@ -80,7 +92,7 @@ object FridayWakeCoordinator {
         val context = contextRef?.get() ?: return
         if (serviceRef?.get() == null) return
         val callbackGeneration = generation
-        detector = FridayWakeDetector(context) { confidence ->
+        val newDetector = FridayWakeDetector(context) { confidence ->
             var accepted = false
             val detectorToStop: FridayWakeDetector?
             synchronized(lock) {
@@ -97,15 +109,23 @@ object FridayWakeCoordinator {
             // Never rely on a fixed sleep: wait for the detector worker's finally block,
             // which owns the definitive AudioRecord release, before opening speech input.
             Thread({
-                detectorToStop?.stopAndWait(1500L)
+                val released = detectorToStop?.stopAndWait(3000L) ?: true
                 mainHandler.post {
-                    synchronized(lock) {
-                        if (wakeEnabled) return@post
-                        if (serviceRef?.get() == null) return@post
+                    val service = synchronized(lock) {
+                        if (wakeEnabled || !released) return@synchronized null
+                        serviceRef?.get()
                     }
-                    serviceRef?.get()?.showFridaySessionFromWake(confidence)
+                    if (service != null) {
+                        service.showFridaySessionFromWake(confidence)
+                    } else if (!released) {
+                        // The old recorder was not confirmed released. Recovery will be
+                        // attempted by the normal wake lifecycle rather than starting STT.
+                        resumeAfterSpeech()
+                    }
                 }
             }, "friday-wake-handoff").start()
-        }.also { it.start() }
+        }
+        detector = newDetector
+        newDetector.start()
     }
 }
