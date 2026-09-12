@@ -27,9 +27,8 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
         if (!ready || text.isBlank()) return
         val hindi = text.any { it in '\u0900'..'\u097F' }
         val target = if (hindi) Locale("hi", "IN") else Locale("en", "IN")
-        if (tts?.isLanguageAvailable(target) ?: TextToSpeech.LANG_NOT_SUPPORTED >= TextToSpeech.LANG_AVAILABLE) {
-            tts?.language = target
-        }
+        val available = tts?.isLanguageAvailable(target) ?: TextToSpeech.LANG_NOT_SUPPORTED
+        if (available >= TextToSpeech.LANG_AVAILABLE) tts?.language = target
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "friday-response")
     }
 
