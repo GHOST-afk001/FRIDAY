@@ -34,7 +34,7 @@ class FridayCommandProcessor {
         parseMap(command)?.let { return FridayResponse(if (it.second) "Maps mein route khol rahi hoon." else "Maps mein location dikha rahi hoon.", FridayAction.MapQuery(it.first, it.second)) }
         parseCall(command)?.let { target ->
             val compact = target.filter { it.isDigit() || it == '+' }
-            val action = if (compact.length >= 7 && compact.length <= 15 && target.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }) FridayAction.DialNumber(compact) else FridayAction.DialContact(target)
+            val action = if (compact.length in 7..15 && target.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }) FridayAction.DialNumber(compact) else FridayAction.DialContact(target)
             return FridayResponse("${target.trim()} ke liye dialer khol rahi hoon.", action, needsConfirmation = true)
         }
         parseSms(command, raw)?.let { (name, message) -> return FridayResponse("Message ready hai. ${name.trim()} ko bhejne se pehle preview dikhati hoon.", FridayAction.SmsContact(name.trim(), message), needsConfirmation = true) }
@@ -45,14 +45,16 @@ class FridayCommandProcessor {
 
     private fun parseTimer(c: String): Int? {
         if (!c.contains("timer") && !c.contains("टाइमर")) return null
-        val match = Regex("(?<!\\d)(\\d+)\\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)").find(c) ?: return null
-        val number = match.groupValues[1].toIntOrNull() ?: return null
-        val unit = match.groupValues[2]
-        return when {
-            unit.startsWith("hour") || unit.startsWith("hr") -> number * 3600
-            unit.startsWith("second") || unit.startsWith("sec") -> number
-            else -> number * 60
-        }.takeIf { it in 1..86400 }
+        val numberMatch = Regex("\\b[0-9]+\\b").find(c) ?: return null
+        val number = numberMatch.value.toLongOrNull() ?: return null
+        val unit = c.substring(numberMatch.range.last + 1).trimStart().split(Regex("\\s+|\\bka\\b|\\bfor\\b"), limit = 2).firstOrNull() ?: return null
+        val multiplier = when {
+            unit.startsWith("hour") || unit.startsWith("hr") -> 3600L
+            unit.startsWith("minute") || unit.startsWith("min") -> 60L
+            unit.startsWith("second") || unit.startsWith("sec") -> 1L
+            else -> return null
+        }
+        return (number * multiplier).takeIf { it in 1L..86400L }?.toInt()
     }
 
     private fun parseAlarm(c: String): Pair<Int, Int>? {
