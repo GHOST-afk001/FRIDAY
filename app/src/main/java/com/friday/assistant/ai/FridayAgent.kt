@@ -73,13 +73,25 @@ class FridayAgent(context: Context) {
         activeRequest = executor.submit {
             try {
                 if (closed || Thread.currentThread().isInterrupted || requestGeneration.get() != myGeneration) return@submit
-                FridayRuntime.update("AI THINKING", "Gemini is processing context and intent", true)
+                FridayRuntime.update("AI THINKING", "Gemini is processing context, intent and constraints", true)
                 val enrichedInput = buildString {
                     append(context.systemGuidance)
+                    append("\nIntent category: ")
+                    append(decision.intent.category.name)
+                    append("\nIntent confidence: ")
+                    append(decision.intent.confidence)
+                    append("\nExtracted entities: ")
+                    append(decision.intent.entities)
+                    append("\nMissing information: ")
+                    append(decision.intent.missing)
                     append("\nDecision mode: ")
                     append(decision.mode.name)
                     append("\nDecision guidance: ")
                     append(decision.guidance)
+                    if (decision.shouldClarify) {
+                        append("\nClarification rule: ")
+                        append(decision.clarification)
+                    }
                     append("\nUser message: ")
                     append(input)
                 }
