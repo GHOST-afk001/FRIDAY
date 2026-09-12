@@ -86,18 +86,22 @@ class FridayCommandProcessor {
     }
 
     private fun parseCall(c: String): String? {
-        val afterVerb = Regex("^(?:call|phone|dial)\\s+(?:(?:karo|kar|please)\\s+)?(.+)$").find(c)?.groupValues?.get(1)?.trim()
-        if (!afterVerb.isNullOrBlank()) return afterVerb
-        return Regex("^(.+?)\\s+(?:ko\\s+)?(?:call|phone|dial)\\s+(?:karo|kar|please)?\\s*$", RegexOption.IGNORE_CASE)
+        val afterVerb = Regex("^(?:call|phone|dial)\\s+(.+)$", RegexOption.IGNORE_CASE).find(c)?.groupValues?.get(1)?.trim()
+        if (!afterVerb.isNullOrBlank()) {
+            val target = afterVerb.replace(Regex("\\s+(?:karo|kar|please)$", RegexOption.IGNORE_CASE), "").trim()
+            if (target.isNotBlank() && target.lowercase(Locale.ROOT) !in setOf("karo", "kar", "please")) return target
+        }
+        val beforeVerb = Regex("^(.+?)\\s+(?:ko\\s+)?(?:call|phone|dial)(?:\\s+(?:karo|kar|please))?\\s*$", RegexOption.IGNORE_CASE)
             .find(c)?.groupValues?.get(1)?.trim()
+        return beforeVerb?.takeIf { it.isNotBlank() }
     }
 
     private fun parseSms(c: String, raw: String): Pair<String, String>? {
         val normalizedRaw = raw.trim().replace(Regex("^\\s*(?:hey\\s+)?friday\\b\\s*", RegexOption.IGNORE_CASE), "").trim()
         val forms = listOf(
-            Regex("^(?:message|text|sms|msg)\\s+(?:karo|kar)?\\s*(?:to|ko)\\s+([A-Za-z][A-Za-z ]{1,30}?)(?:\\s+(?:that|ki|bolo|bolna|message|text)\\s+|\\s*[:,;-]\\s*)(.+)$", RegexOption.IGNORE_CASE),
-            Regex("^([A-Za-z][A-Za-z ]{1,30}?)\\s+ko\\s+(?:message|text|sms|msg)\\s+(?:karo|kar)?(?:\\s+(?:ki|that|bolo|bolna))?\\s+(.+)$", RegexOption.IGNORE_CASE),
-            Regex("^(?:message|text|sms|msg)\\s+([A-Za-z][A-Za-z ]{1,30}?)\\s*[:,;-]\\s*(.+)$", RegexOption.IGNORE_CASE)
+            Regex("^(?:message|text|sms|msg)\\s+(?:karo|kar)?\\s*(?:to|ko)\\s+([\\p{L}][\\p{L} ]{1,30}?)(?:\\s+(?:that|ki|bolo|bolna|message|text)\\s+|\\s*[:,;-]\\s*)(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^([\\p{L}][\\p{L} ]{1,30}?)\\s+ko\\s+(?:message|text|sms|msg)\\s+(?:karo|kar)?(?:\\s+(?:ki|that|bolo|bolna))?\\s+(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^(?:message|text|sms|msg)\\s+([\\p{L}][\\p{L} ]{1,30}?)\\s*[:,;-]\\s*(.+)$", RegexOption.IGNORE_CASE)
         )
         val source = if (normalizedRaw.isNotBlank()) normalizedRaw else c
         return forms.firstNotNullOfOrNull { it.find(source)?.groupValues?.let { g -> g[1].trim() to g[2].trim() } }
