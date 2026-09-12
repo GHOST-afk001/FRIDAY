@@ -13,12 +13,10 @@ jobs:
   build-debug-apk:
     name: Build debug APK
     runs-on: ubuntu-latest
-
     steps:
       - name: Check out source
         uses: actions/checkout@v4
 
-      # AGP 8.7 and the project's Gradle wrapper build reliably with JDK 17.
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -31,6 +29,33 @@ jobs:
 
       - name: Install Android SDK packages
         run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Prepare optional offline Hey Friday wake runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/voicute/onnx-wakeword.git /tmp/onnx-wakeword
+          mkdir -p app/src/main/java/com/voicute/wakeword app/src/main/assets
+          cp /tmp/onnx-wakeword/android/app/src/main/java/com/voicute/wakeword/WakeWordEngine.java app/src/main/java/com/voicute/wakeword/
+          MEL_FILE="$(find /tmp/onnx-wakeword/models -name 'melspectrogram.onnx' -print -quit)"
+          WAKE_FILE="$(find /tmp/onnx-wakeword/models -name 'hey_friday.onnx' -print -quit)"
+          test -n "$MEL_FILE"
+          test -n "$WAKE_FILE"
+          cp "$MEL_FILE" app/src/main/assets/melspectrogram.onnx
+          cp "$WAKE_FILE" app/src/main/assets/hey_friday.onnx
+          cat > app/src/main/assets/model_info.json <<'EOF'
+          {
+            "model_type": "multi_keyword",
+            "keywords": ["Hey Friday"],
+            "model_file": "hey_friday.onnx",
+            "mel_time": 98,
+            "cons_frames": 3,
+            "n_mels": 32
+          }
+          EOF
+
+      - name: Validate Kotlin/Java sources
+        run: ./gradlew --no-daemon test
 
       - name: Build debug APK
         run: ./gradlew --no-daemon assembleDebug
