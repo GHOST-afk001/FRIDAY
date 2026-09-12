@@ -29,6 +29,7 @@ import com.friday.assistant.commands.AppLauncher
 import com.friday.assistant.commands.FridayAction
 import com.friday.assistant.commands.FridayCommandProcessor
 import com.friday.assistant.power.FridayPowerManager
+import com.friday.assistant.security.ActionPolicyValidator
 import com.friday.assistant.voice.TTSManager
 import com.friday.assistant.voice.VoiceManager
 
@@ -37,6 +38,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var ttsManager: TTSManager
     private lateinit var agent: FridayAgent
     private val processor = FridayCommandProcessor()
+    private val policy = ActionPolicyValidator()
     private var startListening: (() -> Unit)? = null
     private var statusUpdater: ((String) -> Unit)? = null
 
@@ -92,23 +94,22 @@ class MainActivity : ComponentActivity() {
 
                     val pending = pendingConfirmation
                     if (pending != null) {
-                        val normalized = text.trim().lowercase()
                         when {
-                            normalized.matches(Regex("^(yes|yeah|yep|haan|ha|ji|confirm|do it|kar do)$")) -> {
+                            text.trim().lowercase() in setOf("yes", "yeah", "yep", "haan", "ha", "ji", "confirm", "do it", "kar do", "okay", "ok") -> {
                                 pendingConfirmation = null
                                 val ok = appLauncher.launch(pending)
                                 response = if (ok) "Done, Boss." else "I couldn't complete that action on this phone."
                                 status = powerStatus()
                                 ttsManager.speak(response)
                             }
-                            normalized.matches(Regex("^(no|nope|nah|nahi|नहीं|cancel|mat karo)$")) -> {
+                            text.trim().lowercase() in setOf("no", "nope", "nah", "nahi", "nahin", "नहीं", "cancel", "mat karo") -> {
                                 pendingConfirmation = null
                                 response = "Okay Boss, cancelled."
                                 status = powerStatus()
                                 ttsManager.speak(response)
                             }
                             else -> {
-                                response = "Boss, please say yes or no."
+                                response = "Boss, please say yes or no. The action is still waiting for confirmation."
                                 status = "Confirmation required"
                                 ttsManager.speak(response)
                             }
@@ -120,12 +121,31 @@ class MainActivity : ComponentActivity() {
                     if (local.handledLocally) {
                         response = local.text
                         val action = local.action
-                        if (action != null && local.needsConfirmation) {
-                            pendingConfirmation = action
-                            status = "Confirmation required"
-                            ttsManager.speak(response)
+                        if (action != null) {
+                            when (val outcome = policy.validate(action)) {
+                                is ActionPolicyValidator.Outcome.Approved -> {
+                                    if (local.needsConfirmation) {
+                                        pendingConfirmation = outcome.action
+                                        status = "Confirmation required"
+                                        ttsManager.speak(response)
+                                    } else {
+                                        response = if (appLauncher.launch(outcome.action)) local.text else "I couldn't complete that action on this phone."
+                                        status = powerStatus()
+                                        ttsManager.speak(response)
+                                    }
+                                }
+                                is ActionPolicyValidator.Outcome.RequiresConfirmation -> {
+                                    pendingConfirmation = outcome.action
+                                    status = "Confirmation required"
+                                    ttsManager.speak("${local.text} ${outcome.prompt} Say yes or no, Boss.")
+                                }
+                                is ActionPolicyValidator.Outcome.Rejected -> {
+                                    response = outcome.reason
+                                    status = "Action rejected"
+                                    ttsManager.speak(response)
+                                }
+                            }
                         } else {
-                            action?.let { if (!appLauncher.launch(it)) response = "I couldn't complete that action on this phone." }
                             status = powerStatus()
                             ttsManager.speak(response)
                         }
