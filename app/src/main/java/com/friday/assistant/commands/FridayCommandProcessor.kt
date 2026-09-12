@@ -11,7 +11,9 @@ class FridayCommandProcessor {
         if (command.isBlank()) return FridayResponse("I didn't catch that. Please say it again.")
         if (isGreeting(command)) return FridayResponse("Yes Boss. Main Friday hoon. Bataiye.")
         if (command.contains("who are you") || command.contains("tum kaun") || command.contains("aap kaun")) return FridayResponse("Main Friday hoon, aapki personal Android assistant. Ready when you are, Boss.")
-        if (Regex("(^|\\s)time(\\s|$)").containsMatchIn(command) || command.contains("kitne baje") || command.contains("samay") || command.contains("टाइम")) return FridayResponse("Abhi ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date())} baj rahe hain, Boss.")
+        // Match the standalone Hindi time word, not the prefix inside "टाइमर".
+        val hasHindiTimeWord = Regex("(^|\\s)टाइम(\\s|$)").containsMatchIn(command)
+        if (Regex("(^|\\s)time(\\s|$)").containsMatchIn(command) || command.contains("kitne baje") || command.contains("samay") || hasHindiTimeWord) return FridayResponse("Abhi ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date())} baj rahe hain, Boss.")
         if (Regex("(^|\\s)date(\\s|$)").containsMatchIn(command) || command.contains("tarikh") || command.contains("tariq") || command.contains("तारीख") || command.contains("डेट")) return FridayResponse("Aaj ${DateFormat.getDateInstance(DateFormat.LONG).format(Date())} hai.")
         if (command.contains("standby") || command.contains("so jao") || command.contains("stop listening")) return FridayResponse("Understood Boss. Standby mode.")
 
