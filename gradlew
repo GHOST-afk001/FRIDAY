@@ -3,7 +3,7 @@
 # binary wrapper files while downloading the pinned Gradle distribution on demand.
 set -eu
 
-GRADLE_VERSION="8.11.1"
+GRADLE_VERSION="8.13"
 GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
 DIST_DIR="$GRADLE_USER_HOME/wrapper/dists/gradle-$GRADLE_VERSION"
 GRADLE_HOME="$DIST_DIR/gradle-$GRADLE_VERSION"
