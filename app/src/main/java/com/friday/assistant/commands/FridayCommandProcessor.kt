@@ -11,47 +11,55 @@ class FridayCommandProcessor {
         if (command.isBlank()) return FridayResponse("I didn't catch that. Please say it again.")
         if (isGreeting(command)) return FridayResponse("Yes Boss. Main Friday hoon. Bataiye.")
         if (command.contains("who are you") || command.contains("tum kaun") || command.contains("aap kaun")) return FridayResponse("Main Friday hoon, aapki personal Android assistant. Ready when you are, Boss.")
-        // Match the standalone Hindi time word, not the prefix inside "टाइमर".
-        val hasHindiTimeWord = Regex("(^|\\s)टाइम(\\s|$)").containsMatchIn(command)
-        if (Regex("(^|\\s)time(\\s|$)").containsMatchIn(command) || command.contains("kitne baje") || command.contains("samay") || hasHindiTimeWord) return FridayResponse("Abhi ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date())} baj rahe hain, Boss.")
-        if (Regex("(^|\\s)date(\\s|$)").containsMatchIn(command) || command.contains("tarikh") || command.contains("tariq") || command.contains("तारीख") || command.contains("डेट")) return FridayResponse("Aaj ${DateFormat.getDateInstance(DateFormat.LONG).format(Date())} hai.")
-        if (command.contains("standby") || command.contains("so jao") || command.contains("stop listening")) return FridayResponse("Understood Boss. Standby mode.")
 
-        parseTimer(command)?.let { return FridayResponse("Timer ${prettyDuration(it)} ka set kar rahi hoon.", FridayAction.Timer(it)) }
-        parseAlarm(command)?.let { return FridayResponse("Alarm ${String.format(Locale.US, "%02d:%02d", it.first, it.second)} ke liye set kar rahi hoon.", FridayAction.Alarm(it.first, it.second)) }
-
-        if (command.contains("flashlight") || command.contains("torch") || command.contains("फ्लैशलाइट")) return if (command.contains("off") || command.contains("band")) FridayResponse("Torch off kar rahi hoon.", FridayAction.FlashlightOff) else FridayResponse("Torch on kar rahi hoon.", FridayAction.FlashlightOn)
-        if (command.contains("volume") && (command.contains("up") || command.contains("increase") || command.contains("badha"))) return FridayResponse("Volume badha rahi hoon.", FridayAction.VolumeUp)
-        if (command.contains("volume") && (command.contains("down") || command.contains("decrease") || command.contains("kam"))) return FridayResponse("Volume kam kar rahi hoon.", FridayAction.VolumeDown)
-
-        if (command.contains("youtube")) return FridayResponse("YouTube khol rahi hoon.", FridayAction.YouTube)
-        if (command.contains("calculator") || command.contains("कैलकुलेटर")) return FridayResponse("Calculator khol rahi hoon.", FridayAction.Calculator)
-        if (command.contains("settings") || command.contains("सेटिंग")) return FridayResponse("Settings khol rahi hoon.", FridayAction.Settings)
-        if (command.contains("camera") || command.contains("कैमरा")) return FridayResponse("Camera khol rahi hoon.", FridayAction.Camera)
-        if (command.contains("chrome")) return FridayResponse("Chrome khol rahi hoon.", FridayAction.Chrome)
-        if (command.contains("whatsapp")) return FridayResponse("WhatsApp khol rahi hoon.", FridayAction.WhatsApp)
-        if (command.contains("instagram")) return FridayResponse("Instagram khol rahi hoon.", FridayAction.Instagram)
-        if (command.contains("messages") || command.contains("message app")) return FridayResponse("Messages khol rahi hoon.", FridayAction.Messages)
-
-        parseMap(command)?.let { return FridayResponse(if (it.second) "Maps mein route khol rahi hoon." else "Maps mein location dikha rahi hoon.", FridayAction.MapQuery(it.first, it.second)) }
         val normalized = command.replace(Regex("^\\s*(?:hey\\s+)?friday\\b\\s*"), "").trim()
+        val hasHindiTimeWord = Regex("(^|\\s)टाइम(\\s|$)").containsMatchIn(normalized)
+        if (Regex("(^|\\s)time(\\s|$)").containsMatchIn(normalized) || normalized.contains("kitne baje") || normalized.contains("samay") || hasHindiTimeWord) return FridayResponse("Abhi ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date())} baj rahe hain, Boss.")
+        if (Regex("(^|\\s)date(\\s|$)").containsMatchIn(normalized) || normalized.contains("tarikh") || normalized.contains("tariq") || normalized.contains("तारीख") || normalized.contains("डेट")) return FridayResponse("Aaj ${DateFormat.getDateInstance(DateFormat.LONG).format(Date())} hai.")
+        if (normalized.contains("standby") || normalized.contains("so jao") || normalized.contains("stop listening")) return FridayResponse("Understood Boss. Standby mode.")
+
+        parseTimer(normalized)?.let { return FridayResponse("Timer ${prettyDuration(it)} ka set kar rahi hoon.", FridayAction.Timer(it)) }
+        parseAlarm(normalized)?.let { alarm ->
+            return if (alarm is FridayAction.AlarmAfter) {
+                FridayResponse("Alarm ${prettyDuration(alarm.seconds)} baad set kar rahi hoon.", alarm)
+            } else {
+                val clock = alarm as FridayAction.Alarm
+                FridayResponse("Alarm ${String.format(Locale.US, "%02d:%02d", clock.hour, clock.minute)} ke liye set kar rahi hoon.", clock)
+            }
+        }
+
+        if (normalized.contains("flashlight") || normalized.contains("torch") || normalized.contains("फ्लैशलाइट")) return if (normalized.contains("off") || normalized.contains("band")) FridayResponse("Torch off kar rahi hoon.", FridayAction.FlashlightOff) else FridayResponse("Torch on kar rahi hoon.", FridayAction.FlashlightOn)
+        if (normalized.contains("volume") && (normalized.contains("up") || normalized.contains("increase") || normalized.contains("badha"))) return FridayResponse("Volume badha rahi hoon.", FridayAction.VolumeUp)
+        if (normalized.contains("volume") && (normalized.contains("down") || normalized.contains("decrease") || normalized.contains("kam"))) return FridayResponse("Volume kam kar rahi hoon.", FridayAction.VolumeDown)
+
+        if (normalized.contains("youtube")) return FridayResponse("YouTube khol rahi hoon.", FridayAction.YouTube)
+        if (normalized.contains("calculator") || normalized.contains("कैलकुलेटर")) return FridayResponse("Calculator khol rahi hoon.", FridayAction.Calculator)
+        if (normalized.contains("settings") || normalized.contains("सेटिंग")) return FridayResponse("Settings khol rahi hoon.", FridayAction.Settings)
+        if (normalized.contains("camera") || normalized.contains("कैमरा")) return FridayResponse("Camera khol rahi hoon.", FridayAction.Camera)
+        if (normalized.contains("chrome")) return FridayResponse("Chrome khol rahi hoon.", FridayAction.Chrome)
+        if (normalized.contains("whatsapp")) return FridayResponse("WhatsApp khol rahi hoon.", FridayAction.WhatsApp)
+        if (normalized.contains("instagram")) return FridayResponse("Instagram khol rahi hoon.", FridayAction.Instagram)
+        if (normalized.contains("messages") || normalized.contains("message app")) return FridayResponse("Messages khol rahi hoon.", FridayAction.Messages)
+
+        parseMap(normalized)?.let { return FridayResponse(if (it.second) "Maps mein route khol rahi hoon." else "Maps mein location dikha rahi hoon.", FridayAction.MapQuery(it.first, it.second)) }
         parseCall(normalized)?.let { target ->
             val compact = target.filter { it.isDigit() || it == '+' }
-            val action = if (compact.length in 7..15 && target.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }) FridayAction.DialNumber(compact) else FridayAction.DialContact(target)
-            return FridayResponse("${target.trim()} ke liye dialer khol rahi hoon.", action, needsConfirmation = true)
+            val isNumber = compact.length in 7..15 && target.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }
+            val action = if (isNumber) FridayAction.DialNumber(compact) else FridayAction.DialContact(target)
+            return FridayResponse("${target.trim()} ke liye dialer kholne ke liye confirmation chahiye.", action, needsConfirmation = true)
         }
-        parseSms(normalized, raw)?.let { (name, message) -> return FridayResponse("Message ready hai. ${name.trim()} ko bhejne se pehle preview dikhati hoon.", FridayAction.SmsContact(name.trim(), message), needsConfirmation = true) }
+        parseSms(normalized, raw)?.let { (name, message) -> return FridayResponse("${name.trim()} ko message bhejne ke liye confirmation chahiye.", FridayAction.SmsContact(name.trim(), message), needsConfirmation = true) }
         return FridayResponse("", handledLocally = false)
     }
 
-    private fun isGreeting(c: String) = c == "hello" || c.contains("hello friday") || c.contains("hi friday") || c.contains("namaste") || c.contains("नमस्ते")
+    private fun isGreeting(c: String) = c == "hello" || c == "hello friday" || c == "hi friday" || c == "namaste" || c == "नमस्ते"
 
     private fun parseTimer(c: String): Int? {
         if (!c.contains("timer") && !c.contains("टाइमर")) return null
         val tokens = c.split(Regex("\\s+")).filter { it.isNotBlank() }
-        val numberIndex = tokens.indexOfFirst { it.toLongOrNull() != null }
+        val numberIndex = tokens.indexOfFirst { it.trim(',', '.', ':').toLongOrNull() != null }
         if (numberIndex < 0) return null
-        val number = tokens[numberIndex].toLongOrNull() ?: return null
+        val number = tokens[numberIndex].trim(',', '.', ':').toLongOrNull() ?: return null
         val unit = tokens.getOrNull(numberIndex + 1)?.trim(',', '.', ':')?.lowercase(Locale.ROOT) ?: return null
         val multiplier = when (unit) {
             "hour", "hours", "hr", "hrs", "ghanta", "ghante", "घंटा", "घंटे" -> 3600L
@@ -62,8 +70,22 @@ class FridayCommandProcessor {
         return (number * multiplier).takeIf { it in 1L..86400L }?.toInt()
     }
 
-    private fun parseAlarm(c: String): Pair<Int, Int>? {
+    private fun parseAlarm(c: String): FridayAction? {
         if (!(c.contains("alarm") || c.contains("अलार्म") || c.contains("wake me"))) return null
+
+        val relative = Regex("(?:alarm|अलार्म)\\s+(?:after|in|me|mein|baad|ke baad|में|बाद)\\s+(\\d+)\\s*(hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs|घंटा|घंटे|मिनट|सेकंड)", RegexOption.IGNORE_CASE).find(c)
+            ?: Regex("(?:alarm|अलार्म)\\s+(\\d+)\\s*(?:minutes?|mins?|minute|seconds?|secs?|second|hours?|hrs?|hour|मिनट|सेकंड|घंटा|घंटे)\\s*(?:baad|later|में|बाद)", RegexOption.IGNORE_CASE).find(c)
+        if (relative != null) {
+            val value = relative.groupValues[1].toLongOrNull() ?: return null
+            val unit = relative.groupValues[2].lowercase(Locale.ROOT)
+            val multiplier = when (unit) {
+                "hour", "hours", "hr", "hrs", "घंटा", "घंटे" -> 3600L
+                "minute", "minutes", "min", "mins", "मिनट" -> 60L
+                else -> 1L
+            }
+            return (value * multiplier).takeIf { it in 60L..86400L }?.toInt()?.let { FridayAction.AlarmAfter(it) }
+        }
+
         val timeMatch = Regex("(?<!\\d)(\\d{1,2})(?:[:.](\\d{1,2}))?\\s*(am|pm)?\\b").find(c) ?: return null
         var hour = timeMatch.groupValues[1].toIntOrNull() ?: return null
         val minute = timeMatch.groupValues[2].toIntOrNull() ?: 0
@@ -71,7 +93,7 @@ class FridayCommandProcessor {
         if (meridiem == "pm" && hour < 12) hour += 12
         if (meridiem == "am" && hour == 12) hour = 0
         if (meridiem.isBlank() && hour !in 0..23) return null
-        return if (hour in 0..23 && minute in 0..59) hour to minute else null
+        return if (hour in 0..23 && minute in 0..59) FridayAction.Alarm(hour, minute) else null
     }
 
     private fun parseMap(c: String): Pair<String, Boolean>? {
@@ -93,7 +115,7 @@ class FridayCommandProcessor {
         }
         val beforeVerb = Regex("^(.+?)\\s+(?:ko\\s+)?(?:call|phone|dial)(?:\\s+(?:karo|kar|please))?\\s*$", RegexOption.IGNORE_CASE)
             .find(c)?.groupValues?.get(1)?.trim()
-        return beforeVerb?.takeIf { it.isNotBlank() }
+        return beforeVerb?.takeIf { it.isNotBlank() && it.lowercase(Locale.ROOT) !in setOf("karo", "kar", "please") }
     }
 
     private fun parseSms(c: String, raw: String): Pair<String, String>? {
@@ -107,5 +129,9 @@ class FridayCommandProcessor {
         return forms.firstNotNullOfOrNull { it.find(source)?.groupValues?.let { g -> g[1].trim() to g[2].trim() } }
     }
 
-    private fun prettyDuration(seconds: Int): String = when { seconds % 3600 == 0 -> "${seconds / 3600} hour"; seconds % 60 == 0 -> "${seconds / 60} minute"; else -> "$seconds second" }
+    private fun prettyDuration(seconds: Int): String = when {
+        seconds % 3600 == 0 -> "${seconds / 3600} hour"
+        seconds % 60 == 0 -> "${seconds / 60} minute"
+        else -> "$seconds second"
+    }
 }
