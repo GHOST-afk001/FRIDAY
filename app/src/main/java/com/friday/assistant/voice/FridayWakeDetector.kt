@@ -28,11 +28,13 @@ class FridayWakeDetector(
     }
 
     private val running = AtomicBoolean(false)
+    private val wakeDelivered = AtomicBoolean(false)
     private var thread: Thread? = null
     private var recorder: AudioRecord? = null
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
+        wakeDelivered.set(false)
         thread = Thread({ loop() }, "friday-wake-detector").also { it.start() }
     }
 
@@ -115,7 +117,7 @@ class FridayWakeDetector(
                     filled = minOf(ring.size, filled + read)
                 }
 
-                if (filled < ring.size) continue
+                if (filled < ring.size || !running.get()) continue
 
                 val frame = if (writeIndex == 0) {
                     ring.copyOf()
@@ -128,6 +130,7 @@ class FridayWakeDetector(
                 }
 
                 val result = process.invoke(engine, frame) ?: continue
+                if (!running.get()) continue
                 val word = result.javaClass.getField("wakeWord").get(result) as? String ?: ""
                 val probability = result.javaClass.getField("probability").getFloat(result)
                 val requiredFrames = result.javaClass.getField("recommendedConsFrames").getInt(result).coerceIn(1, 8)
@@ -145,7 +148,7 @@ class FridayWakeDetector(
 
                 if (consecutiveCount >= requiredFrames) {
                     val now = SystemClock.elapsedRealtime()
-                    if (now - lastWake > COOLDOWN_MS) {
+                    if (now - lastWake > COOLDOWN_MS && wakeDelivered.compareAndSet(false, true)) {
                         lastWake = now
                         consecutiveWord = ""
                         consecutiveCount = 0
