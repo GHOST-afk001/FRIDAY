@@ -2,7 +2,6 @@ package com.friday.assistant
 
 import android.Manifest
 import android.app.role.RoleManager
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -101,6 +100,7 @@ class MainActivity : ComponentActivity() {
                             status = powerStatus()
                             ttsManager.speak(answer)
                         }
+                        return
                     }
                     status = powerStatus()
                 }
@@ -109,7 +109,12 @@ class MainActivity : ComponentActivity() {
                     status = message
                 }
             })
-            onDispose { statusUpdater = null; voiceManager.destroy(); ttsManager.shutdown() }
+            onDispose {
+                statusUpdater = null
+                voiceManager.destroy()
+                ttsManager.shutdown()
+                agent.close()
+            }
         }
 
         fun requestOrStart() {
