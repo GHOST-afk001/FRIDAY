@@ -9,6 +9,7 @@ import com.friday.assistant.ai.FridayAgent
 import com.friday.assistant.commands.AppLauncher
 import com.friday.assistant.commands.FridayAction
 import com.friday.assistant.commands.FridayCommandProcessor
+import com.friday.assistant.security.ActionPolicyValidator
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -18,6 +19,7 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
     private lateinit var launcher: AppLauncher
     private lateinit var processor: FridayCommandProcessor
     private lateinit var agent: FridayAgent
+    private val policy = ActionPolicyValidator()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val cleanedUp = AtomicBoolean(false)
     private val sessionActive = AtomicBoolean(false)
@@ -38,15 +40,11 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
         sessionActive.set(true)
         interactionGeneration++
         pendingConfirmation = null
-        // VoiceManager and FridayAgent are deliberately recreated per interaction.
-        // cleanupAndResumeWake() destroys/closes them, and a VoiceInteractionSession object
-        // may be shown again by the system after onHide().
         agent = FridayAgent(appContext)
         voice = createVoiceManager()
         FridayWakeCoordinator.pauseForSpeech()
         val fromWake = args?.containsKey("friday_wake_confidence") == true
         if (fromWake) {
-            // Acknowledge before STT so the assistant's own TTS cannot become the command.
             tts.speak("Yes Boss.") { mainHandler.post { startListeningIfCurrent() } }
         } else {
             voice.start()
@@ -76,16 +74,18 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
             when (normalizeConfirmation(text)) {
                 true -> {
                     pendingConfirmation = null
-                    if (launcher.launch(pending)) respond("Done, Boss.", finish = true)
-                    else respond("I couldn't complete that action on this phone, Boss.", finish = true)
+                    when (val outcome = policy.validate(pending)) {
+                        is ActionPolicyValidator.Outcome.Approved -> execute(outcome.action)
+                        is ActionPolicyValidator.Outcome.RequiresConfirmation -> execute(outcome.action)
+                        is ActionPolicyValidator.Outcome.Rejected -> respond(outcome.reason, finish = true)
+                    }
                 }
                 false -> {
                     pendingConfirmation = null
                     respond("Okay Boss, cancelled.", finish = true)
                 }
                 null -> {
-                    pendingConfirmation = null
-                    respond("I didn't get a yes or no, Boss. The pending action was cancelled.", finish = true)
+                    respond("I didn't get a yes or no, Boss. The action is still waiting for confirmation.", finish = false)
                 }
             }
             return
@@ -94,13 +94,24 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
         val local = processor.process(text)
         if (local.handledLocally) {
             val action = local.action
-            if (local.needsConfirmation && action != null) {
-                pendingConfirmation = action
-                scheduleConfirmationExpiry(currentGeneration)
-                respond("${local.text} Kya main ise kar doon, Boss?", finish = false)
-            } else if (action != null) {
-                if (launcher.launch(action)) respond(local.text, finish = true)
-                else respond("I couldn't complete that action on this phone, Boss.", finish = true)
+            if (action != null) {
+                when (val outcome = policy.validate(action)) {
+                    is ActionPolicyValidator.Outcome.Approved -> {
+                        if (local.needsConfirmation) {
+                            pendingConfirmation = outcome.action
+                            scheduleConfirmationExpiry(currentGeneration)
+                            respond("${local.text} Kya main ise kar doon, Boss?", finish = false)
+                        } else {
+                            execute(outcome.action, successText = local.text)
+                        }
+                    }
+                    is ActionPolicyValidator.Outcome.RequiresConfirmation -> {
+                        pendingConfirmation = outcome.action
+                        scheduleConfirmationExpiry(currentGeneration)
+                        respond("${local.text} ${outcome.prompt} Say yes or no, Boss.", finish = false)
+                    }
+                    is ActionPolicyValidator.Outcome.Rejected -> respond(outcome.reason, finish = true)
+                }
             } else {
                 respond(local.text, finish = true)
             }
@@ -113,6 +124,11 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
                 respond(answer, finish = true)
             }
         }
+    }
+
+    private fun execute(action: FridayAction, successText: String = "Done, Boss.") {
+        if (launcher.launch(action)) respond(successText, finish = true)
+        else respond("I couldn't complete that action on this phone, Boss.", finish = true)
     }
 
     private fun scheduleConfirmationExpiry(generation: Long) {
@@ -163,16 +179,10 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
 
     private fun cleanupAndResumeWake() {
         if (!cleanedUp.compareAndSet(false, true)) return
-        if (::voice.isInitialized) {
-            try { voice.destroy() } catch (_: Exception) {}
-        }
-        if (::agent.isInitialized) {
-            try { agent.close() } catch (_: Exception) {}
-        }
+        if (::voice.isInitialized) runCatching { voice.destroy() }
+        if (::agent.isInitialized) runCatching { agent.close() }
         interactionGeneration++
         mainHandler.removeCallbacksAndMessages(null)
-        // The coordinator verifies the wake worker has released AudioRecord; the delay is
-        // only lifecycle breathing room, not a microphone-ownership guarantee.
         mainHandler.postDelayed({ FridayWakeCoordinator.resumeAfterSpeech() }, 100L)
     }
 }
