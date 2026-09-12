@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -73,13 +74,13 @@ class FridayWakeDetector(
                 .setSampleRate(SAMPLE_RATE)
                 .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
                 .build()
-            val localRecorder = AudioRecord.Builder()
-                .setContext(context)
+            val builder = AudioRecord.Builder()
                 .setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
                 .setAudioFormat(format)
                 .setBufferSizeInBytes(max(minBuffer, needed * BYTES_PER_SAMPLE * 2))
-                .setPrivacySensitive(true)
-                .build()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) builder.setContext(context)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) builder.setPrivacySensitive(true)
+            val localRecorder = builder.build()
 
             if (localRecorder.state != AudioRecord.STATE_INITIALIZED) {
                 localRecorder.release()
