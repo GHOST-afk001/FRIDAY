@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.friday.assistant"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.friday.assistant"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 2
         versionName = "2.0"
     }
@@ -36,6 +36,6 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.1")
-    testImplementation("org.jetbrains.kotlin:kotlin-test:2.0.21")
+    testImplementation("org.jetbrains.kotlin:kotlin-test:2.1.20")
     debugImplementation(libs.androidx.ui.tooling)
 }
