@@ -34,11 +34,7 @@ class FridayCommandProcessor {
         parseMap(command)?.let { return FridayResponse(if (it.second) "Maps mein route khol rahi hoon." else "Maps mein location dikha rahi hoon.", FridayAction.MapQuery(it.first, it.second)) }
         parseCall(command)?.let { target ->
             val compact = target.filter { it.isDigit() || it == '+' }
-            val action = if (compact.length >= 7 && compact.length <= 15 && target.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }) {
-                FridayAction.DialNumber(compact)
-            } else {
-                FridayAction.DialContact(target)
-            }
+            val action = if (compact.length >= 7 && compact.length <= 15 && target.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }) FridayAction.DialNumber(compact) else FridayAction.DialContact(target)
             return FridayResponse("${target.trim()} ke liye dialer khol rahi hoon.", action, needsConfirmation = true)
         }
         parseSms(command, raw)?.let { (name, message) -> return FridayResponse("Message ready hai. ${name.trim()} ko bhejne se pehle preview dikhati hoon.", FridayAction.SmsContact(name.trim(), message), needsConfirmation = true) }
@@ -48,9 +44,15 @@ class FridayCommandProcessor {
     private fun isGreeting(c: String) = c == "hello" || c.contains("hello friday") || c.contains("hi friday") || c.contains("namaste") || c.contains("नमस्ते")
 
     private fun parseTimer(c: String): Int? {
-        val m = Regex("(?:timer|टाइमर).*?(\\d+)\\s*(seconds?|sec|secs|minutes?|mins?|hours?|hrs?)|(?:\\d+)\\s*(minutes?|mins?|seconds?|secs?|hours?|hrs?).*?(?:timer|टाइमर)").find(c) ?: return null
-        val number = Regex("\\d+").find(m.value)?.value?.toIntOrNull() ?: return null
-        return when { m.value.contains("hour") || m.value.contains("hr") -> number * 3600; m.value.contains("second") || m.value.contains("sec") -> number; else -> number * 60 }.takeIf { it in 1..86400 }
+        if (!c.contains("timer") && !c.contains("टाइमर")) return null
+        val match = Regex("(?<!\\d)(\\d+)\\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)").find(c) ?: return null
+        val number = match.groupValues[1].toIntOrNull() ?: return null
+        val unit = match.groupValues[2]
+        return when {
+            unit.startsWith("hour") || unit.startsWith("hr") -> number * 3600
+            unit.startsWith("second") || unit.startsWith("sec") -> number
+            else -> number * 60
+        }.takeIf { it in 1..86400 }
     }
 
     private fun parseAlarm(c: String): Pair<Int, Int>? {
