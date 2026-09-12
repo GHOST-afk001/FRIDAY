@@ -8,6 +8,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -62,8 +63,7 @@ class MainActivity : ComponentActivity() {
     private fun openPowerSettings() {
         val requestIntent = FridayPowerManager.createOptimizationIntent(this)
         val intent = requestIntent ?: FridayPowerManager.createBatterySettingsIntent()
-        runCatching { startActivity(intent) }
-            .onFailure { updateStatus("Battery settings are not available on this device.") }
+        runCatching { startActivity(intent) }.onFailure { updateStatus("Battery settings are not available on this device.") }
     }
 
     @Composable
@@ -83,15 +83,12 @@ class MainActivity : ComponentActivity() {
             voiceManager = VoiceManager(applicationContext, object : VoiceManager.Listener {
                 override fun onListening() { status = "Listening..." }
                 override fun onResult(text: String) {
-                    // Stop microphone capture before FRIDAY speaks or launches an action.
                     voiceManager.cancel()
                     recognized = text
                     val local = localProcessor.process(text)
                     if (local.handledLocally) {
                         response = local.text
-                        local.action?.let {
-                            if (!appLauncher.launch(it)) response = "I couldn't complete that action on this phone."
-                        }
+                        local.action?.let { if (!appLauncher.launch(it)) response = "I couldn't complete that action on this phone." }
                         ttsManager.speak(response)
                     } else {
                         status = "Thinking..."
@@ -100,14 +97,9 @@ class MainActivity : ComponentActivity() {
                             status = powerStatus()
                             ttsManager.speak(answer)
                         }
-                        return
                     }
-                    status = powerStatus()
                 }
-                override fun onError(message: String) {
-                    voiceManager.cancel()
-                    status = message
-                }
+                override fun onError(message: String) { voiceManager.cancel(); status = message }
             })
             onDispose {
                 statusUpdater = null
@@ -123,29 +115,33 @@ class MainActivity : ComponentActivity() {
             else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
         }
 
-        MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFF32D5FF), surface = Color(0xFF111827))) {
-            Surface(Modifier.fillMaxSize(), color = Color(0xFF080B12)) {
+        MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFF39E7FF), secondary = Color(0xFF8A7CFF), surface = Color(0xFF090D16))) {
+            Surface(Modifier.fillMaxSize(), color = Color(0xFF03060B)) {
                 Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                    Text("FRIDAY", color = Color(0xFF32D5FF), fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = 6.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text("PERSONAL AI ASSISTANT • V2", color = Color(0xFF8DA3B8), fontSize = 11.sp)
-                    Spacer(Modifier.height(30.dp))
-                    Button(onClick = ::requestOrStart, modifier = Modifier.size(176.dp).clip(CircleShape).border(3.dp, Color(0xFF32D5FF), CircleShape), shape = CircleShape, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D2B3A))) {
-                        Text("◉\nTAP TO SPEAK", textAlign = TextAlign.Center, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    Text("ULTRON CORE", color = Color(0xFF39E7FF), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 5.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text("FRIDAY", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = 8.sp)
+                    Spacer(Modifier.height(18.dp))
+                    Box(Modifier.size(190.dp).clip(CircleShape).background(Color(0xFF07121B)).border(2.dp, Color(0xFF39E7FF), CircleShape), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("◉", color = Color(0xFF39E7FF), fontSize = 54.sp)
+                            Text("ONLINE", color = Color(0xFF9FEFFF), fontSize = 12.sp, letterSpacing = 3.sp)
+                        }
                     }
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(22.dp))
+                    Button(onClick = ::requestOrStart, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text("TAP TO SPEAK", fontWeight = FontWeight.Bold) }
+                    Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = ::requestAssistantRole) { Text("ENABLE HANDS-FREE") }
+                        OutlinedButton(onClick = ::requestAssistantRole) { Text("HANDS-FREE") }
                         OutlinedButton(onClick = { showKeyDialog = true }) { Text("AI BRAIN") }
                     }
-                    Spacer(Modifier.height(8.dp))
                     OutlinedButton(onClick = ::openPowerSettings) { Text("BATTERY / BACKGROUND") }
-                    Spacer(Modifier.height(18.dp))
-                    Text(status, color = Color(0xFFB8D6E3), textAlign = TextAlign.Center)
-                    Spacer(Modifier.height(22.dp))
-                    AssistantCard("YOU", recognized.ifBlank { "Your words will appear here." }, Color(0xFF8DA3B8))
                     Spacer(Modifier.height(12.dp))
-                    AssistantCard("FRIDAY", response, Color(0xFF32D5FF))
+                    Text(status, color = Color(0xFF9FB6C7), textAlign = TextAlign.Center, fontSize = 12.sp)
+                    Spacer(Modifier.height(12.dp))
+                    AssistantCard("YOU", recognized.ifBlank { "Waiting for your command..." })
+                    Spacer(Modifier.height(8.dp))
+                    AssistantCard("FRIDAY", response)
                 }
             }
         }
@@ -154,32 +150,19 @@ class MainActivity : ComponentActivity() {
             AlertDialog(
                 onDismissRequest = { showKeyDialog = false },
                 title = { Text("Online AI brain") },
-                text = {
-                    Column {
-                        Text("Optional: add your Gemini API key. It is encrypted with Android Keystore and is not bundled into the APK.")
-                        Spacer(Modifier.height(12.dp))
-                        OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, label = { Text("Gemini API key") }, visualTransformation = PasswordVisualTransformation())
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { agent.configureApiKey(apiKey); apiKey = ""; showKeyDialog = false; response = "Online brain configured, Boss." }) { Text("SAVE") }
-                },
-                dismissButton = { TextButton(onClick = { agent.clearApiKey(); showKeyDialog = false }) { Text("CLEAR") }
-                }
+                text = { Column { Text("Optional Gemini API key. It is encrypted with Android Keystore and is not bundled into the APK."); Spacer(Modifier.height(12.dp)); OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, label = { Text("Gemini API key") }, visualTransformation = PasswordVisualTransformation()) } },
+                confirmButton = { TextButton(onClick = { agent.configureApiKey(apiKey); apiKey = ""; showKeyDialog = false; response = "Online brain configured, Boss." }) { Text("SAVE") } },
+                dismissButton = { TextButton(onClick = { agent.clearApiKey(); showKeyDialog = false }) { Text("CLEAR") } }
             )
         }
     }
 
-    private fun powerStatus(): String = if (FridayPowerManager.isIgnoringBatteryOptimizations(this)) {
-        "Ready • Battery unrestricted"
-    } else {
-        "Ready • Battery optimization is enabled"
-    }
+    private fun powerStatus(): String = if (FridayPowerManager.isIgnoringBatteryOptimizations(this)) "Ready • Battery unrestricted" else "Ready • Battery optimization is enabled"
 
     @Composable
-    private fun AssistantCard(label: String, message: String, accent: Color) {
-        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)), modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) { Text(label, color = accent, fontWeight = FontWeight.Bold, fontSize = 12.sp); Spacer(Modifier.height(6.dp)); Text(message, color = Color(0xFFE1F1F7)) }
+    private fun AssistantCard(label: String, message: String) {
+        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF0B111C)), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp)) { Text(label, color = Color(0xFF39E7FF), fontWeight = FontWeight.Bold, fontSize = 11.sp); Spacer(Modifier.height(4.dp)); Text(message, color = Color(0xFFE5F7FF)) }
         }
     }
 }

@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import com.friday.assistant.commands.FridayCommandProcessor
+import com.friday.assistant.core.FridayCompanion
+import com.friday.assistant.core.Emotion
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicLong
@@ -12,6 +14,7 @@ class FridayAgent(context: Context) {
     private val appContext = context.applicationContext
     private val local = FridayCommandProcessor()
     private val gemini = GeminiProvider(appContext)
+    private val companion = FridayCompanion()
     private val historyPrefs = appContext.getSharedPreferences("friday_memory", Context.MODE_PRIVATE)
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -20,13 +23,9 @@ class FridayAgent(context: Context) {
     @Volatile private var closed = false
     @Volatile private var activeRequest: Future<*>? = null
 
-    fun configureApiKey(key: String) {
-        if (!closed) gemini.setApiKey(key)
-    }
-
+    fun configureApiKey(key: String) { if (!closed) gemini.setApiKey(key) }
     fun hasApiKey() = !closed && gemini.isConfigured()
-
-    fun clearApiKey() = if (!closed) gemini.clearApiKey() else Unit
+    fun clearApiKey() { if (!closed) gemini.clearApiKey() }
 
     fun handle(input: String, callback: (String, Boolean) -> Unit) {
         if (closed) return
@@ -37,8 +36,18 @@ class FridayAgent(context: Context) {
             if (!closed) callback(localResult.text, true)
             return
         }
+
+        val history = loadHistory()
+        val context = companion.contextFor(input, history)
+        companionReply(context.emotion)?.let { answer ->
+            remember("user", input)
+            remember("assistant", answer)
+            if (!closed) callback(answer, false)
+            return
+        }
+
         if (!gemini.isConfigured()) {
-            if (!closed) callback("Main samajh rahi hoon, Boss. Is task ke liye online AI brain configure nahi hai. App Settings mein Gemini API key add kar sakte hain.", false)
+            if (!closed) callback("Main tumhari baat samajh rahi hoon, Boss. Online brain abhi configure nahi hai, lekin hum normal baat kar sakte hain—bas batao kya chal raha hai.", false)
             return
         }
 
@@ -48,8 +57,8 @@ class FridayAgent(context: Context) {
         activeRequest = executor.submit {
             try {
                 if (closed || Thread.currentThread().isInterrupted || requestGeneration.get() != myGeneration) return@submit
-                val history = loadHistory()
-                val result = gemini.ask(input, history)
+                val enrichedInput = "${context.systemGuidance}\nUser message: $input"
+                val result = gemini.ask(enrichedInput, history)
                 if (closed || Thread.currentThread().isInterrupted || requestGeneration.get() != myGeneration) return@submit
                 val answer = result.getOrElse { "Online brain abhi available nahi hai. Main local mode mein hoon, Boss." }
                 remember("user", input)
@@ -63,7 +72,14 @@ class FridayAgent(context: Context) {
         }
     }
 
-    /** Cancel network work and release the agent's executor when its voice session ends. */
+    private fun companionReply(emotion: Emotion): String? = when (emotion) {
+        Emotion.BORED -> "Bore ho rahe ho Boss? 😄 Chalo mere saath thodi baat karte hain. Main tumhe koi interesting topic de sakti hoon, random game khel sakti hoon, ya bas bakchodi karte hain."
+        Emotion.SAD -> "Hey Boss… agar mann heavy hai toh bol do. Main sun rahi hoon. Advice chahiye ya bas kisi se baat karni hai, dono chalega."
+        Emotion.STRESSED -> "Thoda slow, Boss. Ek kaam ek time par. Batao sabse zyada tension kis cheez ki hai?"
+        Emotion.ANGRY -> "Gussa aa raha hai, Boss? Pehle batao kya hua. Main bina judge kiye sunungi."
+        Emotion.EXCITED, Emotion.CASUAL -> null
+    }
+
     fun close() {
         if (closed) return
         closed = true
@@ -79,7 +95,7 @@ class FridayAgent(context: Context) {
         synchronized(memoryLock) {
             val items = loadHistoryLocked().toMutableList()
             items.add(role to text.take(1200))
-            val trimmed = items.takeLast(12)
+            val trimmed = items.takeLast(20)
             val encoded = trimmed.joinToString("\n") { "${it.first}|${it.second.replace("\n", " ")}" }
             historyPrefs.edit().putString("history", encoded).apply()
         }
