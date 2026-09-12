@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -34,7 +34,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          VOICUTE_COMMIT="29727d350960b45015f57644b8d67058dc47a2e5"
           git clone --depth 1 https://github.com/voicute/onnx-wakeword.git /tmp/onnx-wakeword
+          git -C /tmp/onnx-wakeword fetch --depth 1 origin "$VOICUTE_COMMIT"
+          git -C /tmp/onnx-wakeword checkout --detach "$VOICUTE_COMMIT"
           mkdir -p app/src/main/java/com/voicute/wakeword app/src/main/assets
           cp /tmp/onnx-wakeword/android/app/src/main/java/com/voicute/wakeword/WakeWordEngine.java app/src/main/java/com/voicute/wakeword/
           MEL_FILE="$(find /tmp/onnx-wakeword/models -name 'melspectrogram.onnx' -print -quit)"
