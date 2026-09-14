@@ -75,15 +75,15 @@ jobs:
           print('Gemini API authentication and generation check passed.')
           PY
       - name: Command tests — time/timer/alarm
-        run: ./gradlew --no-daemon test --tests '*time*' --tests '*timer*' --tests '*alarm*'
+        run: ./gradlew --no-daemon :app:test --tests '*time*' --tests '*timer*' --tests '*alarm*'
       - name: Command tests — device/apps/YouTube
-        run: ./gradlew --no-daemon test --tests '*flashlight*' --tests '*youtube*' --tests '*calculator*'
+        run: ./gradlew --no-daemon :app:test --tests '*flashlight*' --tests '*youtube*' --tests '*calculator*'
       - name: Command tests — call/SMS
-        run: ./gradlew --no-daemon test --tests '*call*' --tests '*sms*'
+        run: ./gradlew --no-daemon :app:test --tests '*call*' --tests '*sms*'
       - name: Command tests — accessibility/emergency/compound/unknown
-        run: ./gradlew --no-daemon test --tests '*accessibility*' --tests '*emergency*' --tests '*compound*' --tests '*unknown*'
+        run: ./gradlew --no-daemon :app:test --tests '*accessibility*' --tests '*emergency*' --tests '*compound*' --tests '*unknown*'
       - name: Run complete unit test suite
-        run: ./gradlew --no-daemon test
+        run: ./gradlew --no-daemon :app:test
       - name: Run Android lint
         run: ./gradlew --no-daemon lintDebug
       - name: Build debug APK
