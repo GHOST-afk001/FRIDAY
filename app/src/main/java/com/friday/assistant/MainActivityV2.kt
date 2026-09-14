@@ -139,7 +139,6 @@ class MainActivityV2 : ComponentActivity() {
         var runtime by remember { mutableStateOf(FridayRuntime.status) }
         var notifications by remember { mutableStateOf(FridayNotifications.items) }
         var notificationAccess by remember { mutableStateOf(hasNotificationAccess()) }
-        SideEffect { status = { } }
 
         DisposableEffect(Unit) {
             val handler = Handler(Looper.getMainLooper())
@@ -241,6 +240,9 @@ class MainActivityV2 : ComponentActivity() {
             if (needed.isEmpty()) voice.start() else permissions.launch(needed)
         }
 
+        val publishStatus: (String) -> Unit = { message -> response = message }
+        SideEffect { status = publishStatus }
+
         MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFF35E8FF), secondary = Color(0xFFFF3E55), background = Color(0xFF02040A), surface = Color(0xFF070C14))) {
             Surface(Modifier.fillMaxSize(), color = Color(0xFF02040A)) {
                 LazyColumn(
@@ -267,7 +269,7 @@ class MainActivityV2 : ComponentActivity() {
                     item {
                         HudSection("AI BRAIN") {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(if (onlineBrain) "GEMINI CONNECTED" else "LOCAL CORE ACTIVE", color = if (onlineBrain) Color(0xFF4CFF9A) else Color(0xFFFFB74D), fontWeight = FontWeight.Bold)
+                                Text(if (onlineBrain) "GEMINI CORE • ACTIVE" else "GEMINI CORE • NOT CONFIGURED", color = if (onlineBrain) Color(0xFF4CFF9A) else Color(0xFFFFB74D), fontWeight = FontWeight.Bold)
                                 Text("V6 AUTONOMOUS", color = Color(0xFF35E8FF), fontSize = 10.sp)
                             }
                             Spacer(Modifier.height(6.dp))
@@ -303,7 +305,7 @@ class MainActivityV2 : ComponentActivity() {
                     }
                     item {
                         HudSection("SYSTEM HEALTH") {
-                            HealthRow("AI brain", if (onlineBrain) "READY" else "LOCAL CORE / KEY NEEDED", true)
+                            HealthRow("AI brain", if (onlineBrain) "GEMINI READY" else "KEY REQUIRED", onlineBrain)
                             HealthRow("Voice engine", "READY", true)
                             HealthRow("Hands-free assistant", if (isAssistantActive()) "WAKE ACTIVE" else "ROLE NOT ACTIVE", isAssistantActive())
                             HealthRow("Battery optimization", if (FridayPowerManager.isIgnoringBatteryOptimizations(this@MainActivityV2)) "UNRESTRICTED" else "RESTRICTED", true)
@@ -393,7 +395,7 @@ class MainActivityV2 : ComponentActivity() {
             ActionResultValidator.Status.SUCCESS -> "Done, Boss."
             else -> if (action is FridayAction.AccessibilityCommand) "Automation is blocked by Android settings. Enable Accessibility and allow restricted settings for FRIDAY." else "I couldn't complete that action on this phone."
         }
-        FridayRuntime.update(if (result.status == ActionResultValidator.Status.HANDED_OFF) "HANDED OFF" else if (result.verified) "VERIFIED" else "ACTION FAILED", result.detail, result.verified || result.status == ActionResultValidator.Status.HANDED_OFF)
+        FridayRuntime.update(if (result.status == ActionResultValidator.Status.HANDED_OFF) "HANDED OFF" else if (result.verified) "VERIFIED" else "ACTION FAILED", result.detail, result.verified || result.status == ActionResult.Status.HANDED_OFF)
         onDone(message)
         tts.speak(message)
     }
@@ -411,7 +413,7 @@ class MainActivityV2 : ComponentActivity() {
                     Text("${telemetry.batteryPercent}%", color = if (telemetry.charging) Color(0xFF4CFF9A) else Color(0xFF35E8FF), fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.height(10.dp))
-                Text(if (onlineBrain) "AI BRAIN • CONNECTED" else "LOCAL CORE • ONLINE", color = Color(0xFF35E8FF), fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                Text(if (onlineBrain) "GEMINI CORE • ACTIVE" else "GEMINI CORE • NOT CONFIGURED", color = if (onlineBrain) Color(0xFF35E8FF) else Color(0xFFFFB74D), fontWeight = FontWeight.Bold, fontSize = 10.sp)
                 Text("${runtime.stage} • ${runtime.detail}", color = if (runtime.healthy) Color(0xFFB8D1DB) else Color(0xFFFF7585), fontSize = 11.sp)
                 Spacer(Modifier.height(8.dp))
                 Text(if (telemetry.charging) "⚡ CHARGING • ${telemetry.batteryPercent}% • ${telemetry.batteryTempC}°C" else "◉ ON BATTERY • ${telemetry.batteryPercent}% • ${telemetry.batteryTempC}°C", color = Color.White, fontSize = 12.sp)
