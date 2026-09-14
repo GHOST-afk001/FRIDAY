@@ -43,6 +43,12 @@ class FridayOnboardingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         agent = FridayAgent(applicationContext)
+        val completed = getSharedPreferences("friday_onboarding", MODE_PRIVATE).getBoolean("completed", false)
+        if (completed && agent.hasApiKey()) {
+            startActivity(Intent(this, MainActivityV2::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
+            finish()
+            return
+        }
         setContent { Onboarding() }
     }
 
@@ -67,10 +73,13 @@ class FridayOnboardingActivity : ComponentActivity() {
 
     private fun isAccessibilityEnabled(): Boolean = runCatching {
         val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
-        enabled.split(':').any { it.equals(ComponentName(this, com.friday.assistant.automation.FridayAccessibilityService::class.java).flattenToString(), true) }
+        enabled.split(':').any {
+            it.equals(ComponentName(this, com.friday.assistant.automation.FridayAccessibilityService::class.java).flattenToString(), true)
+        }
     }.getOrDefault(false)
 
     private fun continueToFriday() {
+        if (!agent.hasApiKey()) return
         getSharedPreferences("friday_onboarding", MODE_PRIVATE).edit().putBoolean("completed", true).apply()
         startActivity(Intent(this, MainActivityV2::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
         finish()
@@ -121,7 +130,10 @@ class FridayOnboardingActivity : ComponentActivity() {
                             Text("Sideloaded Android builds may block Accessibility until you manually allow Restricted settings.", color = Color(0xFFB7CBD4))
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = ::openAppInfo, Modifier.weight(1f)) { Text("APP INFO") }
-                                OutlinedButton(onClick = ::openAccessibility, Modifier.weight(1f)) { Text("ACCESSIBILITY") }
+                                OutlinedButton(onClick = {
+                                    openAccessibility()
+                                    accessibility = isAccessibilityEnabled()
+                                }, Modifier.weight(1f)) { Text("ACCESSIBILITY") }
                             }
                             Text("App info → ⋮ → Allow restricted settings → back to Accessibility → enable FRIDAY.", color = Color(0xFF7E9AA6))
                         }
@@ -136,7 +148,7 @@ class FridayOnboardingActivity : ComponentActivity() {
                     }
 
                     Spacer(Modifier.height(4.dp))
-                    Button(onClick = ::continueToFriday, Modifier.fillMaxWidth().height(52.dp)) { Text("ENTER FRIDAY HUD") }
+                    Button(onClick = ::continueToFriday, enabled = saved, Modifier.fillMaxWidth().height(52.dp)) { Text("ENTER FRIDAY HUD") }
                 }
             }
         }

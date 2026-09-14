@@ -1,0 +1,1 @@
+Parser audit: regression coverage expanded for call-verb false positives and Unicode contact names. Production parser keeps command recognition fail-closed for incomplete call commands and accepts Unicode letter names for SMS contacts.
