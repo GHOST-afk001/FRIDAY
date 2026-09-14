@@ -308,7 +308,8 @@ class MainActivityV2 : ComponentActivity() {
                             HealthRow("AI brain", if (onlineBrain) "GEMINI READY" else "KEY REQUIRED", onlineBrain)
                             HealthRow("Voice engine", "READY", true)
                             HealthRow("Hands-free assistant", if (isAssistantActive()) "WAKE ACTIVE" else "ROLE NOT ACTIVE", isAssistantActive())
-                            HealthRow("Battery optimization", if (FridayPowerManager.isIgnoringBatteryOptimizations(this@MainActivityV2)) "UNRESTRICTED" else "RESTRICTED", true)
+                            val batteryUnrestricted = FridayPowerManager.isIgnoringBatteryOptimizations(this@MainActivityV2)
+                            HealthRow("Battery optimization", if (batteryUnrestricted) "UNRESTRICTED" else "RESTRICTED", batteryUnrestricted)
                             HealthRow("Notification bridge", if (notificationAccess) "CONNECTED" else "DISABLED", notificationAccess)
                             HealthRow("Runtime", if (runtime.healthy) "STABLE" else "ATTENTION", runtime.healthy)
                         }
@@ -395,7 +396,7 @@ class MainActivityV2 : ComponentActivity() {
             ActionResultValidator.Status.SUCCESS -> "Done, Boss."
             else -> if (action is FridayAction.AccessibilityCommand) "Automation is blocked by Android settings. Enable Accessibility and allow restricted settings for FRIDAY." else "I couldn't complete that action on this phone."
         }
-        FridayRuntime.update(if (result.status == ActionResultValidator.Status.HANDED_OFF) "HANDED OFF" else if (result.verified) "VERIFIED" else "ACTION FAILED", result.detail, result.verified || result.status == ActionResult.Status.HANDED_OFF)
+        FridayRuntime.update(if (result.status == ActionResultValidator.Status.HANDED_OFF) "HANDED OFF" else if (result.verified) "VERIFIED" else "ACTION FAILED", result.detail, result.verified || result.status == ActionResultValidator.Status.HANDED_OFF)
         onDone(message)
         tts.speak(message)
     }
