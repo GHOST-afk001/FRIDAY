@@ -168,7 +168,11 @@ class FridayOnboardingActivity : ComponentActivity() {
                     }
 
                     Spacer(Modifier.height(4.dp))
-                    Button(onClick = ::continueToFriday, enabled = saved, Modifier.fillMaxWidth().height(52.dp)) { Text("ENTER FRIDAY HUD") }
+                    Button(
+                        onClick = ::continueToFriday,
+                        enabled = saved,
+                        modifier = Modifier.fillMaxWidth().height(52.dp)
+                    ) { Text("ENTER FRIDAY HUD") }
                 }
             }
         }
