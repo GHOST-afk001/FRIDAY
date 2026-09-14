@@ -1,3 +1,5 @@
 # FRIDAY final rebuild
 
-This branch is the final active development line for FRIDAY. Gemini API secret wiring is preserved. The build pipeline uses the real Android unit-test task, lintDebug, and assembleDebug tasks.
+This is the final active FRIDAY development line. The previous PR #7 is retired and remains unmerged.
+
+Gemini API secret wiring is intentionally preserved. CI uses the actual Android unit-test task, lintDebug, and assembleDebug tasks.
