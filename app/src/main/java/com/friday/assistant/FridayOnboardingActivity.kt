@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +23,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.friday.assistant.ai.FridayAgent
+import kotlinx.coroutines.delay
 
 /**
  * First-run bridge for sideloaded builds. Android may restrict Accessibility for downloaded
@@ -53,6 +56,7 @@ class FridayOnboardingActivity : ComponentActivity() {
     }
 
     private fun openAppInfo() = runCatching {
+        Toast.makeText(this, "App info → ⋮ → Allow restricted settings", Toast.LENGTH_LONG).show()
         startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
             data = Uri.parse("package:$packageName")
         })
@@ -67,7 +71,11 @@ class FridayOnboardingActivity : ComponentActivity() {
             val roles = getSystemService(android.app.role.RoleManager::class.java)
             if (roles?.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT) == true) {
                 startActivity(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))
+            } else {
+                Toast.makeText(this, "Android Assistant role is unavailable on this device.", Toast.LENGTH_LONG).show()
             }
+        } else {
+            Toast.makeText(this, "Hands-free Assistant role needs Android 10 or newer.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -79,7 +87,10 @@ class FridayOnboardingActivity : ComponentActivity() {
     }.getOrDefault(false)
 
     private fun continueToFriday() {
-        if (!agent.hasApiKey()) return
+        if (!agent.hasApiKey()) {
+            Toast.makeText(this, "Connect Gemini brain first.", Toast.LENGTH_SHORT).show()
+            return
+        }
         getSharedPreferences("friday_onboarding", MODE_PRIVATE).edit().putBoolean("completed", true).apply()
         startActivity(Intent(this, MainActivityV2::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
         finish()
@@ -95,6 +106,14 @@ class FridayOnboardingActivity : ComponentActivity() {
         var key by remember { mutableStateOf("") }
         var saved by remember { mutableStateOf(agent.hasApiKey()) }
         var accessibility by remember { mutableStateOf(isAccessibilityEnabled()) }
+
+        LaunchedEffect(Unit) {
+            while (true) {
+                saved = agent.hasApiKey()
+                accessibility = isAccessibilityEnabled()
+                delay(800)
+            }
+        }
 
         MaterialTheme(colorScheme = androidx.compose.material3.darkColorScheme(primary = Color(0xFF35E8FF), background = Color(0xFF02040A), surface = Color(0xFF070C14))) {
             Surface(Modifier.fillMaxSize(), color = Color(0xFF02040A)) {
@@ -130,12 +149,13 @@ class FridayOnboardingActivity : ComponentActivity() {
                             Text("Sideloaded Android builds may block Accessibility until you manually allow Restricted settings.", color = Color(0xFFB7CBD4))
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = ::openAppInfo, Modifier.weight(1f)) { Text("APP INFO") }
-                                OutlinedButton(onClick = {
-                                    openAccessibility()
-                                    accessibility = isAccessibilityEnabled()
-                                }, Modifier.weight(1f)) { Text("ACCESSIBILITY") }
+                                OutlinedButton(onClick = ::openAccessibility, Modifier.weight(1f)) { Text("ACCESSIBILITY") }
                             }
-                            Text("App info → ⋮ → Allow restricted settings → back to Accessibility → enable FRIDAY.", color = Color(0xFF7E9AA6))
+                            Text(
+                                if (accessibility) "FRIDAY Automation is enabled."
+                                else "App info → ⋮ → Allow restricted settings → back to Accessibility → enable FRIDAY.",
+                                color = if (accessibility) Color(0xFF4CFF9A) else Color(0xFF7E9AA6)
+                            )
                         }
                     }
 
