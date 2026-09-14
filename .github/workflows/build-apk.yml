@@ -169,7 +169,16 @@ jobs:
           print(f"Gemini API authentication and generation check passed for {data.get('modelVersion', 'requested model') }.")
           PY
 
-      - name: Run unit tests
+      - name: Run command processor tests
+        run: ./gradlew --no-daemon test --tests com.friday.assistant.commands.FridayCommandProcessorTest
+
+      - name: Run agent planning tests
+        run: ./gradlew --no-daemon test --tests com.friday.assistant.core.AgentToolPlannerTest --tests com.friday.assistant.core.UltronCoreTest
+
+      - name: Run security tests
+        run: ./gradlew --no-daemon test --tests com.friday.assistant.security.ActionPolicyValidatorTest --tests com.friday.assistant.security.SecurityBaselineTest
+
+      - name: Run complete unit test suite
         run: ./gradlew --no-daemon test
 
       - name: Run Android lint
