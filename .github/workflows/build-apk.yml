@@ -65,7 +65,7 @@ jobs:
           data=json.load(open(sys.argv[1],encoding='utf-8')); err=data.get('error',{}); print(json.dumps({'code':err.get('code'),'status':err.get('status'),'message':err.get('message')})); raise SystemExit(1)
           PY
           done
-          if [[ "$quota_limited" == "true" ]]; then exit 0; fi
+          if [[ "$quota_limited" == "true" ]]; then echo "Gemini quota is currently rate-limited (429); continuing without treating quota exhaustion as a code failure."; exit 0; fi
           python3 - "$response_file" <<'PY'
           import json,sys
           data=json.load(open(sys.argv[1],encoding='utf-8')); c=data.get('candidates') or []
@@ -75,25 +75,18 @@ jobs:
           print('Gemini API authentication and generation check passed.')
           PY
       - name: Command tests — time/timer/alarm
-        continue-on-error: true
         run: ./gradlew --no-daemon test --tests '*time*' --tests '*timer*' --tests '*alarm*'
       - name: Command tests — device/apps/YouTube
-        continue-on-error: true
         run: ./gradlew --no-daemon test --tests '*flashlight*' --tests '*youtube*' --tests '*calculator*'
       - name: Command tests — call/SMS
-        continue-on-error: true
         run: ./gradlew --no-daemon test --tests '*call*' --tests '*sms*'
       - name: Command tests — accessibility/emergency/compound/unknown
-        continue-on-error: true
         run: ./gradlew --no-daemon test --tests '*accessibility*' --tests '*emergency*' --tests '*compound*' --tests '*unknown*'
       - name: Run complete unit test suite
-        continue-on-error: true
         run: ./gradlew --no-daemon test
       - name: Run Android lint
-        continue-on-error: true
         run: ./gradlew --no-daemon lintDebug
       - name: Build debug APK
-        continue-on-error: true
         run: ./gradlew --no-daemon assembleDebug
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
