@@ -15,7 +15,6 @@ import android.provider.Settings
 import androidx.core.content.ContextCompat
 import com.friday.assistant.automation.FridayAutomation
 import com.friday.assistant.runtime.FridayRuntime
-import java.util.Calendar
 
 /** Executes public Android intents/APIs and the explicitly user-enabled automation bridge. */
 class AppLauncher(private val context: Context) {
@@ -45,8 +44,6 @@ class AppLauncher(private val context: Context) {
                 putExtra(AlarmClock.EXTRA_SKIP_UI, true)
             })
             is FridayAction.AlarmAfter -> start(Intent(AlarmClock.ACTION_SET_TIMER).apply {
-                // Android's alarm intent has minute precision only. A relative command
-                // can be represented exactly by the system timer, including seconds.
                 putExtra(AlarmClock.EXTRA_LENGTH, action.seconds)
                 putExtra(AlarmClock.EXTRA_SKIP_UI, true)
             })
@@ -68,14 +65,19 @@ class AppLauncher(private val context: Context) {
             }
             is FridayAction.OpenApp -> openPackageOrUrl(action.packageName, null)
             is FridayAction.AccessibilityCommand -> {
-                val result = FridayAutomation.tryExecute(action.command)
-                if (result != null) true else {
-                    FridayRuntime.update(
-                        "AUTOMATION BLOCKED",
-                        "Enable FRIDAY Accessibility access. If Android says the setting is restricted, allow restricted settings for FRIDAY in App info first.",
+                val command = action.command.trim()
+                if (command.startsWith("whatsapp_message|")) {
+                    openWhatsAppMessage(command)
+                } else {
+                    val result = FridayAutomation.tryExecute(command)
+                    if (result != null) true else {
+                        FridayRuntime.update(
+                            "AUTOMATION BLOCKED",
+                            "Enable FRIDAY Accessibility access. If Android says the setting is restricted, allow restricted settings for FRIDAY in App info first.",
+                            false
+                        )
                         false
-                    )
-                    false
+                    }
                 }
             }
             FridayAction.EmergencySos -> start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:112")))
@@ -111,6 +113,24 @@ class AppLauncher(private val context: Context) {
         return start(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=$encoded")).apply {
             if (youtube != null) setPackage("com.google.android.youtube")
         })
+    }
+
+    private fun openWhatsAppMessage(command: String): Boolean {
+        val parts = command.split('|', limit = 3)
+        if (parts.size != 3) return false
+        val name = parts[1].trim()
+        val message = parts[2].trim()
+        if (name.isBlank() || message.isBlank()) return false
+        val number = findUniqueContactNumber(name) ?: return false
+        val phone = number.filter { it.isDigit() }
+        if (phone.isBlank()) return false
+        val encodedMessage = Uri.encode(message)
+        val whatsappUri = Uri.parse("https://wa.me/$phone?text=$encodedMessage")
+        val intent = Intent(Intent.ACTION_VIEW, whatsappUri).apply {
+            setPackage("com.whatsapp")
+        }
+        if (start(intent)) return true
+        return start(Intent(Intent.ACTION_VIEW, whatsappUri))
     }
 
     private fun openCalculator(): Boolean {
