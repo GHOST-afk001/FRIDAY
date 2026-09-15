@@ -181,6 +181,11 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
 
     private fun respond(text: String, finish: Boolean) {
         if (!sessionActive.get()) return
+        FridayRuntime.update(
+            if (finish) "RESPONSE READY" else "RESPONSE READY",
+            text.take(240),
+            true
+        )
         tts.speak(text) {
             mainHandler.post {
                 if (!sessionActive.get()) return@post
