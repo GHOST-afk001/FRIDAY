@@ -46,14 +46,21 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
         clearPendingConfirmation()
         agent = FridayAgent(appContext)
         voice = createVoiceManager()
+        FridayRuntime.update("WAKE HANDOFF", "Wake word accepted; preparing the voice session", true)
         FridayWakeCoordinator.pauseForSpeech {
             if (sessionActive.get() && !cleanedUp.get()) startListeningIfCurrent()
         }
     }
 
     private fun createVoiceManager(): VoiceManager = VoiceManager(appContext, object : VoiceManager.Listener {
-        override fun onListening() = Unit
+        override fun onListening() {
+            if (sessionActive.get() && !cleanedUp.get()) {
+                FridayRuntime.update("LISTENING", "Microphone is listening for Imroz Sir's command", true)
+            }
+        }
+
         override fun onResult(text: String) { handle(text) }
+
         override fun onError(message: String) {
             if (!sessionActive.get() || cleanedUp.get()) return
             respond(message, finish = true)
@@ -120,6 +127,7 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
             return
         }
 
+        FridayRuntime.update("UNDERSTANDING", "Gemini is interpreting the open-ended request", true)
         agent.handle(text) { answer, _ ->
             mainHandler.post {
                 if (!sessionActive.get() || cleanedUp.get() || interactionGeneration != currentGeneration) return@post
@@ -129,6 +137,7 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
     }
 
     private fun execute(action: FridayAction, successText: String = "Done, Boss.") {
+        FridayRuntime.update("EXECUTING", "Running the requested Android action", true)
         val launched = runCatching { launcher.launch(action) }.getOrDefault(false)
         val observation = if (launched) ActionResultValidator.ExecutionObservation.HANDED_OFF
         else ActionResultValidator.ExecutionObservation.FAILED
@@ -181,11 +190,7 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
 
     private fun respond(text: String, finish: Boolean) {
         if (!sessionActive.get()) return
-        FridayRuntime.update(
-            if (finish) "RESPONSE READY" else "RESPONSE READY",
-            text.take(240),
-            true
-        )
+        FridayRuntime.update("SPEAKING", text.take(240), true)
         tts.speak(text) {
             mainHandler.post {
                 if (!sessionActive.get()) return@post
