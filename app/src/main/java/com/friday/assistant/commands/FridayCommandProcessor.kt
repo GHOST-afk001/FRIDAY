@@ -104,8 +104,7 @@ class FridayCommandProcessor {
         val source = raw.trim().replace(Regex("^\\s*(?:hey\\s+)?friday\\b\\s*", RegexOption.IGNORE_CASE), "").trim()
         val patterns = listOf(
             Regex("^(?:whatsapp)(?:\\s+(?:par|pe|mein|me))?\\s+(?:message|msg|text|sms)\\s+(?:karo|kar|send|bhejo|bhej do)?\\s*(?:to|ko|mein|par|pe)?\\s*([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,30}?)\\s+(?:ki|that|message|text|bolo|bolna)\\s+(.+)$", RegexOption.IGNORE_CASE),
-            Regex("^(?:message|msg|text)\\s+(?:on\\s+)?whatsapp\\s+(?:to|ko)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,30}?)\\s+(?:ki|that|message|text)\\s+(.+)$", RegexOption.IGNORE_CASE),
-            Regex("^([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,30}?)\\s+(?:ko|को)\\s+(?:whatsapp\\s+)?(?:message|msg|text)\\s+(?:karo|kar|send|bhejo|bhej do)?\\s*(?:ki|कि|that|message|text)\\s+(.+)$", RegexOption.IGNORE_CASE)
+            Regex("^(?:message|msg|text)\\s+(?:on\\s+)?whatsapp\\s+(?:to|ko)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,30}?)\\s+(?:ki|that|message|text)\\s+(.+)$", RegexOption.IGNORE_CASE)
         )
         return patterns.firstNotNullOfOrNull { it.find(source)?.groupValues?.let { g -> g[1].trim() to g[2].trim() } }
     }
