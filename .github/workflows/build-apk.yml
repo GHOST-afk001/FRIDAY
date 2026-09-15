@@ -1,9 +1,10 @@
-name: Build Friday debug APK (fresh build)
+name: Build Friday debug APK
 
 on:
   workflow_dispatch:
   push:
-    branches: ["**"]
+    branches:
+      - "**"
   pull_request:
 
 permissions:
@@ -16,27 +17,30 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
           cache: gradle
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: 12266719
-          packages: tools platform-tools
-          accept-android-sdk-licenses: true
-      - name: Install Android 16 SDK
-        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
       - name: Prepare Hey Friday wake runtime
         shell: bash
         run: |
           set -euo pipefail
           VOICUTE_COMMIT="29727d350960b45015f57644b8d67058dc47a2e5"
-          git clone --depth 1 https://github.com/voicute/onnx-wakeword.git /tmp/onnx-wakeword
-          git -C /tmp/onnx-wakeword fetch --depth 1 origin "$VOICUTE_COMMIT"
+          git clone https://github.com/voicute/onnx-wakeword.git /tmp/onnx-wakeword
           git -C /tmp/onnx-wakeword checkout --detach "$VOICUTE_COMMIT"
           mkdir -p app/src/main/java/com/voicute/wakeword app/src/main/assets
           cp /tmp/onnx-wakeword/android/app/src/main/java/com/voicute/wakeword/WakeWordEngine.java app/src/main/java/com/voicute/wakeword/
@@ -47,6 +51,7 @@ jobs:
           cp "$MEL_FILE" app/src/main/assets/melspectrogram.onnx
           cp "$WAKE_FILE" app/src/main/assets/hey_friday.onnx
           printf '%s\n' '{"model_type":"multi_keyword","keywords":["Hey Friday"],"model_file":"hey_friday.onnx","mel_time":98,"cons_frames":3,"n_mels":32}' > app/src/main/assets/model_info.json
+
       - name: Validate Gemini API secret
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -92,12 +97,16 @@ c=data.get('candidates') or []
 if not c: raise SystemExit('Gemini returned no candidates')
 print('Gemini API secret and generation check passed.')
 PY
+
       - name: Run complete unit test suite
         run: ./gradlew --no-daemon :app:testDebugUnitTest
+
       - name: Run Android lint
         run: ./gradlew --no-daemon :app:lintDebug
+
       - name: Build debug APK
         run: ./gradlew --no-daemon :app:assembleDebug
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
