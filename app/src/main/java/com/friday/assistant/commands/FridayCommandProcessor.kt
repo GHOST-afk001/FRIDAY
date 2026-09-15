@@ -8,6 +8,9 @@ class FridayCommandProcessor {
     fun process(input: String): FridayResponse {
         val raw = input.trim()
         if (raw.isBlank()) return FridayResponse("I didn't catch that. Please say it again.")
+        parseWhatsappMessage(raw)?.let { (name, message) ->
+            return FridayResponse("${name.trim()} ko WhatsApp message prepare karne ke liye confirmation chahiye.", FridayAction.AccessibilityCommand("whatsapp_message|${name.trim()}|${message.trim()}"), needsConfirmation = true)
+        }
         CompoundCommandParser.parse(raw, this)?.let { return it }
         return processWithoutCompound(raw)
     }
@@ -73,11 +76,7 @@ class FridayCommandProcessor {
             normalized.startsWith("tap ") && normalized.length > 4 -> "tap ${normalized.substringAfter("tap ").trim()}"
             else -> return null
         }
-        return FridayResponse(
-            "I need confirmation before controlling another app's visible UI.",
-            FridayAction.AccessibilityCommand(command),
-            needsConfirmation = true
-        )
+        return FridayResponse("I need confirmation before controlling another app's visible UI.", FridayAction.AccessibilityCommand(command), needsConfirmation = true)
     }
 
     private fun isGreeting(c: String) = c == "hello" || c == "hello friday" || c == "hi friday" || c == "namaste" || c == "नमस्ते"
@@ -95,9 +94,20 @@ class FridayCommandProcessor {
     private fun parseYoutubeSearch(c: String): String? {
         if (!c.contains("youtube")) return null
         val direct = Regex("youtube(?:\\s+(?:par|pe|mein|me))?\\s+(?:search|find|khojo|khoj|dhundo|dhoondo|play|chalao|for)\\s+(.+)$", RegexOption.IGNORE_CASE).find(c)
+        val openThenSearch = Regex("youtube\\s+(?:khol(?:o|kar|ke)?|open(?:ing)?|launch)\\s+(?:par\\s+)?(?:search|find|khojo|khoj|dhundo|dhoondo)\\s+(.+)$", RegexOption.IGNORE_CASE).find(c)
         val reverse = Regex("(?:search|find|khojo|khoj|dhundo|dhoondo)\\s+(.+?)\\s+(?:on|in|par)\\s+youtube$", RegexOption.IGNORE_CASE).find(c)
-        val query = direct?.groupValues?.get(1) ?: reverse?.groupValues?.get(1) ?: return null
+        val query = direct?.groupValues?.get(1) ?: openThenSearch?.groupValues?.get(1) ?: reverse?.groupValues?.get(1) ?: return null
         return query.trim().replace(Regex("\\s+(?:karo|kar|please|do)$", RegexOption.IGNORE_CASE), "").trim().takeIf { it.isNotBlank() }
+    }
+
+    private fun parseWhatsappMessage(raw: String): Pair<String, String>? {
+        val source = raw.trim().replace(Regex("^\\s*(?:hey\\s+)?friday\\b\\s*", RegexOption.IGNORE_CASE), "").trim()
+        val patterns = listOf(
+            Regex("^(?:whatsapp)(?:\\s+(?:par|pe|mein|me))?\\s+(?:message|msg|text|sms)\\s+(?:karo|kar|send|bhejo|bhej do)?\\s*(?:to|ko|mein|par|pe)?\\s*([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,30}?)\\s+(?:ki|that|message|text|bolo|bolna)\\s+(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^(?:message|msg|text)\\s+(?:on\\s+)?whatsapp\\s+(?:to|ko)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,30}?)\\s+(?:ki|that|message|text)\\s+(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,30}?)\\s+(?:ko|को)\\s+(?:whatsapp\\s+)?(?:message|msg|text)\\s+(?:karo|kar|send|bhejo|bhej do)?\\s*(?:ki|कि|that|message|text)\\s+(.+)$", RegexOption.IGNORE_CASE)
+        )
+        return patterns.firstNotNullOfOrNull { it.find(source)?.groupValues?.let { g -> g[1].trim() to g[2].trim() } }
     }
 
     private fun parseTimer(c: String): Int? {
