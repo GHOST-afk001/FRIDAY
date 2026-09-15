@@ -44,6 +44,7 @@ import com.friday.assistant.runtime.DeviceTelemetry
 import com.friday.assistant.runtime.FridayRuntime
 import com.friday.assistant.runtime.FridayStateFlow
 import com.friday.assistant.runtime.RuntimeStatus
+import com.friday.assistant.ui.FridayDynamicOrb
 
 /**
  * Voice-first FRIDAY HUD. Conversation is intentionally hands-free: there is no tap-to-speak
