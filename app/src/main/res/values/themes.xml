@@ -1,0 +1,1 @@
+<resources><style name="Theme.Friday" parent="android:style/Theme.Material.NoActionBar"><item name="android:fontFamily">sans</item><item name="android:windowLightStatusBar">false</item><item name="android:statusBarColor">#080B12</item><item name="android:navigationBarColor">#080B12</item></style></resources>

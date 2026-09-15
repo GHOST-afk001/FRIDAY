@@ -8,13 +8,9 @@ import com.friday.assistant.security.SpeakerProfileStore
 import com.friday.assistant.security.SpeakerVerificationBaseline
 import java.lang.ref.WeakReference
 
-/**
- * Owns the single local microphone capture used by the optional wake-word detector.
- * SpeechRecognizer and AudioRecord must never be intentionally active at the same time.
- */
+/** Owns the single local microphone capture used by the optional wake-word detector. */
 object FridayWakeCoordinator {
     private enum class State { STOPPED, WAKE_LISTENING, RELEASING_WAKE, SPEECH_ACTIVE, RELEASING_SPEECH }
-
     private val lock = Any()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var contextRef: WeakReference<Context>? = null
@@ -44,7 +40,6 @@ object FridayWakeCoordinator {
         }
     }
 
-    /** Arms one explicit enrollment capture from the next accepted wake phrase. */
     fun armSpeakerEnrollment(): Boolean = synchronized(lock) {
         if (state == State.STOPPED || contextRef?.get() == null) return false
         enrollmentArmed = true
@@ -61,18 +56,32 @@ object FridayWakeCoordinator {
         }
     }
 
-    /** Release AudioRecord before SpeechRecognizer is allowed to listen. */
-    fun pauseForSpeech() {
+    /** Release the wake detector and invoke [onReleased] only after its worker has stopped. */
+    fun pauseForSpeech(onReleased: () -> Unit = {}) {
+        val oldDetector: FridayWakeDetector?
         synchronized(lock) {
             wakeEnabled = false
             generation++
             state = State.SPEECH_ACTIVE
             mainHandler.removeCallbacksAndMessages(null)
-            detector?.stop()
+            oldDetector = detector
+            oldDetector?.stop()
         }
+        if (oldDetector == null) {
+            mainHandler.post(onReleased)
+            return
+        }
+        Thread({
+            val released = oldDetector.stopAndWait(3000L)
+            mainHandler.post {
+                synchronized(lock) {
+                    if (state != State.SPEECH_ACTIVE || wakeEnabled) return@post
+                }
+                if (released) onReleased() else FridayRuntime.update("MIC RELEASE FAILED", "Wake microphone did not release before speech", false)
+            }
+        }, "friday-wake-pause").start()
     }
 
-    /** Re-acquire the wake microphone only after the previous detector has actually stopped. */
     fun resumeAfterSpeech() {
         val oldDetector: FridayWakeDetector?
         synchronized(lock) {
@@ -117,11 +126,22 @@ object FridayWakeCoordinator {
         }, "friday-wake-resume").start()
     }
 
-    /**
-     * Audio focus can be taken by a phone call, camera, recorder, or another audio client.
-     * The detector releases the mic immediately; the coordinator then reacquires it through
-     * the normal single-owner lifecycle rather than keeping a stale AudioRecord alive.
-     */
+    /** Never leave the coordinator stranded after a rejected wake/session handoff. */
+    private fun recoverAfterWakeRejection(reason: String) {
+        synchronized(lock) {
+            if (state != State.RELEASING_WAKE || serviceRef?.get() == null) return
+            wakeEnabled = true
+            generation++
+            state = State.WAKE_LISTENING
+        }
+        FridayRuntime.update("WAKE RECOVERY", reason, true)
+        mainHandler.postDelayed({
+            synchronized(lock) {
+                if (wakeEnabled && state == State.WAKE_LISTENING && serviceRef?.get() != null) ensureStartedLocked()
+            }
+        }, 250L)
+    }
+
     private fun onWakeAudioFocusLost(permanent: Boolean) {
         val shouldRecover = synchronized(lock) {
             if (!wakeEnabled || state != State.WAKE_LISTENING) return@synchronized false
@@ -131,13 +151,11 @@ object FridayWakeCoordinator {
             true
         }
         if (!shouldRecover) return
-
         FridayRuntime.update(
             "MIC RELEASED",
             if (permanent) "Audio focus was permanently lost; wake microphone released" else "Audio focus was temporarily lost; wake microphone released",
             true
         )
-
         mainHandler.postDelayed({
             synchronized(lock) {
                 if (state != State.RELEASING_WAKE || serviceRef?.get() == null) return@synchronized
@@ -172,11 +190,11 @@ object FridayWakeCoordinator {
         if (detector?.isRunning() == true) return
         detector?.stop()
         detector = null
-
         val context = contextRef?.get() ?: return
         if (serviceRef?.get() == null) return
         val callbackGeneration = generation
-        val newDetector = FridayWakeDetector(context,
+        val newDetector = FridayWakeDetector(
+            context = context,
             onWake = { confidence, audioFrame ->
                 var accepted = false
                 val detectorToStop: FridayWakeDetector?
@@ -191,14 +209,17 @@ object FridayWakeCoordinator {
                     } else detectorToStop = null
                 }
                 if (!accepted) return@FridayWakeDetector
-
                 Thread({
                     val released = detectorToStop?.stopAndWait(3000L) ?: true
                     mainHandler.post {
-                        var resumeWithoutSession = false
+                        if (!released) {
+                            recoverAfterWakeRejection("Wake microphone did not release cleanly")
+                            return@post
+                        }
+                        var enrollmentFailed = false
+                        var speakerRejected = false
                         val service = synchronized(lock) {
-                            if (wakeEnabled || state != State.RELEASING_WAKE || !released) return@synchronized null
-
+                            if (wakeEnabled || state != State.RELEASING_WAKE) return@synchronized null
                             val currentVerifier = verifier
                             val currentStore = profileStore
                             if (enrollmentArmed) {
@@ -208,34 +229,49 @@ object FridayWakeCoordinator {
                                     enrollmentArmed = false
                                     FridayRuntime.update("SPEAKER ENROLLED", "Local speaker profile stored on device", true)
                                 } else {
+                                    enrollmentFailed = true
                                     FridayRuntime.update("SPEAKER ENROLLMENT FAILED", "Wake audio was not sufficient for a profile", false)
-                                    resumeWithoutSession = true
-                                    return@synchronized null
                                 }
                             }
-
-                            if (currentVerifier?.isEnrolled() == true) {
+                            if (!enrollmentFailed && currentVerifier?.isEnrolled() == true) {
                                 val result = currentVerifier.verify(audioFrame)
                                 if (!result.matched) {
+                                    speakerRejected = true
                                     FridayRuntime.update("SPEAKER REJECTED", "Wake phrase did not match the enrolled speaker", false)
-                                    resumeWithoutSession = true
-                                    return@synchronized null
+                                } else {
+                                    FridayRuntime.update("SPEAKER VERIFIED", "Local speaker match ${"%.2f".format(result.similarity)}", true)
                                 }
-                                FridayRuntime.update("SPEAKER VERIFIED", "Local speaker match ${"%.2f".format(result.similarity)}", true)
-                            } else {
+                            } else if (!enrollmentFailed) {
                                 FridayRuntime.update("WAKE VERIFIED", "No speaker profile enrolled; continuing without biometric gating", true)
                             }
-                            serviceRef?.get()
+                            if (enrollmentFailed || speakerRejected) null else serviceRef?.get()
                         }
-                        if (service != null) {
-                            service.showFridaySessionFromWake(confidence)
-                        } else {
-                            if (resumeWithoutSession || service == null) resumeAfterSpeech()
+                        when {
+                            enrollmentFailed -> recoverAfterWakeRejection("Speaker enrollment failed; wake listener restored")
+                            speakerRejected -> recoverAfterWakeRejection("Speaker verification rejected wake; listener restored")
+                            service == null -> recoverAfterWakeRejection("Voice interaction service is no longer available")
+                            else -> service.showFridaySessionFromWake(confidence)
                         }
                     }
                 }, "friday-wake-handoff").start()
             },
-            onAudioFocusLost = ::onWakeAudioFocusLost
+            onAudioFocusLost = ::onWakeAudioFocusLost,
+            onStopped = {
+                mainHandler.post {
+                    synchronized(lock) {
+                        if (wakeEnabled && state == State.WAKE_LISTENING && serviceRef?.get() != null && detector?.isRunning() != true) {
+                            generation++
+                            detector = null
+                            state = State.WAKE_LISTENING
+                            mainHandler.postDelayed({
+                                synchronized(lock) {
+                                    if (wakeEnabled && state == State.WAKE_LISTENING && serviceRef?.get() != null) ensureStartedLocked()
+                                }
+                            }, 500L)
+                        }
+                    }
+                }
+            }
         )
         detector = newDetector
         newDetector.start()

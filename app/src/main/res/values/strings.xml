@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Friday</string>
+    <string name="speech_provider_query">android.speech.RecognitionService</string>
+    <string name="friday_accessibility_description">FRIDAY optional cross-app automation bridge</string>
+</resources>
