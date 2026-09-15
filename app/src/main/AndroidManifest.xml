@@ -36,12 +36,14 @@
             </intent-filter>
         </activity>
 
-        <activity android:name=".MainActivityV2" android:exported="true">
+        <activity android:name=".FridayHudActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.ASSIST" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <activity android:name=".MainActivityV2" android:exported="false" />
 
         <service android:name=".voice.FridayVoiceInteractionService" android:exported="true" android:permission="android.permission.BIND_VOICE_INTERACTION">
             <intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter>
