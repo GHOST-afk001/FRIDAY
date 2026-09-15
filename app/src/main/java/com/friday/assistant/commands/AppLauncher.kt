@@ -44,14 +44,12 @@ class AppLauncher(private val context: Context) {
                 putExtra(AlarmClock.EXTRA_MINUTES, action.minute)
                 putExtra(AlarmClock.EXTRA_SKIP_UI, true)
             })
-            is FridayAction.AlarmAfter -> {
-                val target = Calendar.getInstance().apply { add(Calendar.SECOND, action.seconds) }
-                start(Intent(AlarmClock.ACTION_SET_ALARM).apply {
-                    putExtra(AlarmClock.EXTRA_HOUR, target.get(Calendar.HOUR_OF_DAY))
-                    putExtra(AlarmClock.EXTRA_MINUTES, target.get(Calendar.MINUTE))
-                    putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-                })
-            }
+            is FridayAction.AlarmAfter -> start(Intent(AlarmClock.ACTION_SET_TIMER).apply {
+                // Android's alarm intent has minute precision only. A relative command
+                // can be represented exactly by the system timer, including seconds.
+                putExtra(AlarmClock.EXTRA_LENGTH, action.seconds)
+                putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+            })
             is FridayAction.MapQuery -> {
                 val uri = if (action.navigation) Uri.parse("google.navigation:q=${Uri.encode(action.query)}")
                 else Uri.parse("geo:0,0?q=${Uri.encode(action.query)}")
