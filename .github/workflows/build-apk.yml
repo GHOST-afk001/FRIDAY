@@ -76,7 +76,7 @@ jobs:
             echo "Gemini secret is present; quota is currently rate-limited, so build validation continues."
             exit 0
           fi
-          python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); c=d.get("candidates") or []; raise SystemExit("Gemini returned no candidates") if not c else None; print("Gemini API secret and generation check passed.")' "$response_file"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); c=d.get("candidates") or []; sys.exit("Gemini returned no candidates") if not c else print("Gemini API secret and generation check passed.")' "$response_file"
       - name: Run complete unit test suite
         run: ./gradlew --no-daemon :app:testDebugUnitTest
       - name: Run Android lint
