@@ -38,16 +38,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.friday.assistant.ai.FridayAgent
-import com.friday.assistant.power.FridayPowerManager
+import com.friday.assistant.ai.SecureApiKeyStore
 import com.friday.assistant.runtime.DeviceSnapshot
 import com.friday.assistant.runtime.DeviceTelemetry
 import com.friday.assistant.runtime.FridayRuntime
 import com.friday.assistant.runtime.FridayStateFlow
 import com.friday.assistant.runtime.RuntimeStatus
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * Voice-first FRIDAY HUD. Conversation is intentionally hands-free: there is no tap-to-speak
@@ -68,14 +64,15 @@ class FridayHudActivity : ComponentActivity() {
 
         DisposableEffect(Unit) {
             val handler = Handler(Looper.getMainLooper())
+            val keyStore = SecureApiKeyStore(applicationContext)
             val refresh = object : Runnable {
                 override fun run() {
                     telemetry = DeviceTelemetry.snapshot(applicationContext)
-                    geminiReady = FridayAgent(applicationContext).useAndClose { it.hasApiKey() }
+                    geminiReady = !keyStore.read().isNullOrBlank()
                     handler.postDelayed(this, 1000L)
                 }
             }
-            geminiReady = FridayAgent(applicationContext).useAndClose { it.hasApiKey() }
+            geminiReady = !keyStore.read().isNullOrBlank()
             handler.post(refresh)
             val subscription = FridayRuntime.observe { runtime = it }
             onDispose {
@@ -100,10 +97,7 @@ class FridayHudActivity : ComponentActivity() {
                     Header(telemetry, geminiReady, runtime)
                     Spacer(Modifier.height(8.dp))
                     Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                        FridayDynamicOrb(
-                            state = uiState,
-                            modifier = Modifier.size(290.dp)
-                        )
+                        FridayDynamicOrb(state = uiState, modifier = Modifier.size(290.dp))
                     }
                     StatusPanel(runtime, geminiReady, telemetry)
                     Spacer(Modifier.height(10.dp))
@@ -123,22 +117,14 @@ class FridayHudActivity : ComponentActivity() {
 
     @Composable
     private fun Header(telemetry: DeviceSnapshot, geminiReady: Boolean, runtime: RuntimeStatus) {
-        val gradient = Brush.horizontalGradient(
-            listOf(Color(0xFF07131D), Color(0xFF15080F), Color(0xFF07151B))
-        )
+        val gradient = Brush.horizontalGradient(listOf(Color(0xFF07131D), Color(0xFF15080F), Color(0xFF07151B)))
         Card(
             colors = CardDefaults.cardColors(containerColor = Color.Transparent),
             shape = RoundedCornerShape(18.dp),
-            modifier = Modifier.fillMaxWidth()
-                .background(gradient, RoundedCornerShape(18.dp))
-                .border(1.dp, Color(0xFF173B49), RoundedCornerShape(18.dp))
+            modifier = Modifier.fillMaxWidth().background(gradient, RoundedCornerShape(18.dp)).border(1.dp, Color(0xFF173B49), RoundedCornerShape(18.dp))
         ) {
             Column(Modifier.padding(16.dp)) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column {
                         Text("FRIDAY", color = Color.White, fontSize = 31.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 7.sp)
                         Text("ULTRON-INSPIRED PERSONAL INTELLIGENCE", color = Color(0xFF718B98), fontSize = 8.sp, letterSpacing = 1.5.sp)
@@ -172,13 +158,7 @@ class FridayHudActivity : ComponentActivity() {
             Column(Modifier.padding(13.dp)) {
                 Text("FRIDAY CORE", color = Color(0xFF35E8FF), fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    runtime.detail,
-                    color = Color(0xFFD8F6FF),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2
-                )
+                Text(runtime.detail, color = Color(0xFFD8F6FF), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
                 Spacer(Modifier.height(7.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     StatusPill("VOICE", runtime.stage.contains("LISTEN") || runtime.stage.contains("WAKE") || runtime.stage == "IDLE")
@@ -201,25 +181,11 @@ class FridayHudActivity : ComponentActivity() {
             letterSpacing = 1.4.sp,
             textAlign = TextAlign.Center
         )
-        Text(
-            "No tap-to-speak control • Android Assistant wake path",
-            color = Color(0xFF526B76),
-            fontSize = 8.sp,
-            textAlign = TextAlign.Center
-        )
+        Text("No tap-to-speak control • Android Assistant wake path", color = Color(0xFF526B76), fontSize = 8.sp, textAlign = TextAlign.Center)
     }
 
     @Composable
     private fun StatusPill(label: String, active: Boolean) {
-        Text(
-            "${if (active) "●" else "○"} $label",
-            color = if (active) Color(0xFF4CFF9A) else Color(0xFF536B77),
-            fontSize = 8.sp,
-            fontWeight = FontWeight.Bold
-        )
-    }
-
-    private fun <T> FridayAgent.useAndClose(block: (FridayAgent) -> T): T {
-        return try { block(this) } finally { close() }
+        Text("${if (active) "●" else "○"} $label", color = if (active) Color(0xFF4CFF9A) else Color(0xFF536B77), fontSize = 8.sp, fontWeight = FontWeight.Bold)
     }
 }
