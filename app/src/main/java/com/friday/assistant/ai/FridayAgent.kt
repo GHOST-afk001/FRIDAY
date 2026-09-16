@@ -3,6 +3,8 @@ package com.friday.assistant.ai
 import android.content.Context
 import com.friday.assistant.commands.AppLauncher
 import com.friday.assistant.commands.FridayCommandProcessor
+import com.friday.assistant.commands.FridayResponse
+import com.friday.assistant.commands.UniversalCommandRouter
 import com.friday.assistant.runtime.FridayRuntime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,7 +17,7 @@ import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 
-/** FRIDAY's hybrid brain: deterministic local Android commands first, Gemini for open-ended intelligence. */
+/** Hybrid brain: deterministic device actions first, Gemini only for open-ended intelligence. */
 class FridayAgent(context: Context) {
     private val appContext = context.applicationContext
     private val local = FridayCommandProcessor()
@@ -43,18 +45,14 @@ class FridayAgent(context: Context) {
 
         val localResult = local.process(input)
         if (localResult.handledLocally) {
-            remember("user", input)
-            if (localResult.action != null && !localResult.needsConfirmation) {
-                FridayRuntime.update("EXECUTING", "Running the requested Android action", true)
-                val launched = runCatching { launcher.launch(localResult.action) }.getOrDefault(false)
-                val answer = if (launched) localResult.text else "I couldn't complete that action on this phone, Boss."
-                FridayRuntime.update(if (launched) "VERIFIED" else "ACTION FAILED", answer.take(120), launched)
-                remember("assistant", answer)
-                callback(answer, true)
-            } else {
-                remember("assistant", localResult.text)
-                callback(localResult.text, true)
-            }
+            executeLocal(localResult, input, callback)
+            return
+        }
+
+        // Commands such as "open Spotify", "Spotify search ..." and generic web search
+        // are still deterministic device actions and must not depend on Gemini availability.
+        UniversalCommandRouter.route(input)?.let { universal ->
+            executeLocal(universal, input, callback)
             return
         }
 
@@ -97,6 +95,23 @@ class FridayAgent(context: Context) {
             } finally {
                 if (requestGeneration.get() == myGeneration) activeRequest = null
             }
+        }
+    }
+
+    private fun executeLocal(result: FridayResponse, input: String, callback: (String, Boolean) -> Unit) {
+        remember("user", input)
+        val action = result.action
+        if (action != null && !result.needsConfirmation) {
+            FridayRuntime.update("EXECUTING", "Running the requested Android action", true)
+            val launched = runCatching { launcher.launch(action) }.getOrDefault(false)
+            val answer = if (launched) result.text else "I couldn't complete that action on this phone, Boss."
+            FridayRuntime.update(if (launched) "VERIFIED" else "ACTION FAILED", answer.take(160), launched)
+            remember("assistant", answer)
+            callback(answer, true)
+        } else {
+            val answer = result.text
+            remember("assistant", answer)
+            callback(answer, true)
         }
     }
 
