@@ -12,8 +12,8 @@ android {
         applicationId = "com.friday.assistant"
         minSdk = 27
         targetSdk = 36
-        versionCode = 438
-        versionName = "4.38"
+        versionCode = 439
+        versionName = "4.39"
     }
 
     compileOptions {
