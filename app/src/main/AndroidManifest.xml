@@ -42,7 +42,11 @@
 
         <activity android:name=".FridayOnboardingActivity" android:exported="false" />
 
-        <service android:name=".voice.FridayVoiceInteractionService" android:exported="true" android:permission="android.permission.BIND_VOICE_INTERACTION">
+        <service
+            android:name=".voice.FridayVoiceInteractionService"
+            android:label="FRIDAY"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
             <intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter>
             <meta-data android:name="android.voice_interaction" android:resource="@xml/voice_interaction_service" />
         </service>
