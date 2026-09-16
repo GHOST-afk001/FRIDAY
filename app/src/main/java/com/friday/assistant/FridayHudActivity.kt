@@ -72,178 +72,54 @@ class FridayHudActivity : ComponentActivity() {
     }
 
     private fun buildHud() {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(12))
-            setBackgroundColor(Color.rgb(1, 3, 8))
-        }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(12), dp(20), dp(12)); setBackgroundColor(Color.rgb(1, 3, 8)) }
         val scroll = ScrollView(this).apply { isFillViewport = true }
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
-        scroll.addView(content, ViewGroup.LayoutParams(-1, -1))
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-
-        content.addView(TextView(this).apply {
-            text = "FRIDAY"; setTextColor(Color.WHITE); textSize = 29f; gravity = Gravity.CENTER
-            typeface = Typeface.DEFAULT_BOLD; letterSpacing = .22f
-        }, lp(-1, -2, 0, 2, 0, 1))
-        content.addView(TextView(this).apply {
-            text = "PERSONAL INTELLIGENCE • ALWAYS-ON"
-            setTextColor(muted); textSize = 8f; gravity = Gravity.CENTER; letterSpacing = .12f
-        }, lp(-1, -2, 0, 0, 0, 5))
-
-        orb = TextView(this).apply { text = "◉"; setTextColor(cyan); textSize = 88f; gravity = Gravity.CENTER }
-        content.addView(orb, lp(-1, dp(122), 0, 0, 0, 0))
-        status = TextView(this).apply {
-            text = "FRIDAY • STARTING"; setTextColor(cyan); textSize = 12f; gravity = Gravity.CENTER
-            typeface = Typeface.DEFAULT_BOLD; letterSpacing = .08f
-        }
-        content.addView(status, lp(-1, -2, 0, 2, 0, 2))
-        detail = TextView(this).apply { text = "Preparing background microphone..."; setTextColor(Color.LTGRAY); textSize = 12f; gravity = Gravity.CENTER }
-        content.addView(detail, lp(-1, -2, 0, 0, 0, 4))
-        meter = TextView(this).apply { text = "MIC  ░░░░░░░░░░  0%"; setTextColor(muted); textSize = 9f; gravity = Gravity.CENTER }
-        content.addView(meter, lp(-1, -2, 0, 0, 0, 8))
-
+        scroll.addView(content, ViewGroup.LayoutParams(-1, -1)); root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        content.addView(TextView(this).apply { text = "FRIDAY"; setTextColor(Color.WHITE); textSize = 29f; gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD; letterSpacing = .22f }, lp(-1, -2, 0, 2, 0, 1))
+        content.addView(TextView(this).apply { text = "PERSONAL INTELLIGENCE • ALWAYS-ON"; setTextColor(muted); textSize = 8f; gravity = Gravity.CENTER; letterSpacing = .12f }, lp(-1, -2, 0, 0, 0, 5))
+        orb = TextView(this).apply { text = "◉"; setTextColor(cyan); textSize = 88f; gravity = Gravity.CENTER }; content.addView(orb, lp(-1, dp(122), 0, 0, 0, 0))
+        status = TextView(this).apply { text = "FRIDAY • STARTING"; setTextColor(cyan); textSize = 12f; gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD; letterSpacing = .08f }; content.addView(status, lp(-1, -2, 0, 2, 0, 2))
+        detail = TextView(this).apply { text = "Preparing background microphone..."; setTextColor(Color.LTGRAY); textSize = 12f; gravity = Gravity.CENTER }; content.addView(detail, lp(-1, -2, 0, 0, 0, 4))
+        meter = TextView(this).apply { text = "MIC  ░░░░░░░░░░  0%"; setTextColor(muted); textSize = 9f; gravity = Gravity.CENTER }; content.addView(meter, lp(-1, -2, 0, 0, 0, 8))
         content.addView(TextView(this).apply { text = "LAST HEARD"; setTextColor(muted); textSize = 8f; letterSpacing = .12f }, lp(-1, -2, 0, 0, 0, 2))
-        transcript = TextView(this).apply {
-            text = "Waiting for your voice…"; setTextColor(Color.WHITE); textSize = 16f; gravity = Gravity.CENTER
-            setPadding(dp(12), dp(10), dp(12), dp(10)); background = rounded(Color.rgb(7, 14, 23), Color.rgb(23, 61, 74), 14)
-        }
-        content.addView(transcript, lp(-1, -2, 0, 0, 0, 8))
-
-        val brain = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(9), dp(12), dp(9)); background = rounded(Color.rgb(6, 12, 20), Color.rgb(18, 48, 61), 14) }
-        content.addView(brain, lp(-1, -2, 0, 0, 0, 7))
+        transcript = TextView(this).apply { text = "Waiting for your voice…"; setTextColor(Color.WHITE); textSize = 16f; gravity = Gravity.CENTER; setPadding(dp(12), dp(10), dp(12), dp(10)); background = rounded(Color.rgb(7, 14, 23), Color.rgb(23, 61, 74), 14) }; content.addView(transcript, lp(-1, -2, 0, 0, 0, 8))
+        val brain = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(9), dp(12), dp(9)); background = rounded(Color.rgb(6, 12, 20), Color.rgb(18, 48, 61), 14) }; content.addView(brain, lp(-1, -2, 0, 0, 0, 7))
         brain.addView(TextView(this).apply { text = "GEMINI BRAIN"; setTextColor(cyan); textSize = 8f; typeface = Typeface.DEFAULT_BOLD }, lp(-1, -2, 0, 0, 0, 4))
-        keyInput = EditText(this).apply {
-            hint = "Gemini API key (first setup only)"; setHintTextColor(muted); setTextColor(Color.WHITE); textSize = 11f
-            setSingleLine(true); setPadding(dp(9), dp(6), dp(9), dp(6)); background = rounded(Color.rgb(10, 19, 29), Color.rgb(28, 67, 81), 10)
-        }
-        brain.addView(keyInput, lp(-1, -2, 0, 0, 0, 5))
-        connectButton = button("CONNECT GEMINI")
-        brain.addView(connectButton, lp(-1, -2, 0, 0, 0, 0))
-        connectButton.setOnClickListener { connectGemini() }
-
-        voiceButton = button("START BACKGROUND FRIDAY")
-        content.addView(voiceButton, lp(-1, -2, 0, 0, 0, 6))
-        voiceButton.setOnClickListener { if (handsFree) stopHandsFree() else beginHandsFreeIfReady(true) }
-
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        assistantButton = button("ASSISTANT")
-        automationButton = button("AUTOMATION")
-        row.addView(assistantButton, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(0, 0, dp(4), 0) })
-        row.addView(automationButton, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(4), 0, 0, 0) })
-        content.addView(row, lp(-1, -2, 0, 0, 0, 4))
-        assistantButton.setOnClickListener { openAssistantRole() }
-        automationButton.setOnClickListener { openAccessibility() }
-
-        content.addView(TextView(this).apply {
-            text = "MIC → HEY FRIDAY → SPEECH → LOCAL COMMAND / GEMINI → ACTION → VOICE\nOne background voice engine. No tap required for each command."
-            setTextColor(Color.rgb(66, 92, 104)); textSize = 8f; gravity = Gravity.CENTER; setPadding(dp(5), dp(8), dp(5), 0)
-        }, lp(-1, -2, 0, 0, 0, 3))
+        keyInput = EditText(this).apply { hint = "Gemini API key (first setup only)"; setHintTextColor(muted); setTextColor(Color.WHITE); textSize = 11f; setSingleLine(true); setPadding(dp(9), dp(6), dp(9), dp(6)); background = rounded(Color.rgb(10, 19, 29), Color.rgb(28, 67, 81), 10) }; brain.addView(keyInput, lp(-1, -2, 0, 0, 0, 5))
+        connectButton = button("CONNECT GEMINI"); brain.addView(connectButton, lp(-1, -2, 0, 0, 0, 0)); connectButton.setOnClickListener { connectGemini() }
+        voiceButton = button("START BACKGROUND FRIDAY"); content.addView(voiceButton, lp(-1, -2, 0, 0, 0, 6)); voiceButton.setOnClickListener { if (handsFree) stopHandsFree() else beginHandsFreeIfReady(true) }
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }; assistantButton = button("ASSISTANT"); automationButton = button("AUTOMATION"); row.addView(assistantButton, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(0, 0, dp(4), 0) }); row.addView(automationButton, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(4), 0, 0, 0) }); content.addView(row, lp(-1, -2, 0, 0, 0, 4)); assistantButton.setOnClickListener { openAssistantRole() }; automationButton.setOnClickListener { openAccessibility() }
+        content.addView(TextView(this).apply { text = "MIC → HEY FRIDAY → SPEECH → LOCAL COMMAND / GEMINI → ACTION → VOICE\nOne background voice engine. No tap required for each command."; setTextColor(Color.rgb(66, 92, 104)); textSize = 8f; gravity = Gravity.CENTER; setPadding(dp(5), dp(8), dp(5), 0) }, lp(-1, -2, 0, 0, 0, 3))
         setContentView(root)
     }
 
-    private fun observeRuntime() {
-        scope.launch {
-            FridayStateFlow.state.collect { s ->
-                if (destroyed) return@collect
-                status.text = s.stage
-                detail.text = s.detail
-                status.setTextColor(if (s.healthy) cyan else red)
-                if (!speaking) orb.setTextColor(if (s.healthy) cyan else red)
-                val a = (s.audioAmplitude.coerceIn(0f, 1f) * 100).toInt()
-                meter.text = "MIC  ${"█".repeat((a / 10).coerceIn(0, 10))}${"░".repeat(10 - (a / 10).coerceIn(0, 10))}  $a%"
-                if (!speaking) orb.text = if (a > 8) "◉" else "○"
-                if (s.stage == "HEARD") transcript.text = s.detail
-            }
-        }
-    }
+    private fun observeRuntime() { scope.launch { FridayStateFlow.state.collect { s -> if (destroyed) return@collect; status.text = s.stage; detail.text = s.detail; status.setTextColor(if (s.healthy) cyan else red); if (!speaking) orb.setTextColor(if (s.healthy) cyan else red); val a = (s.audioAmplitude.coerceIn(0f, 1f) * 100).toInt(); meter.text = "MIC  ${"█".repeat((a / 10).coerceIn(0, 10))}${"░".repeat(10 - (a / 10).coerceIn(0, 10))}  $a%"; if (!speaking) orb.text = if (a > 8) "◉" else "○"; if (s.stage == "HEARD") transcript.text = s.detail } } }
 
     private fun beginHandsFreeIfReady(manual: Boolean = false) {
-        if (destroyed || handsFree) return
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            if (manual) setState("MIC PERMISSION", "Allow microphone access for background FRIDAY", false)
-            requestPermissionsIfNeeded(); return
-        }
-        handsFree = true
-        voiceButton.text = "STOP BACKGROUND FRIDAY"
-        runCatching { ContextCompat.startForegroundService(this, Intent(this, FridayHandsFreeService::class.java)) }
-            .onFailure { handsFree = false; setState("HANDS-FREE ERROR", "Could not start FRIDAY background engine", false) }
+        if (destroyed) return
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { if (manual) setState("MIC PERMISSION", "Allow microphone access for background FRIDAY", false); requestPermissionsIfNeeded(); return }
+        handsFree = true; voiceButton.text = "STOP BACKGROUND FRIDAY"
+        runCatching { ContextCompat.startForegroundService(this, Intent(this, FridayHandsFreeService::class.java)) }.onFailure { handsFree = false; setState("HANDS-FREE ERROR", "Could not start FRIDAY background engine", false) }
     }
 
-    private fun stopHandsFree() {
-        handsFree = false
-        speaking = false
-        handler.removeCallbacksAndMessages(null)
-        stopService(Intent(this, FridayHandsFreeService::class.java))
-        voiceButton.text = "START BACKGROUND FRIDAY"
-        setState("IDLE", "Background voice paused", true)
-    }
+    private fun stopHandsFree() { handsFree = false; speaking = false; handler.removeCallbacksAndMessages(null); stopService(Intent(this, FridayHandsFreeService::class.java)); voiceButton.text = "START BACKGROUND FRIDAY"; setState("IDLE", "Background voice paused", true) }
 
-    private fun connectGemini() {
-        val clean = keyInput.text?.toString()?.trim().orEmpty()
-        if (clean.isBlank()) { setState("GEMINI SETUP", "Paste the Gemini API key first", false); return }
-        val saved = runCatching { SecureApiKeyStore(applicationContext).save(clean) }.getOrDefault(false)
-        if (!saved) { setState("GEMINI ERROR", "Secure key storage failed. Try once after reinstalling this build.", false); return }
-        keyInput.setText("")
-        setState("GEMINI CONNECTED", "Cloud brain ready", true)
-    }
+    private fun connectGemini() { val clean = keyInput.text?.toString()?.trim().orEmpty(); if (clean.isBlank()) { setState("GEMINI SETUP", "Paste the Gemini API key first", false); return }; val saved = runCatching { SecureApiKeyStore(applicationContext).save(clean) }.getOrDefault(false); if (!saved) { setState("GEMINI ERROR", "Secure key storage failed. Try reinstalling this build if the Keystore is stale.", false); return }; keyInput.setText(""); setState("GEMINI CONNECTED", "Cloud brain ready", true) }
 
-    private fun requestPermissionsIfNeeded() {
-        val missing = buildList {
-            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) add(Manifest.permission.RECORD_AUDIO)
-            if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) add(Manifest.permission.POST_NOTIFICATIONS)
-        }
-        if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), 7001)
-    }
+    private fun requestPermissionsIfNeeded() { val missing = buildList { if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) add(Manifest.permission.RECORD_AUDIO); if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) add(Manifest.permission.POST_NOTIFICATIONS) }; if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), 7001) }
 
-    private fun refreshControls() {
-        val keyReady = !runCatching { SecureApiKeyStore(applicationContext).read() }.getOrNull().isNullOrBlank()
-        val mic = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        val assistant = runCatching { VoiceInteractionService.isActiveService(this, ComponentName(this, com.friday.assistant.voice.FridayVoiceInteractionService::class.java)) }.getOrDefault(false)
-        connectButton.text = if (keyReady) "GEMINI CONNECTED" else "CONNECT GEMINI"
-        connectButton.isEnabled = !keyReady
-        assistantButton.text = if (assistant) "ASSISTANT ON" else "ASSISTANT SETUP"
-        automationButton.text = if (isAccessibilityEnabled()) "AUTOMATION ON" else "AUTOMATION SETUP"
-        if (mic) {
-            handsFree = true
-            voiceButton.text = "STOP BACKGROUND FRIDAY"
-        } else {
-            handsFree = false
-            voiceButton.text = "START BACKGROUND FRIDAY"
-            setState("MIC PERMISSION", "Microphone access is required", false)
-        }
-    }
+    private fun refreshControls() { val keyReady = !runCatching { SecureApiKeyStore(applicationContext).read() }.getOrNull().isNullOrBlank(); val mic = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED; val assistant = runCatching { VoiceInteractionService.isActiveService(this, ComponentName(this, com.friday.assistant.voice.FridayVoiceInteractionService::class.java)) }.getOrDefault(false); connectButton.text = if (keyReady) "GEMINI CONNECTED" else "CONNECT GEMINI"; connectButton.isEnabled = !keyReady; assistantButton.text = if (assistant) "ASSISTANT ON" else "ASSISTANT SETUP"; automationButton.text = if (isAccessibilityEnabled()) "AUTOMATION ON" else "AUTOMATION SETUP"; if (!mic) { handsFree = false; voiceButton.text = "START BACKGROUND FRIDAY"; setState("MIC PERMISSION", "Microphone access is required", false) } else voiceButton.text = if (handsFree) "STOP BACKGROUND FRIDAY" else "START BACKGROUND FRIDAY" }
 
     private fun openAccessibility() = runCatching { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-    private fun openAssistantRole() = runCatching {
-        if (android.os.Build.VERSION.SDK_INT >= 29) {
-            val roles = getSystemService(android.app.role.RoleManager::class.java)
-            if (roles?.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT) == true) startActivity(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))
-        }
-    }
-    private fun isAccessibilityEnabled() = runCatching {
-        Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty().split(':').any {
-            it.equals(ComponentName(this, com.friday.assistant.automation.FridayAccessibilityService::class.java).flattenToString(), true)
-        }
-    }.getOrDefault(false)
+    private fun openAssistantRole() = runCatching { if (android.os.Build.VERSION.SDK_INT >= 29) { val roles = getSystemService(android.app.role.RoleManager::class.java); if (roles?.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT) == true) startActivity(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT)) } }
+    private fun isAccessibilityEnabled() = runCatching { Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty().split(':').any { it.equals(ComponentName(this, com.friday.assistant.automation.FridayAccessibilityService::class.java).flattenToString(), true) } }.getOrDefault(false)
     private fun setState(stage: String, message: String, healthy: Boolean) { FridayRuntime.update(stage, message, healthy) }
-    private fun button(text: String) = Button(this).apply {
-        this.text = text; setTextColor(Color.WHITE); textSize = 10f; isAllCaps = false
-        background = rounded(Color.rgb(8, 21, 31), Color.rgb(24, 70, 84), 11); setPadding(dp(8), dp(6), dp(8), dp(6))
-    }
+    private fun button(text: String) = Button(this).apply { this.text = text; setTextColor(Color.WHITE); textSize = 10f; isAllCaps = false; background = rounded(Color.rgb(8, 21, 31), Color.rgb(24, 70, 84), 11); setPadding(dp(8), dp(6), dp(8), dp(6)) }
     private fun rounded(fill: Int, stroke: Int, radius: Int) = GradientDrawable().apply { setColor(fill); setStroke(dp(1), stroke); cornerRadius = dp(radius).toFloat() }
     private fun lp(w: Int, h: Int, l: Int, t: Int, r: Int, b: Int) = LinearLayout.LayoutParams(w, h).apply { setMargins(dp(l), dp(t), dp(r), dp(b)) }
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
-    override fun onPause() {
-        super.onPause()
-        // Do not stop the service when the HUD leaves the foreground. Background FRIDAY is the point.
-    }
-
-    override fun onDestroy() {
-        destroyed = true
-        scope.cancel()
-        tts.shutdown()
-        super.onDestroy()
-    }
+    override fun onPause() { super.onPause() }
+    override fun onDestroy() { destroyed = true; scope.cancel(); tts.shutdown(); super.onDestroy() }
 }
