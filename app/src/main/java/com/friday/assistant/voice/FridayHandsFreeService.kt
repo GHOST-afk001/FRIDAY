@@ -32,8 +32,8 @@ class FridayHandsFreeService : Service() {
     override fun onCreate() {
         super.onCreate()
         stopped = false
-        createChannel()
         try {
+            createChannel()
             val notification = buildNotification()
             if (Build.VERSION.SDK_INT >= 34) {
                 startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
@@ -59,20 +59,13 @@ class FridayHandsFreeService : Service() {
 
         runCatching { tts = TTSManager(applicationContext) {
             FridayRuntime.update("TTS ERROR", "Android speech output is unavailable", false)
-        }}.onFailure {
-            FridayRuntime.update("TTS ERROR", "Android speech output could not be initialized", false)
-        }
-        runCatching { agent = FridayAgent(applicationContext) }.onFailure {
-            FridayRuntime.update("BRAIN ERROR", "FRIDAY brain could not be initialized", false)
-        }
-        main.postDelayed({ if (!stopped) startListening() }, 800L)
+        }}.onFailure { FridayRuntime.update("TTS ERROR", "Android speech output could not be initialized", false) }
+        runCatching { agent = FridayAgent(applicationContext) }.onFailure { FridayRuntime.update("BRAIN ERROR", "FRIDAY brain could not be initialized", false) }
+        main.postDelayed({ if (!stopped) startListening() }, 1200L)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!stopped && !busy) {
-            main.removeCallbacksAndMessages(LISTEN_TAG)
-            main.post { startListening() }
-        }
+        if (!stopped && !busy) main.post { startListening() }
         return START_STICKY
     }
 
@@ -80,53 +73,49 @@ class FridayHandsFreeService : Service() {
         if (stopped || busy) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             FridayRuntime.update("MIC PERMISSION", "Allow microphone access for FRIDAY", false)
-            scheduleRestart(1500L)
+            scheduleRestart(2000L)
             return
         }
         busy = true
         runCatching { voice?.destroy() }
         voice = null
         try {
-            voice = VoiceManager(applicationContext, object : VoiceManager.Listener {
-                override fun onListening() {
-                    FridayRuntime.update("LISTENING", "FRIDAY is listening — speak naturally", true)
-                }
+            val newVoice = VoiceManager(applicationContext, object : VoiceManager.Listener {
+                override fun onListening() { FridayRuntime.update("LISTENING", "FRIDAY is listening — speak naturally", true) }
                 override fun onAmplitude(value: Float) = Unit
                 override fun onResult(text: String) {
-                    val clean = text.trim()
                     if (stopped) return
-                    if (clean.isBlank()) { finishCycle(250L); return }
+                    val clean = text.trim()
+                    if (clean.isBlank()) { finishCycle(300L); return }
                     FridayRuntime.update("HEARD", clean, true)
                     val currentAgent = agent
-                    if (currentAgent == null) {
-                        finishCycle(250L)
-                        return
-                    }
-                    runCatching {
+                    if (currentAgent == null) { finishCycle(300L); return }
+                    try {
                         currentAgent.handle(clean) { answer, _ ->
                             if (stopped) return@handle
                             main.post {
                                 if (stopped) return@post
                                 val spoken = answer.trim().ifBlank { "I didn't get a response, Boss." }
                                 FridayRuntime.update("SPEAKING", spoken.take(240), true)
-                                runCatching { tts?.speak(spoken) { finishCycle(200L) } ?: finishCycle(200L) }
-                                    .onFailure { finishCycle(200L) }
+                                runCatching { tts?.speak(spoken) { finishCycle(300L) } ?: finishCycle(300L) }
+                                    .onFailure { finishCycle(300L) }
                             }
                         }
-                    }.onFailure { finishCycle(250L) }
+                    } catch (_: Throwable) { finishCycle(300L) }
                 }
                 override fun onError(message: String) {
                     if (stopped) return
                     FridayRuntime.update("VOICE RETRY", message, true)
-                    finishCycle(if (message.contains("permission", true)) 1500L else 450L)
+                    finishCycle(if (message.contains("permission", true)) 2000L else 700L)
                 }
             })
-            voice?.start()
-        } catch (t: Throwable) {
+            voice = newVoice
+            newVoice.start()
+        } catch (_: Throwable) {
             busy = false
             voice = null
             FridayRuntime.update("VOICE RETRY", "Android speech engine could not start", true)
-            scheduleRestart(900L)
+            scheduleRestart(1200L)
         }
     }
 
@@ -140,9 +129,7 @@ class FridayHandsFreeService : Service() {
 
     private fun scheduleRestart(delayMs: Long) {
         val token = ++restartToken
-        main.postAtTime({
-            if (!stopped && token == restartToken && !busy) startListening()
-        }, LISTEN_TAG, android.os.SystemClock.uptimeMillis() + delayMs)
+        main.postAtTime({ if (!stopped && token == restartToken && !busy) startListening() }, LISTEN_TAG, android.os.SystemClock.uptimeMillis() + delayMs)
     }
 
     override fun onDestroy() {
