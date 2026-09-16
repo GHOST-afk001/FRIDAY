@@ -15,34 +15,35 @@ import android.os.Looper
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.friday.assistant.R
 import com.friday.assistant.ai.FridayAgent
 import com.friday.assistant.runtime.FridayRuntime
 
-/** Persistent foreground voice loop. It owns the microphone so HUD and background use one path. */
+/** Persistent foreground voice engine. SpeechRecognizer is used as the reliable command path. */
 class FridayHandsFreeService : Service() {
     private val main = Handler(Looper.getMainLooper())
-    private var wakeDetector: FridayWakeDetector? = null
     private var voice: VoiceManager? = null
     private var tts: TTSManager? = null
     private var agent: FridayAgent? = null
     private var wakeLock: PowerManager.WakeLock? = null
     @Volatile private var stopped = false
-    @Volatile private var speaking = false
+    @Volatile private var busy = false
+    private var restartToken = 0L
 
     override fun onCreate() {
         super.onCreate()
         stopped = false
         createChannel()
-        val notification = buildNotification()
         try {
+            val notification = buildNotification()
             if (Build.VERSION.SDK_INT >= 34) {
                 startForeground(
                     NOTIFICATION_ID,
                     notification,
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
                 )
-            } else startForeground(NOTIFICATION_ID, notification)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
         } catch (t: Throwable) {
             FridayRuntime.update("HANDS-FREE ERROR", "Android refused the microphone foreground service", false)
             stopSelf()
@@ -59,57 +60,50 @@ class FridayHandsFreeService : Service() {
                 wakeLock = this
             }
         }
-        tts = TTSManager(applicationContext) { FridayRuntime.update("TTS ERROR", "Android speech output is unavailable", false) }
+
+        tts = TTSManager(applicationContext) {
+            FridayRuntime.update("TTS ERROR", "Android speech output is unavailable", false)
+        }
         agent = FridayAgent(applicationContext)
-        main.postDelayed({ if (!stopped) startWakeListening() }, 350L)
+        main.postDelayed({ if (!stopped) startListening() }, 500L)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!stopped && wakeDetector == null && !speaking) main.post { startWakeListening() }
+        if (!stopped && !busy) {
+            main.removeCallbacksAndMessages(LISTEN_TAG)
+            main.post { startListening() }
+        }
         return START_STICKY
     }
 
-    private fun startWakeListening() {
-        if (stopped || speaking) return
+    /**
+     * Keep a live command listener instead of relying exclusively on a custom wake-word model.
+     * The user can say "Hey Friday ..." or simply speak the command. Android ends each speech
+     * recognition session after silence; we immediately create a fresh session.
+     */
+    private fun startListening() {
+        if (stopped || busy) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            FridayRuntime.update("MIC PERMISSION", "Allow microphone access for hands-free FRIDAY", false)
+            FridayRuntime.update("MIC PERMISSION", "Allow microphone access for FRIDAY", false)
+            scheduleRestart(1500L)
             return
         }
-        wakeDetector?.stop()
-        wakeDetector = FridayWakeDetector(
-            applicationContext,
-            onWake = { confidence, _ -> onWakeDetected(confidence) },
-            onStopped = { main.post { if (!stopped && !speaking && wakeDetector?.isRunning() != true) startWakeListening() } }
-        ).also { it.start() }
-        FridayRuntime.update("WAKE LISTENING", "Background microphone active • say Hey Friday", true)
-    }
-
-    private fun onWakeDetected(confidence: Float) {
-        if (stopped || speaking) return
-        FridayRuntime.update("WAKE ACCEPTED", "Hey Friday detected • ${"%.0f".format(confidence * 100f)}% confidence", true)
-        speaking = true
-        val detector = wakeDetector
-        Thread {
-            detector?.stopAndWait(1800L)
-            main.post { if (!stopped) startCommandListening() else speaking = false }
-        }.start()
-    }
-
-    private fun startCommandListening() {
-        if (stopped) return
+        busy = true
         voice?.destroy()
         voice = VoiceManager(applicationContext, object : VoiceManager.Listener {
             override fun onListening() {
-                FridayRuntime.update("LISTENING", "Speak your command", true)
+                FridayRuntime.update("LISTENING", "FRIDAY is listening — speak naturally", true)
             }
 
-            override fun onAmplitude(value: Float) = Unit
+            override fun onAmplitude(value: Float) {
+                // VoiceManager already publishes amplitude to the live HUD state.
+            }
 
             override fun onResult(text: String) {
-                if (stopped) return
                 val clean = text.trim()
+                if (stopped) return
                 if (clean.isBlank()) {
-                    finishCommandCycle()
+                    finishCycle(250L)
                     return
                 }
                 FridayRuntime.update("HEARD", clean, true)
@@ -117,36 +111,44 @@ class FridayHandsFreeService : Service() {
                     if (stopped) return@handle
                     main.post {
                         if (stopped) return@post
-                        FridayRuntime.update("SPEAKING", answer.take(240), true)
-                        tts?.speak(answer) { finishCommandCycle() }
+                        val spoken = answer.trim().ifBlank { "I didn't get a response, Boss." }
+                        FridayRuntime.update("SPEAKING", spoken.take(240), true)
+                        tts?.speak(spoken) { finishCycle(200L) } ?: finishCycle(200L)
                     }
                 }
             }
 
             override fun onError(message: String) {
                 if (stopped) return
-                FridayRuntime.update("VOICE ERROR", message, false)
-                finishCommandCycle(delayMs = 700L)
+                FridayRuntime.update("VOICE RETRY", message, true)
+                finishCycle(if (message.contains("permission", true)) 1500L else 450L)
             }
         })
         voice?.start()
     }
 
-    private fun finishCommandCycle(delayMs: Long = 250L) {
+    private fun finishCycle(delayMs: Long) {
         if (stopped) return
         voice?.destroy()
         voice = null
-        speaking = false
-        main.postDelayed({ if (!stopped) startWakeListening() }, delayMs)
+        busy = false
+        scheduleRestart(delayMs)
+    }
+
+    private fun scheduleRestart(delayMs: Long) {
+        val token = ++restartToken
+        main.postAtTime({
+            if (!stopped && token == restartToken && !busy) startListening()
+        }, LISTEN_TAG, android.os.SystemClock.uptimeMillis() + delayMs)
     }
 
     override fun onDestroy() {
         stopped = true
+        restartToken++
         main.removeCallbacksAndMessages(null)
-        wakeDetector?.stop()
-        wakeDetector = null
         voice?.destroy()
         voice = null
+        busy = false
         agent?.close()
         agent = null
         tts?.shutdown()
@@ -170,7 +172,7 @@ class FridayHandsFreeService : Service() {
     private fun buildNotification(): Notification = NotificationCompat.Builder(this, CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_btn_speak_now)
         .setContentTitle("FRIDAY hands-free active")
-        .setContentText("Say Hey Friday to give a command.")
+        .setContentText("Speak a command — no tap required.")
         .setOngoing(true)
         .setCategory(NotificationCompat.CATEGORY_SERVICE)
         .build()
@@ -178,5 +180,6 @@ class FridayHandsFreeService : Service() {
     companion object {
         private const val CHANNEL_ID = "friday_hands_free"
         private const val NOTIFICATION_ID = 704
+        private const val LISTEN_TAG = "friday-listen-restart"
     }
 }
