@@ -14,23 +14,21 @@ class SecureApiKeyStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("friday_secure", Context.MODE_PRIVATE)
     private val alias = "friday_gemini_key"
 
-    /** Saves without allowing a Keystore/provider failure to crash the UI thread. */
-    fun save(value: String) {
+    /** Returns false instead of crashing the activity if a device Keystore provider rejects the operation. */
+    fun save(value: String): Boolean {
         if (value.isBlank()) {
             clear()
-            return
+            return false
         }
-        runCatching {
+        return runCatching {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
             val encrypted = cipher.doFinal(value.toByteArray(StandardCharsets.UTF_8))
             prefs.edit()
                 .putString("iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
                 .putString("data", Base64.encodeToString(encrypted, Base64.NO_WRAP))
-                .apply()
-        }.getOrElse { error ->
-            throw IllegalStateException("Unable to securely store Gemini API key", error)
-        }
+                .commit()
+        }.getOrDefault(false)
     }
 
     fun read(): String? = runCatching {
