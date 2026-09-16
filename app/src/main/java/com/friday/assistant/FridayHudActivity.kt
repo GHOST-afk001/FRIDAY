@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.Gravity
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
@@ -23,18 +24,36 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
-/** Main FRIDAY screen. Voice is started only after the HUD is safely attached. */
+/** Main FRIDAY screen. The first frame is deliberately minimal so HUD construction can never block launcher startup. */
 class FridayHudActivity : ComponentActivity() {
     private var hud: FridayReferenceHudView? = null
     private val scope = MainScope()
     private var destroyed = false
     private var hudFailed = false
+    private var voiceStartQueued = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enterImmersiveHud()
+        setContentView(startupView())
 
+        // Do not construct the custom renderer during Activity launch. Samsung can reject heavy
+        // canvas/software-renderer initialization on the launch transaction; delaying it isolates that path.
+        window.decorView.post {
+            if (!destroyed) attachHudSafely()
+        }
+    }
+
+    private fun startupView(): TextView = TextView(this).apply {
+        setBackgroundColor(Color.rgb(4, 2, 3))
+        setTextColor(Color.rgb(255, 137, 48))
+        textSize = 16f
+        text = "FRIDAY"
+        gravity = Gravity.CENTER
+    }
+
+    private fun attachHudSafely() {
         try {
             val view = FridayReferenceHudView(this)
             view.actions = object : FridayReferenceHudView.Actions {
@@ -45,24 +64,15 @@ class FridayHudActivity : ComponentActivity() {
             }
             hud = view
             setContentView(view)
-        } catch (t: Throwable) {
+            FridayRuntime.update("READY", "FRIDAY HUD ready — hands-free voice active", true)
+            requestMicrophoneFirst()
+        } catch (_: Throwable) {
             hudFailed = true
             FridayRuntime.update("HUD ERROR", "FRIDAY HUD could not initialize safely", false)
-            val fallback = TextView(this).apply {
-                setBackgroundColor(Color.BLACK)
-                setTextColor(Color.rgb(255, 137, 48))
-                textSize = 16f
-                text = "FRIDAY\n\nHUD initialization failed safely.\nPlease restart FRIDAY."
-                gravity = android.view.Gravity.CENTER
-                setPadding(32, 32, 32, 32)
-            }
-            setContentView(fallback)
+            setContentView(startupView().apply {
+                text = "FRIDAY\n\nHUD initialization failed safely.\nVoice engine remains available."
+            })
         }
-
-        scope.launch {
-            FridayStateFlow.state.collect { value -> hud?.takeIf { !destroyed }?.render(value) }
-        }
-        if (!hudFailed) requestMicrophoneFirst()
     }
 
     override fun onResume() {
@@ -73,7 +83,7 @@ class FridayHudActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestMicrophoneFirst()
         } else {
-            FridayRuntime.update("READY", "FRIDAY HUD ready — tap the core to activate voice", true)
+            queueBackgroundVoice()
         }
     }
 
@@ -96,9 +106,17 @@ class FridayHudActivity : ComponentActivity() {
         }
     }
 
+    private fun queueBackgroundVoice() {
+        if (voiceStartQueued || destroyed) return
+        voiceStartQueued = true
+        window.decorView.postDelayed({
+            voiceStartQueued = false
+            if (!destroyed && !isFinishing) startBackgroundVoice()
+        }, 900L)
+    }
+
     private fun startBackgroundVoice() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            FridayRuntime.update("MIC PERMISSION", "Allow microphone access for FRIDAY", false)
             requestMicrophoneFirst()
             return
         }
@@ -113,15 +131,16 @@ class FridayHudActivity : ComponentActivity() {
     private fun requestMicrophoneFirst() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_MIC)
-        }
+        } else queueBackgroundVoice()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_MIC) {
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                FridayRuntime.update("MIC READY", "Microphone permission granted — tap the core to activate voice", true)
+                FridayRuntime.update("MIC READY", "Microphone permission granted — starting hands-free voice", true)
                 requestOptionalPermissions()
+                queueBackgroundVoice()
             } else {
                 FridayRuntime.update("MIC BLOCKED", "Microphone permission is required for voice control", false)
             }
