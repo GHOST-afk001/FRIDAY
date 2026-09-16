@@ -3,6 +3,7 @@ package com.friday.assistant.ai
 import android.content.Context
 import com.friday.assistant.commands.AppLauncher
 import com.friday.assistant.commands.FridayCommandProcessor
+import com.friday.assistant.core.AutonomousBrain
 import com.friday.assistant.runtime.FridayRuntime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,11 +38,9 @@ class FridayAgent(context: Context) {
     fun handle(input: String, callback: (String, Boolean) -> Unit) {
         if (closed) return
         FridayRuntime.update("UNDERSTANDING", "Interpreting your request", true)
-
         handleIdentity(input)?.let { answer ->
             remember("user", input); remember("assistant", answer); callback(answer, true); return
         }
-
         val localResult = local.process(input)
         if (localResult.handledLocally) {
             remember("user", input)
@@ -50,21 +49,15 @@ class FridayAgent(context: Context) {
                 val launched = runCatching { launcher.launch(localResult.action) }.getOrDefault(false)
                 val answer = if (launched) localResult.text else "I couldn't complete that action on this phone, Boss."
                 FridayRuntime.update(if (launched) "VERIFIED" else "ACTION FAILED", answer.take(120), launched)
-                remember("assistant", answer)
-                callback(answer, true)
-            } else {
-                remember("assistant", localResult.text)
-                callback(localResult.text, true)
-            }
+                remember("assistant", answer); callback(answer, true)
+            } else { remember("assistant", localResult.text); callback(localResult.text, true) }
             return
         }
-
         if (!gemini.isConfigured()) {
             val answer = "Boss, Gemini brain abhi configured nahi hai. Gemini API key add kijiye; uske baad main open-ended requests handle karungi."
             FridayRuntime.update("BRAIN NOT CONFIGURED", "Gemini API key is required for open-ended intelligence", false)
             callback(answer, false); return
         }
-
         val history = loadHistory()
         FridayRuntime.update("CONTEXT", "Loading recent conversation context", true)
         val decision = autonomousBrain.decide(input, history)
