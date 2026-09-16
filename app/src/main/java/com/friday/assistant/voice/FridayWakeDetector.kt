@@ -11,7 +11,9 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.friday.assistant.runtime.FridayRuntime
+import com.friday.assistant.runtime.FridayStateFlow
 import java.lang.reflect.Method
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -29,12 +31,12 @@ class FridayWakeDetector(
         private const val TAG = "FridayWakeDetector"
         private const val SAMPLE_RATE = 16_000
         private const val BYTES_PER_SAMPLE = 2
-        // Voicute documents 0.5 as the baseline threshold. 0.45 gives the real phone mic
-        // a little more headroom without turning the detector into an always-triggered gate.
-        private const val THRESHOLD = 0.45f
+        // Prior builds could hear the microphone but never cross the wake gate on a real phone.
+        // Use a recall-first threshold while still requiring multiple matching windows.
+        private const val THRESHOLD = 0.30f
         private const val COOLDOWN_MS = 1_800L
-        // Do not discard quiet but valid speech before the classifier sees it.
-        private const val RMS_GATE = 0.0015f
+        // Keep this only as a noise floor guard; normal quiet speech must reach the classifier.
+        private const val RMS_GATE = 0.0010f
     }
 
     private val running = AtomicBoolean(false)
@@ -117,10 +119,6 @@ class FridayWakeDetector(
             localRecorder.startRecording()
             if (localRecorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) error("AudioRecord failed to start")
 
-            // Do NOT request transient media audio focus for the always-on assistant microphone.
-            // Samsung/Android may revoke transient focus immediately, which leaves AudioRecord
-            // alive but effectively silent. VoiceInteractionService already owns the assistant
-            // microphone lifecycle, so the wake detector should capture without taking media focus.
             FridayRuntime.update("WAKE LISTENING", "Microphone active • listening for Hey Friday", true)
             Log.i(TAG, "Wake microphone started: ${SAMPLE_RATE}Hz mono, buffer=$needed")
 
@@ -158,11 +156,15 @@ class FridayWakeDetector(
                 }
 
                 var energy = 0.0
+                var peak = 0
                 for (sample in frame) {
                     val normalized = sample / 32768.0
                     energy += normalized * normalized
+                    peak = max(peak, kotlin.math.abs(sample.toInt()))
                 }
                 val rms = sqrt(energy / frame.size).toFloat()
+                // Drive the HUD orb from the actual always-on microphone, not only SpeechRecognizer.
+                FridayStateFlow.updateAmplitude((rms / 0.06f).coerceIn(0f, 1f))
                 if (rms < RMS_GATE) {
                     consecutiveWord = ""
                     consecutiveCount = 0
@@ -173,13 +175,21 @@ class FridayWakeDetector(
                 if (!running.get()) continue
                 val word = result.javaClass.getField("wakeWord").get(result) as? String ?: ""
                 val probability = result.javaClass.getField("probability").getFloat(result)
-                val requiredFrames = result.javaClass.getField("recommendedConsFrames").getInt(result).coerceIn(1, 8)
+                // The bundled model recommends 3 windows. Two strong windows are enough for
+                // a phone-mic wake because each window is already ~1 second of audio.
+                val requiredFrames = result.javaClass.getField("recommendedConsFrames").getInt(result).coerceIn(2, 3)
                 peakSinceLog = max(peakSinceLog, probability)
                 val now = SystemClock.elapsedRealtime()
-                if (now - scoreLogAt >= 3000L) {
-                    Log.d(TAG, "Wake score=${"%.3f".format(peakSinceLog)} rms=${"%.4f".format(rms)} word=$word")
+                if (now - scoreLogAt >= 1000L) {
+                    Log.d(TAG, String.format(Locale.US, "Wake score=%.3f rms=%.4f peak=%d word=%s", peakSinceLog, rms, peak, word))
                     scoreLogAt = now
                     peakSinceLog = 0f
+                }
+
+                // Keep the HUD visibly alive while wake inference is running, but do not replace
+                // the persistent WAKE LISTENING stage with noisy score updates.
+                if (now - scoreLogAt < 50L) {
+                    FridayRuntime.update("WAKE LISTENING", String.format(Locale.US, "Mic active • score %.2f • say Hey Friday", probability), true)
                 }
 
                 if (word.contains("friday", ignoreCase = true) && probability >= THRESHOLD) {
@@ -195,7 +205,8 @@ class FridayWakeDetector(
                         lastWake = now
                         consecutiveWord = ""
                         consecutiveCount = 0
-                        FridayRuntime.update("WAKE DETECTED", "Hey Friday detected • opening voice session", true)
+                        FridayStateFlow.updateAmplitude(1f)
+                        FridayRuntime.update("WAKE DETECTED", String.format(Locale.US, "Hey Friday detected • %.0f%% confidence", probability * 100f), true)
                         onWake(probability, frame.copyOf())
                     }
                 }
@@ -214,6 +225,7 @@ class FridayWakeDetector(
             try { localRecorder?.release() } catch (_: Exception) {}
             if (recorder === localRecorder) recorder = null
             try { engineClass?.getMethod("close")?.invoke(engine) } catch (_: Exception) {}
+            FridayStateFlow.resetAmplitude()
             running.set(false)
             stoppedLatch = null
             latch.countDown()
