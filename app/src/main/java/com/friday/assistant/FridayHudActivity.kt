@@ -13,7 +13,6 @@ import android.os.Looper
 import android.provider.Settings
 import android.service.voice.VoiceInteractionService
 import android.view.Gravity
-import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -21,17 +20,17 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
-import com.friday.assistant.ai.FridayAgent
+import androidx.core.content.ContextCompat
 import com.friday.assistant.ai.SecureApiKeyStore
 import com.friday.assistant.runtime.FridayRuntime
 import com.friday.assistant.runtime.FridayStateFlow
+import com.friday.assistant.voice.FridayHandsFreeService
 import com.friday.assistant.voice.TTSManager
-import com.friday.assistant.voice.VoiceManager
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
-/** FRIDAY HUD. While the HUD is open, speech is hands-free: no tap is required for each command. */
+/** FRIDAY HUD. The persistent foreground service owns the microphone and keeps working in background. */
 class FridayHudActivity : ComponentActivity() {
     private lateinit var status: TextView
     private lateinit var detail: TextView
@@ -44,8 +43,6 @@ class FridayHudActivity : ComponentActivity() {
     private lateinit var assistantButton: Button
     private lateinit var automationButton: Button
     private lateinit var tts: TTSManager
-    private var voice: VoiceManager? = null
-    private var agent: FridayAgent? = null
     private var handsFree = false
     private var speaking = false
     private var destroyed = false
@@ -85,17 +82,14 @@ class FridayHudActivity : ComponentActivity() {
         scroll.addView(content, ViewGroup.LayoutParams(-1, -1))
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
-        val title = TextView(this).apply {
-            text = "FRIDAY"
-            setTextColor(Color.WHITE); textSize = 29f; gravity = Gravity.CENTER
+        content.addView(TextView(this).apply {
+            text = "FRIDAY"; setTextColor(Color.WHITE); textSize = 29f; gravity = Gravity.CENTER
             typeface = Typeface.DEFAULT_BOLD; letterSpacing = .22f
-        }
-        content.addView(title, lp(-1, -2, 0, 2, 0, 1))
-        val sub = TextView(this).apply {
-            text = "PERSONAL INTELLIGENCE • HANDS-FREE"
+        }, lp(-1, -2, 0, 2, 0, 1))
+        content.addView(TextView(this).apply {
+            text = "PERSONAL INTELLIGENCE • ALWAYS-ON"
             setTextColor(muted); textSize = 8f; gravity = Gravity.CENTER; letterSpacing = .12f
-        }
-        content.addView(sub, lp(-1, -2, 0, 0, 0, 5))
+        }, lp(-1, -2, 0, 0, 0, 5))
 
         orb = TextView(this).apply { text = "◉"; setTextColor(cyan); textSize = 88f; gravity = Gravity.CENTER }
         content.addView(orb, lp(-1, dp(122), 0, 0, 0, 0))
@@ -104,16 +98,14 @@ class FridayHudActivity : ComponentActivity() {
             typeface = Typeface.DEFAULT_BOLD; letterSpacing = .08f
         }
         content.addView(status, lp(-1, -2, 0, 2, 0, 2))
-        detail = TextView(this).apply { text = "Preparing microphone..."; setTextColor(Color.LTGRAY); textSize = 12f; gravity = Gravity.CENTER }
+        detail = TextView(this).apply { text = "Preparing background microphone..."; setTextColor(Color.LTGRAY); textSize = 12f; gravity = Gravity.CENTER }
         content.addView(detail, lp(-1, -2, 0, 0, 0, 4))
         meter = TextView(this).apply { text = "MIC  ░░░░░░░░░░  0%"; setTextColor(muted); textSize = 9f; gravity = Gravity.CENTER }
         content.addView(meter, lp(-1, -2, 0, 0, 0, 8))
 
-        val heardLabel = TextView(this).apply { text = "LAST HEARD"; setTextColor(muted); textSize = 8f; letterSpacing = .12f }
-        content.addView(heardLabel, lp(-1, -2, 0, 0, 0, 2))
+        content.addView(TextView(this).apply { text = "LAST HEARD"; setTextColor(muted); textSize = 8f; letterSpacing = .12f }, lp(-1, -2, 0, 0, 0, 2))
         transcript = TextView(this).apply {
-            text = "Waiting for your voice…"
-            setTextColor(Color.WHITE); textSize = 16f; gravity = Gravity.CENTER
+            text = "Waiting for your voice…"; setTextColor(Color.WHITE); textSize = 16f; gravity = Gravity.CENTER
             setPadding(dp(12), dp(10), dp(12), dp(10)); background = rounded(Color.rgb(7, 14, 23), Color.rgb(23, 61, 74), 14)
         }
         content.addView(transcript, lp(-1, -2, 0, 0, 0, 8))
@@ -130,7 +122,7 @@ class FridayHudActivity : ComponentActivity() {
         brain.addView(connectButton, lp(-1, -2, 0, 0, 0, 0))
         connectButton.setOnClickListener { connectGemini() }
 
-        voiceButton = button("START HANDS-FREE")
+        voiceButton = button("START BACKGROUND FRIDAY")
         content.addView(voiceButton, lp(-1, -2, 0, 0, 0, 6))
         voiceButton.setOnClickListener { if (handsFree) stopHandsFree() else beginHandsFreeIfReady(true) }
 
@@ -144,7 +136,7 @@ class FridayHudActivity : ComponentActivity() {
         automationButton.setOnClickListener { openAccessibility() }
 
         content.addView(TextView(this).apply {
-            text = "VOICE → UNDERSTAND → COMMAND / GEMINI → ACTION → SPEAK\nNo tap needed while hands-free mode is active."
+            text = "MIC → HEY FRIDAY → SPEECH → LOCAL COMMAND / GEMINI → ACTION → VOICE\nOne background voice engine. No tap required for each command."
             setTextColor(Color.rgb(66, 92, 104)); textSize = 8f; gravity = Gravity.CENTER; setPadding(dp(5), dp(8), dp(5), 0)
         }, lp(-1, -2, 0, 0, 0, 3))
         setContentView(root)
@@ -161,81 +153,40 @@ class FridayHudActivity : ComponentActivity() {
                 val a = (s.audioAmplitude.coerceIn(0f, 1f) * 100).toInt()
                 meter.text = "MIC  ${"█".repeat((a / 10).coerceIn(0, 10))}${"░".repeat(10 - (a / 10).coerceIn(0, 10))}  $a%"
                 if (!speaking) orb.text = if (a > 8) "◉" else "○"
+                if (s.stage == "HEARD") transcript.text = s.detail
             }
         }
     }
 
     private fun beginHandsFreeIfReady(manual: Boolean = false) {
-        if (destroyed || speaking || handsFree) return
+        if (destroyed || handsFree) return
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            if (manual) setState("MIC PERMISSION", "Allow microphone access, then FRIDAY will listen automatically", false)
+            if (manual) setState("MIC PERMISSION", "Allow microphone access for background FRIDAY", false)
             requestPermissionsIfNeeded(); return
         }
         handsFree = true
-        voiceButton.text = "STOP HANDS-FREE"
-        startRecognition()
-    }
-
-    private fun startRecognition() {
-        if (destroyed || !handsFree || speaking) return
-        voice?.destroy()
-        voice = VoiceManager(this, object : VoiceManager.Listener {
-            override fun onListening() { setState("LISTENING", "Speak naturally — FRIDAY is listening", true) }
-            override fun onAmplitude(value: Float) {
-                val a = (value.coerceIn(0f, 1f) * 100).toInt()
-                meter.text = "MIC  ${"█".repeat((a / 10).coerceIn(0, 10))}${"░".repeat(10 - (a / 10).coerceIn(0, 10))}  $a%"
-                orb.text = if (a > 7) "◉" else "○"; orb.setTextColor(if (a > 7) green else cyan)
-            }
-            override fun onResult(text: String) {
-                if (!handsFree || destroyed) return
-                if (text.isBlank()) { scheduleRecognition(); return }
-                transcript.text = text
-                setState("HEARD", text, true)
-                ensureAgent().handle(text) { answer, _ ->
-                    if (destroyed || !handsFree) return@handle
-                    speaking = true
-                    setState("SPEAKING", answer, true)
-                    tts.speak(answer) {
-                        speaking = false
-                        if (handsFree && !destroyed) handler.postDelayed({ startRecognition() }, 250L)
-                    }
-                }
-            }
-            override fun onError(message: String) {
-                if (!handsFree || destroyed) return
-                setState("VOICE ERROR", message, false)
-                scheduleRecognition()
-            }
-        })
-        voice?.start()
-    }
-
-    private fun scheduleRecognition() {
-        if (!handsFree || destroyed || speaking) return
-        voice?.destroy(); voice = null
-        handler.postDelayed({ if (handsFree && !destroyed && !speaking) startRecognition() }, 900L)
+        voiceButton.text = "STOP BACKGROUND FRIDAY"
+        runCatching { ContextCompat.startForegroundService(this, Intent(this, FridayHandsFreeService::class.java)) }
+            .onFailure { handsFree = false; setState("HANDS-FREE ERROR", "Could not start FRIDAY background engine", false) }
     }
 
     private fun stopHandsFree() {
         handsFree = false
         speaking = false
         handler.removeCallbacksAndMessages(null)
-        voice?.destroy(); voice = null
-        voiceButton.text = "START HANDS-FREE"
-        setState("IDLE", "Hands-free paused", true)
+        stopService(Intent(this, FridayHandsFreeService::class.java))
+        voiceButton.text = "START BACKGROUND FRIDAY"
+        setState("IDLE", "Background voice paused", true)
     }
 
     private fun connectGemini() {
         val clean = keyInput.text?.toString()?.trim().orEmpty()
         if (clean.isBlank()) { setState("GEMINI SETUP", "Paste the Gemini API key first", false); return }
         val saved = runCatching { SecureApiKeyStore(applicationContext).save(clean) }.getOrDefault(false)
-        if (!saved) { setState("GEMINI ERROR", "Secure key storage failed on this phone", false); return }
+        if (!saved) { setState("GEMINI ERROR", "Secure key storage failed. Try once after reinstalling this build.", false); return }
         keyInput.setText("")
         setState("GEMINI CONNECTED", "Cloud brain ready", true)
-        ensureAgent()
     }
-
-    private fun ensureAgent(): FridayAgent { if (agent == null) agent = FridayAgent(applicationContext); return agent!! }
 
     private fun requestPermissionsIfNeeded() {
         val missing = buildList {
@@ -253,8 +204,14 @@ class FridayHudActivity : ComponentActivity() {
         connectButton.isEnabled = !keyReady
         assistantButton.text = if (assistant) "ASSISTANT ON" else "ASSISTANT SETUP"
         automationButton.text = if (isAccessibilityEnabled()) "AUTOMATION ON" else "AUTOMATION SETUP"
-        voiceButton.text = if (handsFree) "STOP HANDS-FREE" else "START HANDS-FREE"
-        if (!mic) setState("MIC PERMISSION", "Microphone access is required", false)
+        if (mic) {
+            handsFree = true
+            voiceButton.text = "STOP BACKGROUND FRIDAY"
+        } else {
+            handsFree = false
+            voiceButton.text = "START BACKGROUND FRIDAY"
+            setState("MIC PERMISSION", "Microphone access is required", false)
+        }
     }
 
     private fun openAccessibility() = runCatching { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
@@ -280,11 +237,13 @@ class FridayHudActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
-        if (!isChangingConfigurations) stopHandsFree()
+        // Do not stop the service when the HUD leaves the foreground. Background FRIDAY is the point.
     }
+
     override fun onDestroy() {
         destroyed = true
-        stopHandsFree()
-        scope.cancel(); agent?.close(); agent = null; tts.shutdown(); super.onDestroy()
+        scope.cancel()
+        tts.shutdown()
+        super.onDestroy()
     }
 }
