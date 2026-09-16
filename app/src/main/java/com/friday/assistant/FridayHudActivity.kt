@@ -21,7 +21,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
-/** Main FRIDAY screen: immersive reference HUD plus the persistent hands-free voice engine. */
+/** Main FRIDAY screen. Voice is started explicitly after the HUD is stable to prevent startup crashes. */
 class FridayHudActivity : ComponentActivity() {
     private lateinit var hud: FridayReferenceHudView
     private val scope = MainScope()
@@ -49,10 +49,12 @@ class FridayHudActivity : ComponentActivity() {
         super.onResume()
         destroyed = false
         enterImmersiveHud()
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            hud.postDelayed({ if (!destroyed) startBackgroundVoice() }, 350L)
-        } else {
+        // Do not start microphone foreground work automatically during Activity startup.
+        // Android/Samsung can reject microphone FGS startup during lifecycle transitions.
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestMicrophoneFirst()
+        } else {
+            FridayRuntime.update("READY", "FRIDAY HUD ready — tap the core to activate voice", true)
         }
     }
 
@@ -99,8 +101,7 @@ class FridayHudActivity : ComponentActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_MIC) {
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                FridayRuntime.update("MIC READY", "Microphone permission granted", true)
-                startBackgroundVoice()
+                FridayRuntime.update("MIC READY", "Microphone permission granted — tap the core to activate voice", true)
                 requestOptionalPermissions()
             } else {
                 FridayRuntime.update("MIC BLOCKED", "Microphone permission is required for voice control", false)
@@ -131,7 +132,7 @@ class FridayHudActivity : ComponentActivity() {
         }
         val dialog = AlertDialog.Builder(this)
             .setTitle("GEMINI CORE")
-            .setMessage("The key is stored locally using Android Keystore-backed encryption. Use a fresh key if an older one was exposed.")
+            .setMessage("The key is stored locally using Android Keystore-backed encryption.")
             .setView(box)
             .setNegativeButton("CANCEL", null)
             .setPositiveButton("CONNECT", null)
