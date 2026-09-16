@@ -22,7 +22,6 @@ import kotlin.math.sin
 class FridayReferenceHudView(context: Context) : View(context) {
     interface Actions { fun onGeminiTap(); fun onAssistantTap(); fun onAutomationTap(); fun onOrbTap() }
     var actions: Actions? = null
-
     private var state = FridayUiState()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
@@ -52,12 +51,7 @@ class FridayReferenceHudView(context: Context) : View(context) {
         isClickable = true
         setLayerType(View.LAYER_TYPE_SOFTWARE, null)
         handler.post(object : Runnable {
-            override fun run() {
-                sample()
-                frame++
-                invalidate()
-                handler.postDelayed(this, 250L)
-            }
+            override fun run() { sample(); frame++; invalidate(); handler.postDelayed(this, 250L) }
         })
     }
 
@@ -127,7 +121,8 @@ class FridayReferenceHudView(context: Context) : View(context) {
         text(c, "MESSAGES / NOTIFICATIONS", 56f, 713f, 13f, white, true)
         text(c, "•••", 365f, 713f, 12f, soft, true)
         icons(c)
-        notification(c, "VOICE", state.stage == "HEARD" ? state.detail : "FRIDAY hands-free engine", "LIVE", 778f, 0)
+        val voiceMessage = if (state.stage == "HEARD") state.detail else "FRIDAY hands-free engine"
+        notification(c, "VOICE", voiceMessage, "LIVE", 778f, 0)
         notification(c, "SYSTEM", "Microphone + command path", "LIVE", 846f, 1)
         notification(c, "AI CORE", if (geminiReady()) "Gemini cloud brain connected" else "Gemini setup required", "NOW", 914f, 2)
         notification(c, "FRIDAY", "Waiting for your next command", "NOW", 982f, 3)
@@ -302,27 +297,25 @@ class FridayReferenceHudView(context: Context) : View(context) {
         }
     }
 
-    private fun readCpu(): Float {
-        return runCatching {
-            val first = java.io.File("/proc/stat").bufferedReader().use { it.readLine() }
-            val parts = first.trim().split(Regex("\\s+"))
-            if (parts.size < 5) return -1f
-            val user = parts[1].toLong()
-            val nice = parts[2].toLong()
-            val system = parts[3].toLong()
-            val idle = parts[4].toLong()
-            val iowait = parts.getOrNull(5)?.toLongOrNull() ?: 0L
-            val irq = parts.getOrNull(6)?.toLongOrNull() ?: 0L
-            val softirq = parts.getOrNull(7)?.toLongOrNull() ?: 0L
-            val total = user + nice + system + idle + iowait + irq + softirq
-            if (previousTotal == 0L) { previousTotal = total; previousIdle = idle; return 0f }
-            val totalDelta = total - previousTotal
-            val idleDelta = idle - previousIdle
-            previousTotal = total
-            previousIdle = idle
-            if (totalDelta <= 0L) 0f else ((totalDelta - idleDelta).toFloat() / totalDelta * 100f).coerceIn(0f, 100f)
-        }.getOrDefault(0f)
-    }
+    private fun readCpu(): Float = runCatching {
+        val first = java.io.File("/proc/stat").bufferedReader().use { it.readLine() }
+        val parts = first.trim().split(Regex("\\s+"))
+        if (parts.size < 5) return 0f
+        val user = parts[1].toLong()
+        val nice = parts[2].toLong()
+        val system = parts[3].toLong()
+        val idle = parts[4].toLong()
+        val iowait = parts.getOrNull(5)?.toLongOrNull() ?: 0L
+        val irq = parts.getOrNull(6)?.toLongOrNull() ?: 0L
+        val softirq = parts.getOrNull(7)?.toLongOrNull() ?: 0L
+        val total = user + nice + system + idle + iowait + irq + softirq
+        if (previousTotal == 0L) { previousTotal = total; previousIdle = idle; return 0f }
+        val totalDelta = total - previousTotal
+        val idleDelta = idle - previousIdle
+        previousTotal = total
+        previousIdle = idle
+        if (totalDelta <= 0L) 0f else ((totalDelta - idleDelta).toFloat() / totalDelta * 100f).coerceIn(0f, 100f)
+    }.getOrDefault(0f)
 
     private fun geminiReady(): Boolean = SecureApiKeyStore(context).read()?.isNotBlank() == true
     private fun clock(): String = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
