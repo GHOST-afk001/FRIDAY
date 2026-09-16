@@ -16,7 +16,6 @@ import androidx.core.content.ContextCompat
 import com.friday.assistant.automation.FridayAutomation
 import com.friday.assistant.runtime.FridayRuntime
 
-/** Executes Android intents/APIs plus the explicitly user-enabled Accessibility bridge. */
 class AppLauncher(private val context: Context) {
     fun launch(action: FridayAction): Boolean = try {
         when (action) {
@@ -35,22 +34,11 @@ class AppLauncher(private val context: Context) {
             FridayAction.FlashlightOff -> setTorch(false)
             FridayAction.VolumeUp -> adjustVolume(AudioManager.ADJUST_RAISE)
             FridayAction.VolumeDown -> adjustVolume(AudioManager.ADJUST_LOWER)
-            is FridayAction.Timer -> start(Intent(AlarmClock.ACTION_SET_TIMER).apply {
-                putExtra(AlarmClock.EXTRA_LENGTH, action.seconds)
-                putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-            })
-            is FridayAction.Alarm -> start(Intent(AlarmClock.ACTION_SET_ALARM).apply {
-                putExtra(AlarmClock.EXTRA_HOUR, action.hour)
-                putExtra(AlarmClock.EXTRA_MINUTES, action.minute)
-                putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-            })
-            is FridayAction.AlarmAfter -> start(Intent(AlarmClock.ACTION_SET_TIMER).apply {
-                putExtra(AlarmClock.EXTRA_LENGTH, action.seconds)
-                putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-            })
+            is FridayAction.Timer -> start(Intent(AlarmClock.ACTION_SET_TIMER).apply { putExtra(AlarmClock.EXTRA_LENGTH, action.seconds); putExtra(AlarmClock.EXTRA_SKIP_UI, true) })
+            is FridayAction.Alarm -> start(Intent(AlarmClock.ACTION_SET_ALARM).apply { putExtra(AlarmClock.EXTRA_HOUR, action.hour); putExtra(AlarmClock.EXTRA_MINUTES, action.minute); putExtra(AlarmClock.EXTRA_SKIP_UI, true) })
+            is FridayAction.AlarmAfter -> start(Intent(AlarmClock.ACTION_SET_TIMER).apply { putExtra(AlarmClock.EXTRA_LENGTH, action.seconds); putExtra(AlarmClock.EXTRA_SKIP_UI, true) })
             is FridayAction.MapQuery -> {
-                val uri = if (action.navigation) Uri.parse("google.navigation:q=${Uri.encode(action.query)}")
-                else Uri.parse("geo:0,0?q=${Uri.encode(action.query)}")
+                val uri = if (action.navigation) Uri.parse("google.navigation:q=${Uri.encode(action.query)}") else Uri.parse("geo:0,0?q=${Uri.encode(action.query)}")
                 start(Intent(Intent.ACTION_VIEW, uri))
             }
             is FridayAction.DialNumber -> start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${action.number}")))
@@ -60,11 +48,12 @@ class AppLauncher(private val context: Context) {
             }
             is FridayAction.SmsContact -> {
                 val number = findUniqueContactNumber(action.name) ?: return false
-                start(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(number)}")).apply {
-                    putExtra("sms_body", action.message)
-                })
+                start(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(number)}")).apply { putExtra("sms_body", action.message) })
             }
-            is FridayAction.OpenApp -> openInstalledApp(action.packageName, action.label)
+            is FridayAction.OpenApp -> {
+                if (action.packageName.startsWith("__web_search__:")) openWebSearch(action.packageName.removePrefix("__web_search__:"))
+                else openInstalledApp(action.packageName, action.label)
+            }
             is FridayAction.AccessibilityCommand -> {
                 val command = action.command.trim()
                 if (command.startsWith("whatsapp_message|")) openWhatsAppMessage(command)
@@ -79,37 +68,33 @@ class AppLauncher(private val context: Context) {
             FridayAction.EmergencySos -> start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:112")))
             FridayAction.RequestAssistantRole -> false
         }
-    } catch (_: SecurityException) {
-        false
-    } catch (_: Exception) {
-        false
-    }
+    } catch (_: SecurityException) { false } catch (_: Exception) { false }
 
     private fun start(intent: Intent): Boolean {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (intent.resolveActivity(context.packageManager) == null) return false
-        context.startActivity(intent)
-        return true
+        context.startActivity(intent); return true
     }
 
-    private fun openPackageOrUrl(packageName: String, fallbackUrl: String?): Boolean =
-        openInstalledApp(packageName, packageName) || (fallbackUrl?.let { start(Intent(Intent.ACTION_VIEW, Uri.parse(it))) } ?: false)
+    private fun openPackageOrUrl(packageName: String, fallbackUrl: String?): Boolean = openInstalledApp(packageName, packageName) || (fallbackUrl?.let { start(Intent(Intent.ACTION_VIEW, Uri.parse(it))) } ?: false)
 
     private fun openInstalledApp(packageOrLabel: String, label: String): Boolean {
         val direct = context.packageManager.getLaunchIntentForPackage(packageOrLabel)
         if (direct != null) return start(direct)
         val wanted = label.trim().ifBlank { packageOrLabel.trim() }.lowercase()
         if (wanted.isBlank()) return false
-        val apps = context.packageManager.queryIntentActivities(
-            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),
-            PackageManager.MATCH_ALL
-        )
+        val apps = context.packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), PackageManager.MATCH_ALL)
         val match = apps.firstOrNull { info ->
             val appLabel = info.loadLabel(context.packageManager).toString().lowercase()
             appLabel == wanted || appLabel.contains(wanted) || wanted.contains(appLabel)
         } ?: return false
         val launch = context.packageManager.getLaunchIntentForPackage(match.activityInfo.packageName) ?: return false
         return start(launch)
+    }
+
+    private fun openWebSearch(query: String): Boolean {
+        val url = "https://www.google.com/search?q=${Uri.encode(query.trim())}"
+        return start(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }
 
     private fun openYouTubeSearch(query: String): Boolean {
@@ -149,14 +134,12 @@ class AppLauncher(private val context: Context) {
         val selector = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_CALCULATOR)
         if (start(selector)) return true
         val known = listOf("com.sec.android.app.popupcalculator", "com.samsung.android.calculator", "com.google.android.calculator")
-        return known.firstOrNull { context.packageManager.getLaunchIntentForPackage(it) != null }
-            ?.let { start(context.packageManager.getLaunchIntentForPackage(it)!!) } ?: false
+        return known.firstOrNull { context.packageManager.getLaunchIntentForPackage(it) != null }?.let { start(context.packageManager.getLaunchIntentForPackage(it)!!) } ?: false
     }
 
     private fun adjustVolume(direction: Int): Boolean {
         val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        audio.adjustSuggestedStreamVolume(direction, AudioManager.STREAM_MUSIC, AudioManager.FLAG_SHOW_UI)
-        return true
+        audio.adjustSuggestedStreamVolume(direction, AudioManager.STREAM_MUSIC, AudioManager.FLAG_SHOW_UI); return true
     }
 
     private fun setTorch(enabled: Boolean): Boolean {
