@@ -12,8 +12,17 @@ android {
         applicationId = "com.friday.assistant"
         minSdk = 27
         targetSdk = 36
-        versionCode = 436
-        versionName = "4.36"
+        versionCode = 437
+        versionName = "4.37"
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
     }
 
     buildFeatures {
