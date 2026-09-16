@@ -10,7 +10,7 @@ import android.service.voice.VoiceInteractionService
 import androidx.core.content.ContextCompat
 import com.friday.assistant.runtime.FridayRuntime
 
-/** System-level assistant service. It owns the lightweight wake-word lifecycle. */
+/** System assistant bridge. The persistent microphone/wake loop lives in one foreground service. */
 class FridayVoiceInteractionService : VoiceInteractionService() {
     private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile private var destroyed = false
@@ -18,7 +18,7 @@ class FridayVoiceInteractionService : VoiceInteractionService() {
     override fun onCreate() {
         destroyed = false
         super.onCreate()
-        FridayRuntime.update("ASSISTANT SERVICE", "FRIDAY VoiceInteractionService started", true)
+        FridayRuntime.update("ASSISTANT SERVICE", "FRIDAY Android Assistant bridge started", true)
     }
 
     override fun onReady() {
@@ -28,41 +28,22 @@ class FridayVoiceInteractionService : VoiceInteractionService() {
             FridayRuntime.update("MIC PERMISSION", "Microphone permission is required for Hey Friday", false)
             return
         }
-
-        // Android 15+ can reject audio-focus requests until the foreground service is actually
-        // running. Start the keeper first, then give Android a short moment to promote it before
-        // the wake detector initializes its AudioRecord path.
         startHandsFreeKeeper()
-        FridayRuntime.update("STARTING WAKE", "Preparing hands-free microphone", true)
-        mainHandler.postDelayed({
-            if (!destroyed && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                FridayWakeCoordinator.start(this)
-                FridayRuntime.update("WAKE LISTENING", "Say Hey Friday", true)
-            }
-        }, 1200L)
+        FridayRuntime.update("WAKE LISTENING", "FRIDAY background voice engine is active", true)
     }
 
     private fun startHandsFreeKeeper() {
         runCatching {
-            ContextCompat.startForegroundService(
-                this,
-                Intent(this, FridayHandsFreeService::class.java)
-            ).also {
-                FridayRuntime.update("HANDS-FREE", "Foreground voice keeper requested", true)
-            }
+            ContextCompat.startForegroundService(this, Intent(this, FridayHandsFreeService::class.java))
+        }.onSuccess {
+            FridayRuntime.update("HANDS-FREE", "Persistent voice engine requested", true)
         }.onFailure {
-            FridayRuntime.update("HANDS-FREE ERROR", "Android could not start the hands-free keeper", false)
+            FridayRuntime.update("HANDS-FREE ERROR", "Android could not start the hands-free engine", false)
         }
-    }
-
-    private fun stopHandsFreeKeeper() {
-        runCatching { stopService(Intent(this, FridayHandsFreeService::class.java)) }
     }
 
     internal fun showFridaySessionFromWake(confidence: Float) {
         if (destroyed) return
-        // The coordinator already validated the wake generation and microphone handoff.
-        // Do not gate this on isRunning(): a valid detector shutdown is expected here.
         val args = Bundle().apply { putFloat("friday_wake_confidence", confidence) }
         FridayRuntime.update("WAKE ACCEPTED", "Opening FRIDAY voice session", true)
         showSession(args, 0)
@@ -74,17 +55,13 @@ class FridayVoiceInteractionService : VoiceInteractionService() {
     }
 
     override fun onShowSessionFailed(args: Bundle) {
-        if (!destroyed) {
-            FridayRuntime.update("SESSION FAILED", "Android rejected the FRIDAY voice session; retrying wake", false)
-            FridayWakeCoordinator.resumeAfterSpeech()
-        }
+        if (!destroyed) FridayRuntime.update("SESSION FAILED", "Android rejected the FRIDAY voice session", false)
         super.onShowSessionFailed(args)
     }
 
     override fun onShutdown() {
         destroyed = true
-        FridayRuntime.update("ASSISTANT STOPPED", "Android stopped FRIDAY VoiceInteractionService", false)
-        FridayWakeCoordinator.stop()
+        FridayRuntime.update("ASSISTANT STOPPED", "Android stopped FRIDAY Assistant bridge", false)
         stopHandsFreeKeeper()
         mainHandler.removeCallbacksAndMessages(null)
         super.onShutdown()
@@ -92,9 +69,12 @@ class FridayVoiceInteractionService : VoiceInteractionService() {
 
     override fun onDestroy() {
         destroyed = true
-        FridayWakeCoordinator.stop()
         stopHandsFreeKeeper()
         mainHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
+    }
+
+    private fun stopHandsFreeKeeper() {
+        runCatching { stopService(Intent(this, FridayHandsFreeService::class.java)) }
     }
 }
