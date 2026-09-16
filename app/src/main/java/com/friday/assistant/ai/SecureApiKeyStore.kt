@@ -19,15 +19,9 @@ class SecureApiKeyStore(context: Context) {
     fun save(value: String): Boolean {
         val clean = value.trim()
         if (clean.isBlank()) return false
-        return runCatching {
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
-            val encrypted = cipher.doFinal(clean.toByteArray(StandardCharsets.UTF_8))
-            prefs.edit()
-                .putString("iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
-                .putString("data", Base64.encodeToString(encrypted, Base64.NO_WRAP))
-                .commit()
-        }.getOrDefault(false)
+        if (writeEncrypted(clean) && read() == clean) return true
+        clear()
+        return writeEncrypted(clean) && read() == clean
     }
 
     fun read(): String? = runCatching {
@@ -43,17 +37,26 @@ class SecureApiKeyStore(context: Context) {
     }.getOrNull()
 
     fun clear() {
-        prefs.edit().remove("iv").remove("data").apply()
+        prefs.edit().remove("iv").remove("data").commit()
         runCatching {
             val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             if (ks.containsAlias(alias)) ks.deleteEntry(alias)
         }
     }
 
+    private fun writeEncrypted(clean: String): Boolean = runCatching {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
+        val encrypted = cipher.doFinal(clean.toByteArray(StandardCharsets.UTF_8))
+        prefs.edit()
+            .putString("iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
+            .putString("data", Base64.encodeToString(encrypted, Base64.NO_WRAP))
+            .commit()
+    }.getOrDefault(false)
+
     private fun getOrCreateKey(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (ks.getKey(alias, null) as? SecretKey)?.let { return it }
-
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
         generator.init(
             KeyGenParameterSpec.Builder(
