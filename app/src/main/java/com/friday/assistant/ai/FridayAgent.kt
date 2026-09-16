@@ -83,7 +83,8 @@ class FridayAgent(context: Context) {
 
                 var reply = gemini.askWithTools(enrichedInput, history).getOrElse {
                     FridayRuntime.update("BRAIN ERROR", "Gemini request failed; no device action was claimed", false)
-                    return@launch finishFailure(input, callback, myGeneration)
+                    finishFailure(input, callback, myGeneration)
+                    return@launch
                 }
 
                 var toolTurns = 0
@@ -131,10 +132,13 @@ class FridayAgent(context: Context) {
             return JSONObject().put("status", "error").put("error", "No Android command was supplied")
         }
 
-        val result = local.process(command) ?: UniversalCommandRouter.route(command)
-            ?: return JSONObject()
+        val localResult = local.process(command)
+        val result = if (localResult.handledLocally) localResult else UniversalCommandRouter.route(command)
+        if (result == null || !result.handledLocally) {
+            return JSONObject()
                 .put("status", "unsupported")
                 .put("message", "This Android command is not supported by the current local action layer.")
+        }
 
         if (result.needsConfirmation) {
             return JSONObject()
@@ -179,7 +183,7 @@ class FridayAgent(context: Context) {
         }
     }
 
-    private fun finishFailure(input: String, callback: (String, Boolean) -> Unit, generation: Long) {
+    private suspend fun finishFailure(input: String, callback: (String, Boolean) -> Unit, generation: Long) {
         if (closed || requestGeneration.get() != generation) return
         val answer = "Imroz Sir, Gemini connection fail hui. Main koi action complete hone ka false claim nahi karungi."
         remember("user", input)
