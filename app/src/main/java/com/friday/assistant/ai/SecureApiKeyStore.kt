@@ -16,12 +16,14 @@ class SecureApiKeyStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("friday_secure", Context.MODE_PRIVATE)
     private val alias = "friday_gemini_key"
 
+    /** Recreates the key entry on every explicit CONNECT so a stale/broken Keystore alias cannot block setup. */
     fun save(value: String): Boolean {
         val clean = value.trim()
         if (clean.isBlank()) return false
-        if (writeEncrypted(clean) && read() == clean) return true
         clear()
-        return writeEncrypted(clean) && read() == clean
+        return runCatching {
+            writeEncrypted(clean) && read() == clean
+        }.getOrDefault(false)
     }
 
     fun read(): String? = runCatching {
@@ -37,7 +39,7 @@ class SecureApiKeyStore(context: Context) {
     }.getOrNull()
 
     fun clear() {
-        prefs.edit().remove("iv").remove("data").commit()
+        runCatching { prefs.edit().remove("iv").remove("data").commit() }
         runCatching {
             val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             if (ks.containsAlias(alias)) ks.deleteEntry(alias)
