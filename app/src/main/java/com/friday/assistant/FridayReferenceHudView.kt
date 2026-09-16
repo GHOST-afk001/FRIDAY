@@ -26,6 +26,15 @@ class FridayReferenceHudView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
     private val handler = Handler(Looper.getMainLooper())
+    private val frameTicker = object : Runnable {
+        override fun run() {
+            if (!isAttachedToWindow) return
+            sample()
+            frame++
+            invalidate()
+            handler.postDelayed(this, 250L)
+        }
+    }
     private var frame = 0L
     private var battery = 0
     private var ramUsed = 0L
@@ -49,10 +58,20 @@ class FridayReferenceHudView(context: Context) : View(context) {
 
     init {
         isClickable = true
-        setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-        handler.post(object : Runnable {
-            override fun run() { sample(); frame++; invalidate(); handler.postDelayed(this, 250L) }
-        })
+        // Keep the reference HUD appearance, but let Android use the phone's hardware canvas.
+        // Forcing a software layer here was unnecessary and could make this continuously animated
+        // full-screen renderer unstable on modern Samsung devices.
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        handler.removeCallbacks(frameTicker)
+        handler.post(frameTicker)
+    }
+
+    override fun onDetachedFromWindow() {
+        handler.removeCallbacks(frameTicker)
+        super.onDetachedFromWindow()
     }
 
     fun render(value: FridayUiState) { state = value; invalidate() }
@@ -283,7 +302,7 @@ class FridayReferenceHudView(context: Context) : View(context) {
     }
 
     private fun sample() {
-        telemetry = DeviceTelemetry.snapshot(context)
+        telemetry = runCatching { DeviceTelemetry.snapshot(context) }.getOrElse { telemetry }
         battery = telemetry.batteryPercent
         ramUsed = telemetry.ramUsedGb
         ramTotal = telemetry.ramTotalGb
@@ -317,7 +336,7 @@ class FridayReferenceHudView(context: Context) : View(context) {
         if (totalDelta <= 0L) 0f else ((totalDelta - idleDelta).toFloat() / totalDelta * 100f).coerceIn(0f, 100f)
     }.getOrDefault(0f)
 
-    private fun geminiReady(): Boolean = SecureApiKeyStore(context).read()?.isNotBlank() == true
+    private fun geminiReady(): Boolean = runCatching { SecureApiKeyStore(context).read()?.isNotBlank() == true }.getOrDefault(false)
     private fun clock(): String = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
     private fun date(): String = java.text.SimpleDateFormat("EEE, dd MMM", java.util.Locale.getDefault()).format(java.util.Date()).uppercase(java.util.Locale.getDefault())
     private fun gb(value: Long): String = if (value > 0) "${value}GB" else "--"
