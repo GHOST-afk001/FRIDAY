@@ -56,7 +56,7 @@ import com.friday.assistant.runtime.FridayStateFlow
 import com.friday.assistant.runtime.RuntimeStatus
 import com.friday.assistant.ui.FridayDynamicOrb
 
-/** Voice-first FRIDAY HUD with an in-HUD first-run bridge. */
+/** Voice-first FRIDAY HUD with a crash-safe first-run bridge. */
 class FridayHudActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -92,6 +92,7 @@ class FridayHudActivity : ComponentActivity() {
         var key by remember { mutableStateOf("") }
         var assistantSelected by remember { mutableStateOf(false) }
         var accessibility by remember { mutableStateOf(false) }
+        var keyError by remember { mutableStateOf("") }
 
         DisposableEffect(Unit) {
             val handler = Handler(Looper.getMainLooper())
@@ -107,10 +108,7 @@ class FridayHudActivity : ComponentActivity() {
             }
             handler.post(refresh)
             val subscription = FridayRuntime.observe { runtime = it }
-            onDispose {
-                handler.removeCallbacks(refresh)
-                subscription.close()
-            }
+            onDispose { handler.removeCallbacks(refresh); subscription.close() }
         }
 
         MaterialTheme(colorScheme = androidx.compose.material3.darkColorScheme(primary = Color(0xFF35E8FF), secondary = Color(0xFFFF3E55), background = Color(0xFF02040A), surface = Color(0xFF070C14))) {
@@ -118,15 +116,22 @@ class FridayHudActivity : ComponentActivity() {
                 Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Header(telemetry, geminiReady, runtime)
                     Spacer(Modifier.height(8.dp))
-                    Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                        FridayDynamicOrb(state = uiState, modifier = Modifier.size(290.dp))
-                    }
+                    Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { FridayDynamicOrb(state = uiState, modifier = Modifier.size(290.dp)) }
                     if (!geminiReady) {
-                        FirstRunBridge(key, { key = it }, { value ->
-                            SecureApiKeyStore(applicationContext).save(value.trim())
-                            key = ""
-                            geminiReady = true
-                        }, accessibility, assistantSelected, ::openAccessibility, ::openAssistantRole)
+                        FirstRunBridge(key, { key = it; keyError = "" }, { value ->
+                            val clean = value.trim()
+                            val saved = runCatching { SecureApiKeyStore(applicationContext).save(clean) }.getOrDefault(false)
+                            if (saved) {
+                                key = ""
+                                keyError = ""
+                                geminiReady = true
+                                FridayRuntime.update("GEMINI CONNECTED", "Gemini API key stored securely on this device", true)
+                                Toast.makeText(this@FridayHudActivity, "Gemini connected", Toast.LENGTH_SHORT).show()
+                            } else {
+                                keyError = "Could not securely store the key on this phone. No data was lost."
+                                FridayRuntime.update("GEMINI SETUP ERROR", "Secure key storage failed", false)
+                            }
+                        }, accessibility, assistantSelected, keyError, ::openAccessibility, ::openAssistantRole)
                     } else {
                         StatusPanel(runtime, geminiReady, telemetry)
                         Spacer(Modifier.height(10.dp))
@@ -150,13 +155,14 @@ class FridayHudActivity : ComponentActivity() {
     }.getOrDefault(false)
 
     @Composable
-    private fun FirstRunBridge(key: String, onKeyChange: (String) -> Unit, saveKey: (String) -> Unit, accessibility: Boolean, assistantSelected: Boolean, openAccessibility: () -> Unit, openAssistant: () -> Unit) {
+    private fun FirstRunBridge(key: String, onKeyChange: (String) -> Unit, saveKey: (String) -> Unit, accessibility: Boolean, assistantSelected: Boolean, keyError: String, openAccessibility: () -> Unit, openAssistant: () -> Unit) {
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF070D16)), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFF14313F), RoundedCornerShape(16.dp))) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("FRIDAY INITIALIZATION", color = Color(0xFF35E8FF), fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
                 Text("Connect the Gemini brain once. FRIDAY stores the key securely on this device; it is not baked into the APK.", color = Color(0xFFB9D2DB), fontSize = 11.sp)
                 OutlinedTextField(value = key, onValueChange = onKeyChange, modifier = Modifier.fillMaxWidth(), label = { Text("Gemini API key") }, singleLine = true, shape = RoundedCornerShape(12.dp))
                 Button(onClick = { if (key.isNotBlank()) saveKey(key) }, enabled = key.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("CONNECT GEMINI BRAIN") }
+                if (keyError.isNotBlank()) Text(keyError, color = Color(0xFFFF5266), fontSize = 9.sp, textAlign = TextAlign.Center)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = openAccessibility, modifier = Modifier.weight(1f)) { Text(if (accessibility) "AUTOMATION ON" else "AUTOMATION") }
                     OutlinedButton(onClick = openAssistant, modifier = Modifier.weight(1f)) { Text(if (assistantSelected) "ASSISTANT ON" else "ASSISTANT") }
@@ -191,8 +197,7 @@ class FridayHudActivity : ComponentActivity() {
                 Text("FRIDAY CORE", color = Color(0xFF35E8FF), fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
                 Spacer(Modifier.height(4.dp)); Text(runtime.detail, color = Color(0xFFD8F6FF), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
                 Spacer(Modifier.height(7.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    StatusPill("VOICE", runtime.stage.contains("LISTEN") || runtime.stage.contains("WAKE") || runtime.stage == "IDLE")
-                    StatusPill("AI", geminiReady); StatusPill("SYSTEM", runtime.healthy); StatusPill("BATTERY", telemetry.batteryPercent > 15 || telemetry.charging)
+                    StatusPill("VOICE", runtime.stage.contains("LISTEN") || runtime.stage.contains("WAKE") || runtime.stage == "IDLE"); StatusPill("AI", geminiReady); StatusPill("SYSTEM", runtime.healthy); StatusPill("BATTERY", telemetry.batteryPercent > 15 || telemetry.charging)
                 }
             }
         }
