@@ -14,10 +14,11 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 
-/** Hybrid brain: deterministic device actions first, Gemini only for open-ended intelligence. */
+/** Hybrid brain: deterministic Android actions first, Gemini function calling for open-ended control. */
 class FridayAgent(context: Context) {
     private val appContext = context.applicationContext
     private val local = FridayCommandProcessor()
@@ -40,7 +41,10 @@ class FridayAgent(context: Context) {
         FridayRuntime.update("UNDERSTANDING", "Checking local Android commands", true)
 
         handleIdentity(input)?.let { answer ->
-            remember("user", input); remember("assistant", answer); callback(answer, true); return
+            remember("user", input)
+            remember("assistant", answer)
+            callback(answer, true)
+            return
         }
 
         val localResult = local.process(input)
@@ -49,8 +53,6 @@ class FridayAgent(context: Context) {
             return
         }
 
-        // Commands such as "open Spotify", "Spotify search ..." and generic web search
-        // are still deterministic device actions and must not depend on Gemini availability.
         UniversalCommandRouter.route(input)?.let { universal ->
             executeLocal(universal, input, callback)
             return
@@ -70,20 +72,41 @@ class FridayAgent(context: Context) {
         activeRequest = brainScope.launch {
             try {
                 if (closed || !isActive || requestGeneration.get() != myGeneration) return@launch
-                FridayRuntime.update("AI THINKING", "Gemini is reasoning over your request", true)
+                FridayRuntime.update("AI THINKING", "Gemini is reasoning and can request Android actions", true)
+
                 val enrichedInput = buildString {
-                    append("You are FRIDAY, a personal Android AI assistant. Address the owner as Imroz Sir or Boss. ")
-                    append("Use Hindi, Hinglish, or English naturally based on the user's wording. ")
-                    append("This is an open-ended request because deterministic local command handling did not match it. ")
-                    append("Do not claim an Android action was performed unless the local action system explicitly reported success.")
+                    append("Use your Android tool when the owner's request requires a phone action. ")
+                    append("If the request is ordinary conversation or explanation, answer directly. ")
+                    append("Never claim a device action succeeded unless the Android tool reports success.")
                     append("\nUser message: ").append(input)
                 }
-                val result = gemini.ask(enrichedInput, history)
-                if (closed || !isActive || requestGeneration.get() != myGeneration) return@launch
-                val answer = result.getOrElse {
+
+                var reply = gemini.askWithTools(enrichedInput, history).getOrElse {
                     FridayRuntime.update("BRAIN ERROR", "Gemini request failed; no device action was claimed", false)
-                    "Imroz Sir, Gemini connection fail hui. Main koi action complete hone ka false claim nahi karungi."
+                    return@launch finishFailure(input, callback, myGeneration)
                 }
+
+                var toolTurns = 0
+                while (reply.toolCall != null && toolTurns < MAX_TOOL_TURNS && isActive && !closed && requestGeneration.get() == myGeneration) {
+                    val call = reply.toolCall ?: break
+                    toolTurns++
+                    val command = call.args.optString("command").trim()
+                    FridayRuntime.update("ANDROID TOOL", command.take(160).ifBlank { "Executing requested phone action" }, true)
+
+                    val toolResult = executeGeminiTool(call.name, call.args)
+                    val modelContent = reply.modelContent ?: error("Gemini tool call did not include model content")
+                    reply = gemini.continueWithToolResult(history, enrichedInput, modelContent, call, toolResult).getOrElse {
+                        GeminiReply(text = "Boss, action ka result mil gaya, lekin Gemini final response generate nahi kar paayi.")
+                    }
+                }
+
+                if (reply.toolCall != null) {
+                    reply = GeminiReply(text = "Boss, main is request ko ek hi run mein safely complete nahi kar paayi.")
+                }
+
+                if (closed || !isActive || requestGeneration.get() != myGeneration) return@launch
+                val answer = reply.text?.trim().takeUnless { it.isNullOrBlank() }
+                    ?: "Boss, mujhe is request ka usable response nahi mila."
                 remember("user", input)
                 remember("assistant", answer)
                 withContext(Dispatchers.Main.immediate) {
@@ -95,6 +118,47 @@ class FridayAgent(context: Context) {
             } finally {
                 if (requestGeneration.get() == myGeneration) activeRequest = null
             }
+        }
+    }
+
+    private fun executeGeminiTool(name: String, args: JSONObject): JSONObject {
+        if (name != "android_command") {
+            return JSONObject().put("status", "error").put("error", "Unsupported Android tool: $name")
+        }
+
+        val command = args.optString("command").trim()
+        if (command.isBlank()) {
+            return JSONObject().put("status", "error").put("error", "No Android command was supplied")
+        }
+
+        val result = local.process(command) ?: UniversalCommandRouter.route(command)
+            ?: return JSONObject()
+                .put("status", "unsupported")
+                .put("message", "This Android command is not supported by the current local action layer.")
+
+        if (result.needsConfirmation) {
+            return JSONObject()
+                .put("status", "confirmation_required")
+                .put("message", result.text)
+        }
+
+        val action = result.action
+        if (action == null) {
+            return JSONObject()
+                .put("status", "handled")
+                .put("message", result.text)
+        }
+
+        val launched = runCatching { launcher.launch(action) }.getOrDefault(false)
+        FridayRuntime.update(
+            if (launched) "VERIFIED" else "ACTION FAILED",
+            if (launched) result.text.take(160) else "Android executor could not complete the requested action",
+            launched
+        )
+        return if (launched) {
+            JSONObject().put("status", "success").put("message", result.text)
+        } else {
+            JSONObject().put("status", "failed").put("message", "The Android executor could not complete this action on the phone.")
         }
     }
 
@@ -112,6 +176,16 @@ class FridayAgent(context: Context) {
             val answer = result.text
             remember("assistant", answer)
             callback(answer, true)
+        }
+    }
+
+    private fun finishFailure(input: String, callback: (String, Boolean) -> Unit, generation: Long) {
+        if (closed || requestGeneration.get() != generation) return
+        val answer = "Imroz Sir, Gemini connection fail hui. Main koi action complete hone ka false claim nahi karungi."
+        remember("user", input)
+        remember("assistant", answer)
+        withContext(Dispatchers.Main.immediate) {
+            if (!closed && requestGeneration.get() == generation) callback(answer, false)
         }
     }
 
@@ -155,4 +229,8 @@ class FridayAgent(context: Context) {
         val p = it.indexOf('|')
         if (p <= 0) null else it.substring(0, p) to it.substring(p + 1)
     }.toList()
+
+    companion object {
+        private const val MAX_TOOL_TURNS = 4
+    }
 }
