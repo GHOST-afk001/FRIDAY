@@ -4,70 +4,232 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.provider.Settings
 import android.service.voice.VoiceInteractionService
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.friday.assistant.ai.FridayAgent
 import com.friday.assistant.ai.SecureApiKeyStore
-import com.friday.assistant.runtime.DeviceSnapshot
-import com.friday.assistant.runtime.DeviceTelemetry
 import com.friday.assistant.runtime.FridayRuntime
 import com.friday.assistant.runtime.FridayStateFlow
-import com.friday.assistant.runtime.RuntimeStatus
-import com.friday.assistant.ui.FridayDynamicOrb
 import com.friday.assistant.voice.TTSManager
+import com.friday.assistant.voice.VoiceManager
 
-/** Voice-first FRIDAY HUD with explicit first-run diagnostics. */
+/** Crash-proof native HUD. Direct LISTEN NOW bypasses Android Assistant/wake-word for diagnostics. */
 class FridayHudActivity : ComponentActivity() {
+    private lateinit var status: TextView
+    private lateinit var detail: TextView
+    private lateinit var orb: TextView
+    private lateinit var keyInput: EditText
+    private lateinit var connectButton: Button
+    private lateinit var listenButton: Button
+    private lateinit var assistantButton: Button
+    private lateinit var automationButton: Button
+    private lateinit var tts: TTSManager
+    private var voice: VoiceManager? = null
+    private var agent: FridayAgent? = null
+
+    private val cyan = Color.rgb(53, 232, 255)
+    private val green = Color.rgb(76, 255, 154)
+    private val red = Color.rgb(255, 82, 102)
+    private val panel = Color.rgb(7, 13, 22)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = Color.rgb(2, 4, 10)
+        window.navigationBarColor = Color.rgb(2, 4, 10)
+        tts = TTSManager(applicationContext) { setStatus("TTS ERROR", "Android text-to-speech is unavailable", false) }
+        buildHud()
         requestCorePermissions()
-        setContent { FridayHudScreen() }
+        refreshState()
     }
 
     override fun onResume() {
         super.onResume()
         requestCorePermissions()
+        refreshState()
+    }
+
+    private fun buildHud() {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(18), dp(14), dp(18), dp(14))
+            setBackgroundColor(Color.rgb(2, 4, 10))
+        }
+
+        val scroll = ScrollView(this).apply { isFillViewport = true }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+        scroll.addView(content, ViewGroup.LayoutParams(-1, -1))
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        val title = TextView(this).apply {
+            text = "FRIDAY"
+            textColor = Color.WHITE
+            textSize = 30f
+            gravity = Gravity.CENTER
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            letterSpacing = 0.18f
+        }
+        content.addView(title, lp(-1, -2, 0, 0, 0, 4))
+
+        val subtitle = TextView(this).apply {
+            text = "ULTRON-INSPIRED PERSONAL INTELLIGENCE"
+            textColor = Color.rgb(90, 115, 126)
+            textSize = 8f
+            gravity = Gravity.CENTER
+            letterSpacing = 0.15f
+        }
+        content.addView(subtitle, lp(-1, -2, 0, 0, 0, 12))
+
+        orb = TextView(this).apply {
+            text = "◉"
+            textColor = cyan
+            textSize = 92f
+            gravity = Gravity.CENTER
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        content.addView(orb, lp(-1, dp(150), 0, 0, 0, 4))
+
+        status = TextView(this).apply {
+            text = "FRIDAY CORE • STARTING"
+            textColor = cyan
+            textSize = 11f
+            gravity = Gravity.CENTER
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        content.addView(status, lp(-1, -2, 0, 0, 0, 4))
+
+        detail = TextView(this).apply {
+            text = "Initializing voice console..."
+            textColor = Color.rgb(190, 215, 224)
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(2), dp(8), dp(8))
+        }
+        content.addView(detail, lp(-1, -2, 0, 0, 0, 10))
+
+        val bridge = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = rounded(panel, Color.rgb(20, 49, 63), 16)
+        }
+        content.addView(bridge, lp(-1, -2, 0, 0, 0, 10))
+
+        val keyLabel = TextView(this).apply {
+            text = "GEMINI BRAIN"
+            textColor = cyan
+            textSize = 9f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        bridge.addView(keyLabel, lp(-1, -2, 0, 0, 0, 6))
+
+        keyInput = EditText(this).apply {
+            hint = "Paste Gemini API key (stored encrypted)"
+            hintTextColor = Color.rgb(90, 115, 126)
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            setSingleLine(true)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = rounded(Color.rgb(12, 21, 31), Color.rgb(35, 70, 82), 12)
+        }
+        bridge.addView(keyInput, lp(-1, -2, 0, 0, 0, 7))
+
+        connectButton = button("CONNECT GEMINI BRAIN")
+        bridge.addView(connectButton, lp(-1, -2, 0, 0, 0, 7))
+        connectButton.setOnClickListener { connectGemini() }
+
+        listenButton = button("LISTEN NOW — TEST MICROPHONE")
+        content.addView(listenButton, lp(-1, -2, 0, 0, 0, 7))
+        listenButton.setOnClickListener { startDirectListening() }
+
+        val testVoice = button("TEST VOICE OUTPUT")
+        content.addView(testVoice, lp(-1, -2, 0, 0, 0, 7))
+        testVoice.setOnClickListener { tts.speak("Hello Boss. FRIDAY voice output is working.") }
+
+        assistantButton = button("ENABLE ANDROID ASSISTANT")
+        content.addView(assistantButton, lp(-1, -2, 0, 0, 0, 7))
+        assistantButton.setOnClickListener { openAssistantRole() }
+
+        automationButton = button("ENABLE AUTOMATION")
+        content.addView(automationButton, lp(-1, -2, 0, 0, 0, 7))
+        automationButton.setOnClickListener { openAccessibility() }
+
+        val footer = TextView(this).apply {
+            text = "DIRECT VOICE PATH: MICROPHONE → SPEECH → COMMAND/GEMINI → ACTION → TTS\nWAKE PATH: ANDROID ASSISTANT → HEY FRIDAY → SESSION"
+            textColor = Color.rgb(76, 105, 116)
+            textSize = 8f
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(10), dp(8), dp(4))
+        }
+        content.addView(footer, lp(-1, -2, 0, 0, 0, 4))
+    }
+
+    private fun connectGemini() {
+        val clean = keyInput.text?.toString()?.trim().orEmpty()
+        if (clean.isBlank()) { setStatus("GEMINI SETUP", "Paste an API key first", false); return }
+        val saved = runCatching { SecureApiKeyStore(applicationContext).save(clean) }.getOrDefault(false)
+        if (!saved) {
+            setStatus("GEMINI ERROR", "Secure key storage failed on this phone", false)
+            return
+        }
+        keyInput.setText("")
+        setStatus("GEMINI CONNECTED", "API key stored securely • direct voice path ready", true)
+        Toast.makeText(this, "Gemini connected", Toast.LENGTH_SHORT).show()
+        ensureAgent()
+    }
+
+    private fun startDirectListening() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestCorePermissions()
+            setStatus("MIC PERMISSION", "Allow microphone access, then press LISTEN NOW again", false)
+            return
+        }
+        ensureAgent()
+        setStatus("LISTENING", "Speak now — this bypasses the Hey Friday wake path", true)
+        listenButton.isEnabled = false
+        val manager = VoiceManager(this, object : VoiceManager.Listener {
+            override fun onListening() { setStatus("LISTENING", "Microphone is receiving speech", true) }
+            override fun onAmplitude(value: Float) {
+                orb.text = if (value > 0.08f) "◉" else "○"
+                orb.textColor = if (value > 0.08f) green else cyan
+            }
+            override fun onResult(text: String) {
+                listenButton.isEnabled = true
+                if (text.isBlank()) { setStatus("NO SPEECH", "Nothing was recognized. Try again.", false); return }
+                setStatus("UNDERSTANDING", "Heard: $text", true)
+                ensureAgent().handle(text) { answer, _ ->
+                    setStatus("RESPONSE READY", answer, true)
+                    tts.speak(answer) { setStatus("READY", "Direct voice path ready • press LISTEN NOW again", true) }
+                }
+            }
+            override fun onError(message: String) {
+                listenButton.isEnabled = true
+                setStatus("VOICE ERROR", message, false)
+            }
+        })
+        voice?.destroy()
+        voice = manager
+        manager.start()
+    }
+
+    private fun ensureAgent(): FridayAgent {
+        if (agent == null) agent = FridayAgent(applicationContext)
+        return agent!!
     }
 
     private fun requestCorePermissions() {
@@ -89,75 +251,17 @@ class FridayHudActivity : ComponentActivity() {
         }
     }
 
-    @Composable
-    private fun FridayHudScreen() {
-        val uiState by FridayStateFlow.state.collectAsState()
-        var telemetry by remember { mutableStateOf(DeviceTelemetry.snapshot(applicationContext)) }
-        var runtime by remember { mutableStateOf(FridayRuntime.status) }
-        var geminiReady by remember { mutableStateOf(false) }
-        var key by remember { mutableStateOf("") }
-        var assistantSelected by remember { mutableStateOf(false) }
-        var accessibility by remember { mutableStateOf(false) }
-        var micGranted by remember { mutableStateOf(false) }
-        var keyError by remember { mutableStateOf("") }
-
-        val tts = remember {
-            TTSManager(applicationContext) {
-                FridayRuntime.update("TTS ERROR", "Android text-to-speech is unavailable", false)
-            }
-        }
-        DisposableEffect(tts) { onDispose { tts.shutdown() } }
-
-        DisposableEffect(Unit) {
-            val handler = Handler(Looper.getMainLooper())
-            val keyStore = SecureApiKeyStore(applicationContext)
-            val refresh = object : Runnable {
-                override fun run() {
-                    telemetry = DeviceTelemetry.snapshot(applicationContext)
-                    geminiReady = !keyStore.read().isNullOrBlank()
-                    accessibility = isAccessibilityEnabled()
-                    assistantSelected = isAssistantSelected()
-                    micGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                    handler.postDelayed(this, 700L)
-                }
-            }
-            handler.post(refresh)
-            val subscription = FridayRuntime.observe { runtime = it }
-            onDispose { handler.removeCallbacks(refresh); subscription.close() }
-        }
-
-        MaterialTheme(colorScheme = androidx.compose.material3.darkColorScheme(primary = Color(0xFF35E8FF), secondary = Color(0xFFFF3E55), background = Color(0xFF02040A), surface = Color(0xFF070C14))) {
-            Surface(Modifier.fillMaxSize(), color = Color(0xFF02040A)) {
-                Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Header(telemetry, geminiReady, runtime)
-                    Spacer(Modifier.height(8.dp))
-                    Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { FridayDynamicOrb(state = uiState, modifier = Modifier.size(290.dp)) }
-                    if (!geminiReady) {
-                        FirstRunBridge(key, { key = it; keyError = "" }, { value ->
-                            val clean = value.trim()
-                            val saved = runCatching { SecureApiKeyStore(applicationContext).save(clean) }.getOrDefault(false)
-                            if (saved) {
-                                key = ""
-                                keyError = ""
-                                geminiReady = true
-                                FridayRuntime.update("GEMINI CONNECTED", "Gemini API key stored securely on this device", true)
-                                Toast.makeText(this@FridayHudActivity, "Gemini connected", Toast.LENGTH_SHORT).show()
-                                if (!assistantSelected) openAssistantRole()
-                            } else {
-                                keyError = "Secure key storage failed. Check that the app is allowed to use Android Keystore."
-                                FridayRuntime.update("GEMINI SETUP ERROR", "Android Keystore rejected the key operation", false)
-                            }
-                        }, accessibility, assistantSelected, micGranted, keyError, ::openAccessibility, ::openAssistantRole)
-                    } else {
-                        StatusPanel(runtime, geminiReady, telemetry)
-                        Spacer(Modifier.height(10.dp))
-                        VoiceControls(tts, micGranted, assistantSelected, ::openAssistantRole)
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text("FRIDAY • VOICE-FIRST PERSONAL INTELLIGENCE", color = Color(0xFF45616D), fontSize = 8.sp, letterSpacing = 1.6.sp, textAlign = TextAlign.Center)
-                }
-            }
-        }
+    private fun refreshState() {
+        val keyReady = !runCatching { SecureApiKeyStore(applicationContext).read() }.getOrNull().isNullOrBlank()
+        val mic = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val assistant = runCatching { VoiceInteractionService.isActiveService(this, ComponentName(this, com.friday.assistant.voice.FridayVoiceInteractionService::class.java)) }.getOrDefault(false)
+        connectButton.text = if (keyReady) "GEMINI CONNECTED" else "CONNECT GEMINI BRAIN"
+        connectButton.isEnabled = !keyReady
+        assistantButton.text = if (assistant) "ANDROID ASSISTANT ON" else "ENABLE ANDROID ASSISTANT"
+        automationButton.text = if (isAccessibilityEnabled()) "AUTOMATION ON" else "ENABLE AUTOMATION"
+        listenButton.isEnabled = mic
+        if (mic) setStatus("READY", if (assistant) "Android Assistant active • direct LISTEN NOW is available" else "Mic ready • press LISTEN NOW to test speech", true)
+        else setStatus("MIC REQUIRED", "Allow microphone permission to use voice", false)
     }
 
     private fun isAccessibilityEnabled(): Boolean = runCatching {
@@ -165,80 +269,40 @@ class FridayHudActivity : ComponentActivity() {
         enabled.split(':').any { it.equals(ComponentName(this, com.friday.assistant.automation.FridayAccessibilityService::class.java).flattenToString(), true) }
     }.getOrDefault(false)
 
-    private fun isAssistantSelected(): Boolean = runCatching {
-        VoiceInteractionService.isActiveService(this, ComponentName(this, com.friday.assistant.voice.FridayVoiceInteractionService::class.java))
-    }.getOrDefault(false)
-
-    @Composable
-    private fun FirstRunBridge(key: String, onKeyChange: (String) -> Unit, saveKey: (String) -> Unit, accessibility: Boolean, assistantSelected: Boolean, micGranted: Boolean, keyError: String, openAccessibility: () -> Unit, openAssistant: () -> Unit) {
-        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF070D16)), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFF14313F), RoundedCornerShape(16.dp))) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                Text("FRIDAY INITIALIZATION", color = Color(0xFF35E8FF), fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                Text("Connect Gemini once. Then FRIDAY can use its cloud brain; wake detection and speech are local Android services.", color = Color(0xFFB9D2DB), fontSize = 11.sp)
-                OutlinedTextField(value = key, onValueChange = onKeyChange, modifier = Modifier.fillMaxWidth(), label = { Text("Gemini API key") }, singleLine = true, shape = RoundedCornerShape(12.dp))
-                Button(onClick = { if (key.isNotBlank()) saveKey(key) }, enabled = key.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("CONNECT GEMINI BRAIN") }
-                if (keyError.isNotBlank()) Text(keyError, color = Color(0xFFFF5266), fontSize = 9.sp, textAlign = TextAlign.Center)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = openAccessibility, modifier = Modifier.weight(1f)) { Text(if (accessibility) "AUTOMATION ON" else "AUTOMATION") }
-                    OutlinedButton(onClick = openAssistant, modifier = Modifier.weight(1f)) { Text(if (assistantSelected) "ASSISTANT ON" else "ASSISTANT") }
-                }
-                Text("${if (accessibility) "●" else "○"} AUTOMATION   ${if (assistantSelected) "●" else "○"} ASSISTANT   ${if (micGranted) "●" else "○"} MICROPHONE", color = Color(0xFF718B98), fontSize = 7.sp, letterSpacing = 0.8.sp, textAlign = TextAlign.Center)
-            }
+    private fun setStatus(stage: String, message: String, healthy: Boolean) {
+        FridayRuntime.update(stage, message, healthy)
+        runOnUiThread {
+            status.text = stage
+            status.setTextColor(if (healthy) cyan else red)
+            detail.text = message
+            orb.textColor = if (healthy) cyan else red
         }
     }
 
-    @Composable
-    private fun VoiceControls(tts: TTSManager, micGranted: Boolean, assistantSelected: Boolean, openAssistant: () -> Unit) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = {
-                    if (micGranted) tts.speak("Hello Boss. FRIDAY voice output is working.")
-                    else FridayRuntime.update("MIC PERMISSION", "Allow microphone access first", false)
-                }) { Text("TEST VOICE") }
-                OutlinedButton(onClick = openAssistant) { Text(if (assistantSelected) "ASSISTANT ON" else "ENABLE ASSISTANT") }
-            }
-            VoiceStandby(FridayRuntime.status)
-        }
+    private fun button(text: String) = Button(this).apply {
+        this.text = text
+        setTextColor(Color.WHITE)
+        textSize = 10f
+        isAllCaps = false
+        background = rounded(Color.rgb(10, 24, 34), Color.rgb(24, 69, 82), 12)
+        setPadding(dp(10), dp(6), dp(10), dp(6))
     }
 
-    @Composable
-    private fun Header(telemetry: DeviceSnapshot, geminiReady: Boolean, runtime: RuntimeStatus) {
-        val gradient = Brush.horizontalGradient(listOf(Color(0xFF07131D), Color(0xFF15080F), Color(0xFF07151B)))
-        Card(colors = CardDefaults.cardColors(containerColor = Color.Transparent), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth().background(gradient, RoundedCornerShape(18.dp)).border(1.dp, Color(0xFF173B49), RoundedCornerShape(18.dp))) {
-            Column(Modifier.padding(16.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column { Text("FRIDAY", color = Color.White, fontSize = 31.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 7.sp); Text("ULTRON-INSPIRED PERSONAL INTELLIGENCE", color = Color(0xFF718B98), fontSize = 8.sp, letterSpacing = 1.5.sp) }
-                    Column(horizontalAlignment = Alignment.End) { Text("${telemetry.batteryPercent}%", color = if (telemetry.charging) Color(0xFF4CFF9A) else Color(0xFF35E8FF), fontSize = 20.sp, fontWeight = FontWeight.Bold); Text(if (telemetry.charging) "CHARGING" else "ON BATTERY", color = Color(0xFF708994), fontSize = 7.sp, fontWeight = FontWeight.Bold) }
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(if (geminiReady) "GEMINI • CONNECTED" else "GEMINI • SETUP REQUIRED", color = if (geminiReady) Color(0xFF4CFF9A) else Color(0xFFFFB74D), fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                    Text(runtime.stage, color = if (runtime.healthy) Color(0xFF35E8FF) else Color(0xFFFF5266), fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
+    private fun rounded(fill: Int, stroke: Int, radius: Int) = GradientDrawable().apply {
+        setColor(fill)
+        setStroke(dp(1), stroke)
+        cornerRadius = dp(radius).toFloat()
     }
 
-    @Composable
-    private fun StatusPanel(runtime: RuntimeStatus, geminiReady: Boolean, telemetry: DeviceSnapshot) {
-        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF070D16)), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFF14313F), RoundedCornerShape(14.dp))) {
-            Column(Modifier.padding(13.dp)) {
-                Text("FRIDAY CORE", color = Color(0xFF35E8FF), fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                Spacer(Modifier.height(4.dp)); Text(runtime.detail, color = Color(0xFFD8F6FF), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                Spacer(Modifier.height(7.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    StatusPill("VOICE", runtime.stage.contains("LISTEN") || runtime.stage.contains("WAKE") || runtime.stage == "IDLE"); StatusPill("AI", geminiReady); StatusPill("SYSTEM", runtime.healthy); StatusPill("BATTERY", telemetry.batteryPercent > 15 || telemetry.charging)
-                }
-            }
-        }
-    }
+    private fun lp(w: Int, h: Int, l: Int, t: Int, r: Int, b: Int) = LinearLayout.LayoutParams(w, h).apply { setMargins(dp(l), dp(t), dp(r), dp(b)) }
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
-    @Composable
-    private fun VoiceStandby(runtime: RuntimeStatus) {
-        val active = runtime.stage.contains("LISTEN") || runtime.stage.contains("WAKE") || runtime.stage.contains("SPEAKER")
-        Text(if (active) "● VOICE ACTIVE • SPEAK NOW" else "● HANDS-FREE STANDBY • SAY “HEY FRIDAY”", color = if (active) Color(0xFF4CFF9A) else Color(0xFF35E8FF), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp, textAlign = TextAlign.Center)
-        Text("Wake path: Android Assistant • TEST VOICE checks speaker output", color = Color(0xFF526B76), fontSize = 8.sp, textAlign = TextAlign.Center)
+    override fun onDestroy() {
+        voice?.destroy()
+        voice = null
+        agent?.close()
+        agent = null
+        tts.shutdown()
+        super.onDestroy()
     }
-
-    @Composable
-    private fun StatusPill(label: String, active: Boolean) { Text("${if (active) "●" else "○"} $label", color = if (active) Color(0xFF4CFF9A) else Color(0xFF536B77), fontSize = 8.sp, fontWeight = FontWeight.Bold) }
 }
