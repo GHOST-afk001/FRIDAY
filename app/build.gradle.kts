@@ -7,31 +7,17 @@ plugins {
 android {
     namespace = "com.friday.assistant"
     compileSdk = 36
-
     defaultConfig {
         applicationId = "com.friday.assistant"
         minSdk = 27
         targetSdk = 36
-        versionCode = 441
-        versionName = "4.41"
+        versionCode = 442
+        versionName = "4.42"
     }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
-    buildFeatures {
-        compose = true
-    }
-
-    packaging {
-        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
-    }
+    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+    kotlinOptions { jvmTarget = "17" }
+    buildFeatures { compose = true }
+    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 
 dependencies {
