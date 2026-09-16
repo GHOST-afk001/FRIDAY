@@ -29,19 +29,18 @@
         android:theme="@style/Theme.Friday"
         android:supportsRtl="true">
 
-        <activity android:name=".FridayOnboardingActivity" android:exported="true">
+        <activity android:name=".FridayHudActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
-
-        <activity android:name=".FridayHudActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.ASSIST" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <activity android:name=".FridayOnboardingActivity" android:exported="false" />
 
         <service android:name=".voice.FridayVoiceInteractionService" android:exported="true" android:permission="android.permission.BIND_VOICE_INTERACTION">
             <intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter>
