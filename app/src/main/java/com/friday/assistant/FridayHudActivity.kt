@@ -10,7 +10,6 @@ import android.os.Bundle
 import android.provider.Settings
 import android.service.voice.VoiceInteractionService
 import android.view.Gravity
-import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -22,7 +21,6 @@ import androidx.activity.ComponentActivity
 import com.friday.assistant.ai.FridayAgent
 import com.friday.assistant.ai.SecureApiKeyStore
 import com.friday.assistant.runtime.FridayRuntime
-import com.friday.assistant.runtime.FridayStateFlow
 import com.friday.assistant.voice.TTSManager
 import com.friday.assistant.voice.VoiceManager
 
@@ -79,7 +77,7 @@ class FridayHudActivity : ComponentActivity() {
 
         val title = TextView(this).apply {
             text = "FRIDAY"
-            textColor = Color.WHITE
+            setTextColor(Color.WHITE)
             textSize = 30f
             gravity = Gravity.CENTER
             typeface = android.graphics.Typeface.DEFAULT_BOLD
@@ -89,7 +87,7 @@ class FridayHudActivity : ComponentActivity() {
 
         val subtitle = TextView(this).apply {
             text = "ULTRON-INSPIRED PERSONAL INTELLIGENCE"
-            textColor = Color.rgb(90, 115, 126)
+            setTextColor(Color.rgb(90, 115, 126))
             textSize = 8f
             gravity = Gravity.CENTER
             letterSpacing = 0.15f
@@ -98,7 +96,7 @@ class FridayHudActivity : ComponentActivity() {
 
         orb = TextView(this).apply {
             text = "◉"
-            textColor = cyan
+            setTextColor(cyan)
             textSize = 92f
             gravity = Gravity.CENTER
             setPadding(0, dp(8), 0, dp(8))
@@ -107,7 +105,7 @@ class FridayHudActivity : ComponentActivity() {
 
         status = TextView(this).apply {
             text = "FRIDAY CORE • STARTING"
-            textColor = cyan
+            setTextColor(cyan)
             textSize = 11f
             gravity = Gravity.CENTER
             typeface = android.graphics.Typeface.DEFAULT_BOLD
@@ -116,7 +114,7 @@ class FridayHudActivity : ComponentActivity() {
 
         detail = TextView(this).apply {
             text = "Initializing voice console..."
-            textColor = Color.rgb(190, 215, 224)
+            setTextColor(Color.rgb(190, 215, 224))
             textSize = 13f
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(2), dp(8), dp(8))
@@ -132,7 +130,7 @@ class FridayHudActivity : ComponentActivity() {
 
         val keyLabel = TextView(this).apply {
             text = "GEMINI BRAIN"
-            textColor = cyan
+            setTextColor(cyan)
             textSize = 9f
             typeface = android.graphics.Typeface.DEFAULT_BOLD
         }
@@ -140,7 +138,7 @@ class FridayHudActivity : ComponentActivity() {
 
         keyInput = EditText(this).apply {
             hint = "Paste Gemini API key (stored encrypted)"
-            hintTextColor = Color.rgb(90, 115, 126)
+            setHintTextColor(Color.rgb(90, 115, 126))
             setTextColor(Color.WHITE)
             textSize = 12f
             setSingleLine(true)
@@ -171,7 +169,7 @@ class FridayHudActivity : ComponentActivity() {
 
         val footer = TextView(this).apply {
             text = "DIRECT VOICE PATH: MICROPHONE → SPEECH → COMMAND/GEMINI → ACTION → TTS\nWAKE PATH: ANDROID ASSISTANT → HEY FRIDAY → SESSION"
-            textColor = Color.rgb(76, 105, 116)
+            setTextColor(Color.rgb(76, 105, 116))
             textSize = 8f
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(10), dp(8), dp(4))
@@ -206,7 +204,7 @@ class FridayHudActivity : ComponentActivity() {
             override fun onListening() { setStatus("LISTENING", "Microphone is receiving speech", true) }
             override fun onAmplitude(value: Float) {
                 orb.text = if (value > 0.08f) "◉" else "○"
-                orb.textColor = if (value > 0.08f) green else cyan
+                orb.setTextColor(if (value > 0.08f) green else cyan)
             }
             override fun onResult(text: String) {
                 listenButton.isEnabled = true
@@ -275,7 +273,7 @@ class FridayHudActivity : ComponentActivity() {
             status.text = stage
             status.setTextColor(if (healthy) cyan else red)
             detail.text = message
-            orb.textColor = if (healthy) cyan else red
+            orb.setTextColor(if (healthy) cyan else red)
         }
     }
 
