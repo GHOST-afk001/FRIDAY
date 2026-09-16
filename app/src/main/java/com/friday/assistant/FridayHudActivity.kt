@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 
 /** Main FRIDAY screen: reference-matched HUD plus live runtime telemetry and background voice controls. */
 class FridayHudActivity : ComponentActivity() {
-    private lateinit var hud: FridayHudView
+    private lateinit var hud: FridayReferenceHudView
     private val scope = MainScope()
     private var destroyed = false
 
@@ -29,12 +29,12 @@ class FridayHudActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.statusBarColor = android.graphics.Color.BLACK
         window.navigationBarColor = android.graphics.Color.BLACK
-        hud = FridayHudView(this)
-        hud.actions = object : FridayHudView.Actions {
-            override fun onGeminiTap() = showGeminiDialog()
-            override fun onAssistantTap() = openAssistantRole()
-            override fun onAutomationTap() = openAccessibility()
-            override fun onOrbTap() = startBackgroundVoice(true)
+        hud = FridayReferenceHudView(this)
+        hud.actions = object : FridayReferenceHudView.Actions {
+            override fun onGeminiTap() { showGeminiDialog() }
+            override fun onAssistantTap() { openAssistantRole() }
+            override fun onAutomationTap() { openAccessibility() }
+            override fun onOrbTap() { startBackgroundVoice(true) }
         }
         setContentView(hud)
         scope.launch {
@@ -73,7 +73,7 @@ class FridayHudActivity : ComponentActivity() {
         if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), REQUEST_PERMISSIONS)
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_PERMISSIONS && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             hud.postDelayed({ startBackgroundVoice(false) }, 250L)
@@ -94,7 +94,7 @@ class FridayHudActivity : ComponentActivity() {
         }
         AlertDialog.Builder(this)
             .setTitle("GEMINI CORE")
-            .setMessage("The key stays in Android Keystore-backed app storage. Never paste a key that you have already exposed publicly.")
+            .setMessage("The key is stored locally using Android Keystore-backed encryption. Use a fresh key if an older one was exposed.")
             .setView(box)
             .setNegativeButton("CANCEL", null)
             .setPositiveButton("CONNECT", null)
@@ -102,10 +102,7 @@ class FridayHudActivity : ComponentActivity() {
                 dialog.setOnShowListener {
                     dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                         val key = input.text?.toString()?.trim().orEmpty()
-                        if (key.isBlank()) {
-                            input.error = "Enter a Gemini API key"
-                            return@setOnClickListener
-                        }
+                        if (key.isBlank()) { input.error = "Enter a Gemini API key"; return@setOnClickListener }
                         val saved = runCatching { SecureApiKeyStore(applicationContext).save(key) }.getOrDefault(false)
                         if (saved) {
                             FridayRuntime.update("GEMINI CONNECTED", "Cloud brain ready", true)
@@ -120,20 +117,21 @@ class FridayHudActivity : ComponentActivity() {
             }
     }
 
-    private fun openAssistantRole() = runCatching {
-        if (android.os.Build.VERSION.SDK_INT >= 29) {
-            val roles = getSystemService(android.app.role.RoleManager::class.java)
-            if (roles?.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT) == true) {
-                startActivity(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))
-            } else {
-                startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
+    private fun openAssistantRole() {
+        runCatching {
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                val roles = getSystemService(android.app.role.RoleManager::class.java)
+                if (roles?.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT) == true) {
+                    startActivity(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))
+                } else startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
             }
-        }
-    }.onFailure { FridayRuntime.update("ASSISTANT SETUP", "Open Android voice assistant settings", false) }
+        }.onFailure { FridayRuntime.update("ASSISTANT SETUP", "Open Android voice assistant settings", false) }
+    }
 
-    private fun openAccessibility() = runCatching {
-        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-    }.onFailure { FridayRuntime.update("AUTOMATION SETUP", "Open Android Accessibility settings", false) }
+    private fun openAccessibility() {
+        runCatching { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            .onFailure { FridayRuntime.update("AUTOMATION SETUP", "Open Android Accessibility settings", false) }
+    }
 
     override fun onDestroy() {
         destroyed = true
