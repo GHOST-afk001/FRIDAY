@@ -46,7 +46,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.friday.assistant.ai.SecureApiKeyStore
@@ -156,7 +155,7 @@ class FridayHudActivity : ComponentActivity() {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("FRIDAY INITIALIZATION", color = Color(0xFF35E8FF), fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
                 Text("Connect the Gemini brain once. FRIDAY stores the key securely on this device; it is not baked into the APK.", color = Color(0xFFB9D2DB), fontSize = 11.sp)
-                OutlinedTextField(value = key, onValueChange = onKeyChange, modifier = Modifier.fillMaxWidth(), label = { Text("Gemini API key") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, shape = RoundedCornerShape(12.dp))
+                OutlinedTextField(value = key, onValueChange = onKeyChange, modifier = Modifier.fillMaxWidth(), label = { Text("Gemini API key") }, singleLine = true, shape = RoundedCornerShape(12.dp))
                 Button(onClick = { if (key.isNotBlank()) saveKey(key) }, enabled = key.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("CONNECT GEMINI BRAIN") }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = openAccessibility, modifier = Modifier.weight(1f)) { Text(if (accessibility) "AUTOMATION ON" else "AUTOMATION") }
