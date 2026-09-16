@@ -29,9 +29,12 @@ class FridayWakeDetector(
         private const val TAG = "FridayWakeDetector"
         private const val SAMPLE_RATE = 16_000
         private const val BYTES_PER_SAMPLE = 2
-        private const val THRESHOLD = 0.55f
+        // Voicute documents 0.5 as the baseline threshold. 0.45 gives the real phone mic
+        // a little more headroom without turning the detector into an always-triggered gate.
+        private const val THRESHOLD = 0.45f
         private const val COOLDOWN_MS = 1_800L
-        private const val RMS_GATE = 0.005f
+        // Do not discard quiet but valid speech before the classifier sees it.
+        private const val RMS_GATE = 0.0015f
     }
 
     private val running = AtomicBoolean(false)
@@ -129,6 +132,8 @@ class FridayWakeDetector(
             var lastWake = 0L
             var consecutiveWord = ""
             var consecutiveCount = 0
+            var scoreLogAt = 0L
+            var peakSinceLog = 0f
 
             while (running.get() && !Thread.currentThread().isInterrupted) {
                 val read = localRecorder.read(chunk, 0, chunk.size, AudioRecord.READ_BLOCKING)
@@ -169,6 +174,13 @@ class FridayWakeDetector(
                 val word = result.javaClass.getField("wakeWord").get(result) as? String ?: ""
                 val probability = result.javaClass.getField("probability").getFloat(result)
                 val requiredFrames = result.javaClass.getField("recommendedConsFrames").getInt(result).coerceIn(1, 8)
+                peakSinceLog = max(peakSinceLog, probability)
+                val now = SystemClock.elapsedRealtime()
+                if (now - scoreLogAt >= 3000L) {
+                    Log.d(TAG, "Wake score=${"%.3f".format(peakSinceLog)} rms=${"%.4f".format(rms)} word=$word")
+                    scoreLogAt = now
+                    peakSinceLog = 0f
+                }
 
                 if (word.contains("friday", ignoreCase = true) && probability >= THRESHOLD) {
                     if (word.equals(consecutiveWord, ignoreCase = true)) consecutiveCount++
@@ -179,7 +191,6 @@ class FridayWakeDetector(
                 }
 
                 if (consecutiveCount >= requiredFrames) {
-                    val now = SystemClock.elapsedRealtime()
                     if (now - lastWake > COOLDOWN_MS && wakeDelivered.compareAndSet(false, true)) {
                         lastWake = now
                         consecutiveWord = ""
