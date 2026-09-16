@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -11,6 +12,7 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.EditText
+import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
 import com.friday.assistant.ai.SecureApiKeyStore
@@ -21,36 +23,53 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
-/** Main FRIDAY screen. Voice is started explicitly after the HUD is stable to prevent startup crashes. */
+/** Main FRIDAY screen. Voice is started only after the HUD is safely attached. */
 class FridayHudActivity : ComponentActivity() {
-    private lateinit var hud: FridayReferenceHudView
+    private var hud: FridayReferenceHudView? = null
     private val scope = MainScope()
     private var destroyed = false
+    private var hudFailed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enterImmersiveHud()
-        hud = FridayReferenceHudView(this)
-        hud.actions = object : FridayReferenceHudView.Actions {
-            override fun onGeminiTap() { showGeminiDialog() }
-            override fun onAssistantTap() { openAssistantRole() }
-            override fun onAutomationTap() { openAccessibility() }
-            override fun onOrbTap() { startBackgroundVoice() }
+
+        try {
+            val view = FridayReferenceHudView(this)
+            view.actions = object : FridayReferenceHudView.Actions {
+                override fun onGeminiTap() { showGeminiDialog() }
+                override fun onAssistantTap() { openAssistantRole() }
+                override fun onAutomationTap() { openAccessibility() }
+                override fun onOrbTap() { startBackgroundVoice() }
+            }
+            hud = view
+            setContentView(view)
+        } catch (t: Throwable) {
+            hudFailed = true
+            FridayRuntime.update("HUD ERROR", "FRIDAY HUD could not initialize safely", false)
+            val fallback = TextView(this).apply {
+                setBackgroundColor(Color.BLACK)
+                setTextColor(Color.rgb(255, 137, 48))
+                textSize = 16f
+                text = "FRIDAY\n\nHUD initialization failed safely.\nPlease restart FRIDAY."
+                gravity = android.view.Gravity.CENTER
+                setPadding(32, 32, 32, 32)
+            }
+            setContentView(fallback)
         }
-        setContentView(hud)
+
         scope.launch {
-            FridayStateFlow.state.collect { value -> if (!destroyed) hud.render(value) }
+            FridayStateFlow.state.collect { value -> hud?.takeIf { !destroyed }?.render(value) }
         }
-        requestMicrophoneFirst()
+        if (!hudFailed) requestMicrophoneFirst()
     }
 
     override fun onResume() {
         super.onResume()
         destroyed = false
         enterImmersiveHud()
-        // Do not start microphone foreground work automatically during Activity startup.
-        // Android/Samsung can reject microphone FGS startup during lifecycle transitions.
+        if (hudFailed) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestMicrophoneFirst()
         } else {
@@ -122,8 +141,8 @@ class FridayHudActivity : ComponentActivity() {
         val input = EditText(this).apply {
             hint = "Paste Gemini API key"
             setSingleLine(true)
-            setTextColor(android.graphics.Color.WHITE)
-            setHintTextColor(android.graphics.Color.GRAY)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
             setPadding(24, 16, 24, 16)
         }
         val box = android.widget.FrameLayout(this).apply {
