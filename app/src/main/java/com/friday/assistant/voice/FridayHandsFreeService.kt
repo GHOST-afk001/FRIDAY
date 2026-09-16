@@ -13,11 +13,11 @@ import androidx.core.app.NotificationCompat
 import com.friday.assistant.R
 
 /**
- * Lightweight foreground keeper for hands-free mode.
+ * Foreground keeper for FRIDAY hands-free mode.
  *
- * The selected VoiceInteractionService remains the sole microphone owner. This service only
- * keeps the hands-free lifecycle visible to Android and holds a partial WakeLock while the
- * owner explicitly has hands-free mode enabled. It never opens a second AudioRecord.
+ * Android 14+ requires a microphone foreground-service type for long-lived background
+ * microphone capture. The wake detector remains a single AudioRecord owner; this service
+ * provides the OS-level microphone/foreground lifecycle around that capture.
  */
 class FridayHandsFreeService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
@@ -27,7 +27,9 @@ class FridayHandsFreeService : Service() {
         createChannel()
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            startForeground(NOTIFICATION_ID, notification, types)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
@@ -53,7 +55,7 @@ class FridayHandsFreeService : Service() {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "FRIDAY Hands-Free", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Keeps FRIDAY hands-free lifecycle active."
+                description = "Keeps FRIDAY microphone and hands-free lifecycle active."
             }
         )
     }
@@ -61,7 +63,7 @@ class FridayHandsFreeService : Service() {
     private fun buildNotification(): Notification = NotificationCompat.Builder(this, CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_btn_speak_now)
         .setContentTitle("FRIDAY hands-free active")
-        .setContentText("Hey Friday wake detection is owned by the Android Assistant service.")
+        .setContentText("Hey Friday wake detection is active through the Android Assistant.")
         .setOngoing(true)
         .setCategory(NotificationCompat.CATEGORY_SERVICE)
         .build()
