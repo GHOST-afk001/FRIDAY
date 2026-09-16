@@ -186,7 +186,7 @@ class FridayHudActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun StatusPanel(runtime: RuntimeStatus, geminiReady: Boolean, telemetry: DeviceTelemetry) {
+    private fun StatusPanel(runtime: RuntimeStatus, geminiReady: Boolean, telemetry: DeviceSnapshot) {
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF070D16)), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFF14313F), RoundedCornerShape(14.dp))) {
             Column(Modifier.padding(13.dp)) {
                 Text("FRIDAY CORE", color = Color(0xFF35E8FF), fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
