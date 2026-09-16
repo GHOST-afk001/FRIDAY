@@ -12,8 +12,8 @@ android {
         applicationId = "com.friday.assistant"
         minSdk = 27
         targetSdk = 36
-        versionCode = 437
-        versionName = "4.37"
+        versionCode = 438
+        versionName = "4.38"
     }
 
     compileOptions {
@@ -45,4 +45,5 @@ dependencies {
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     debugImplementation("androidx.compose.ui:ui-tooling:1.7.8")
     testImplementation("junit:junit:4.13.2")
+    testImplementation(kotlin("test"))
 }
