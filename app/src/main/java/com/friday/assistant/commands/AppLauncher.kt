@@ -16,13 +16,14 @@ import androidx.core.content.ContextCompat
 import com.friday.assistant.automation.FridayAutomation
 import com.friday.assistant.runtime.FridayRuntime
 
-/** Executes public Android intents/APIs and the explicitly user-enabled automation bridge. */
+/** Executes Android intents/APIs plus the explicitly user-enabled Accessibility bridge. */
 class AppLauncher(private val context: Context) {
     fun launch(action: FridayAction): Boolean = try {
         when (action) {
             is FridayAction.Sequence -> action.actions.all { launch(it) }
             FridayAction.YouTube -> openPackageOrUrl("com.google.android.youtube", "https://www.youtube.com")
             is FridayAction.YouTubeSearch -> openYouTubeSearch(action.query)
+            is FridayAction.SpotifySearch -> openSpotifySearch(action.query)
             FridayAction.Calculator -> openCalculator()
             FridayAction.Settings -> start(Intent(Settings.ACTION_SETTINGS))
             FridayAction.Camera -> start(Intent(MediaStore.ACTION_IMAGE_CAPTURE))
@@ -63,19 +64,14 @@ class AppLauncher(private val context: Context) {
                     putExtra("sms_body", action.message)
                 })
             }
-            is FridayAction.OpenApp -> openPackageOrUrl(action.packageName, null)
+            is FridayAction.OpenApp -> openInstalledApp(action.packageName, action.label)
             is FridayAction.AccessibilityCommand -> {
                 val command = action.command.trim()
-                if (command.startsWith("whatsapp_message|")) {
-                    openWhatsAppMessage(command)
-                } else {
+                if (command.startsWith("whatsapp_message|")) openWhatsAppMessage(command)
+                else {
                     val result = FridayAutomation.tryExecute(command)
                     if (result != null) true else {
-                        FridayRuntime.update(
-                            "AUTOMATION BLOCKED",
-                            "Enable FRIDAY Accessibility access. If Android says the setting is restricted, allow restricted settings for FRIDAY in App info first.",
-                            false
-                        )
+                        FridayRuntime.update("AUTOMATION BLOCKED", "Enable FRIDAY Accessibility access in Android settings.", false)
                         false
                     }
                 }
@@ -96,48 +92,64 @@ class AppLauncher(private val context: Context) {
         return true
     }
 
-    private fun openPackageOrUrl(packageName: String, fallbackUrl: String?): Boolean {
-        val app = context.packageManager.getLaunchIntentForPackage(packageName)
-        return if (app != null) start(app) else fallbackUrl?.let { start(Intent(Intent.ACTION_VIEW, Uri.parse(it))) } ?: false
+    private fun openPackageOrUrl(packageName: String, fallbackUrl: String?): Boolean =
+        openInstalledApp(packageName, packageName) || (fallbackUrl?.let { start(Intent(Intent.ACTION_VIEW, Uri.parse(it))) } ?: false)
+
+    private fun openInstalledApp(packageOrLabel: String, label: String): Boolean {
+        val direct = context.packageManager.getLaunchIntentForPackage(packageOrLabel)
+        if (direct != null) return start(direct)
+        val wanted = label.trim().ifBlank { packageOrLabel.trim() }.lowercase()
+        if (wanted.isBlank()) return false
+        val apps = context.packageManager.queryIntentActivities(
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),
+            PackageManager.MATCH_ALL
+        )
+        val match = apps.firstOrNull { info ->
+            val appLabel = info.loadLabel(context.packageManager).toString().lowercase()
+            appLabel == wanted || appLabel.contains(wanted) || wanted.contains(appLabel)
+        } ?: return false
+        val launch = context.packageManager.getLaunchIntentForPackage(match.activityInfo.packageName) ?: return false
+        return start(launch)
     }
 
     private fun openYouTubeSearch(query: String): Boolean {
         val encoded = Uri.encode(query)
         val youtube = context.packageManager.getLaunchIntentForPackage("com.google.android.youtube")
         if (youtube != null) {
-            val deepLink = Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube://results?search_query=$encoded")).apply {
-                setPackage("com.google.android.youtube")
-            }
+            val deepLink = Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube://results?search_query=$encoded")).apply { setPackage("com.google.android.youtube") }
             if (start(deepLink)) return true
         }
-        return start(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=$encoded")).apply {
-            if (youtube != null) setPackage("com.google.android.youtube")
-        })
+        return start(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=$encoded")))
+    }
+
+    private fun openSpotifySearch(query: String): Boolean {
+        val encoded = Uri.encode(query)
+        val spotify = context.packageManager.getLaunchIntentForPackage("com.spotify.music")
+        if (spotify != null) {
+            val deepLink = Intent(Intent.ACTION_VIEW, Uri.parse("spotify:search:$encoded")).apply { setPackage("com.spotify.music") }
+            if (start(deepLink)) return true
+        }
+        return start(Intent(Intent.ACTION_VIEW, Uri.parse("https://open.spotify.com/search/$encoded")))
     }
 
     private fun openWhatsAppMessage(command: String): Boolean {
         val parts = command.split('|', limit = 3)
         if (parts.size != 3) return false
-        val name = parts[1].trim()
-        val message = parts[2].trim()
+        val name = parts[1].trim(); val message = parts[2].trim()
         if (name.isBlank() || message.isBlank()) return false
         val number = findUniqueContactNumber(name) ?: return false
         val phone = number.filter { it.isDigit() }
         if (phone.isBlank()) return false
-        val encodedMessage = Uri.encode(message)
-        val whatsappUri = Uri.parse("https://wa.me/$phone?text=$encodedMessage")
-        val intent = Intent(Intent.ACTION_VIEW, whatsappUri).apply {
-            setPackage("com.whatsapp")
-        }
-        if (start(intent)) return true
-        return start(Intent(Intent.ACTION_VIEW, whatsappUri))
+        val uri = Uri.parse("https://wa.me/$phone?text=${Uri.encode(message)}")
+        val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.whatsapp") }
+        return if (start(intent)) true else start(Intent(Intent.ACTION_VIEW, uri))
     }
 
     private fun openCalculator(): Boolean {
         val selector = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_CALCULATOR)
         if (start(selector)) return true
-        val knownPackages = listOf("com.sec.android.app.popupcalculator", "com.samsung.android.calculator", "com.google.android.calculator")
-        return knownPackages.firstOrNull { context.packageManager.getLaunchIntentForPackage(it) != null }
+        val known = listOf("com.sec.android.app.popupcalculator", "com.samsung.android.calculator", "com.google.android.calculator")
+        return known.firstOrNull { context.packageManager.getLaunchIntentForPackage(it) != null }
             ?.let { start(context.packageManager.getLaunchIntentForPackage(it)!!) } ?: false
     }
 
@@ -150,42 +162,25 @@ class AppLauncher(private val context: Context) {
     private fun setTorch(enabled: Boolean): Boolean {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return false
         val camera = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        val id = camera.cameraIdList.firstOrNull { camera.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }
-            ?: return false
-        camera.setTorchMode(id, enabled)
-        return true
+        val id = camera.cameraIdList.firstOrNull { camera.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true } ?: return false
+        camera.setTorchMode(id, enabled); return true
     }
 
     private fun findUniqueContactNumber(name: String): String? {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return null
-        val requested = name.trim()
-        if (requested.isBlank()) return null
-        val projection = arrayOf(
-            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-            ContactsContract.CommonDataKinds.Phone.NUMBER
-        )
+        val requested = name.trim(); if (requested.isBlank()) return null
+        val projection = arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER)
         val exactSelection = "LOWER(${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME}) = ?"
-        val exact = context.contentResolver.query(
-            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-            projection, exactSelection, arrayOf(requested.lowercase()), null
-        )?.use { cursor ->
-            val numbers = mutableListOf<String>()
-            val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+        val exact = context.contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, projection, exactSelection, arrayOf(requested.lowercase()), null)?.use { cursor ->
+            val numbers = mutableListOf<String>(); val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
             while (cursor.moveToNext() && numberIndex >= 0) numbers += cursor.getString(numberIndex)
             numbers.distinct().singleOrNull()
         }
         if (exact != null) return exact
-
         val partialSelection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
-        return context.contentResolver.query(
-            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-            projection, partialSelection, arrayOf("%$requested%"), null
-        )?.use { cursor ->
-            val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-            if (numberIndex < 0) return@use null
-            val numbers = mutableSetOf<String>()
-            while (cursor.moveToNext()) numbers += cursor.getString(numberIndex)
-            numbers.singleOrNull()
+        return context.contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, projection, partialSelection, arrayOf("%$requested%"), null)?.use { cursor ->
+            val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER); if (numberIndex < 0) return@use null
+            val numbers = mutableSetOf<String>(); while (cursor.moveToNext()) numbers += cursor.getString(numberIndex); numbers.singleOrNull()
         }
     }
 }
