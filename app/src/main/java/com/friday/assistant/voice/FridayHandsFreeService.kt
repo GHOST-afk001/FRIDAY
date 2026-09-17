@@ -32,6 +32,7 @@ class FridayHandsFreeService : Service() {
     override fun onCreate() {
         super.onCreate()
         stopped = false
+        running = true
         try {
             createChannel()
             val notification = buildNotification()
@@ -40,6 +41,7 @@ class FridayHandsFreeService : Service() {
             } else startForeground(NOTIFICATION_ID, notification)
         } catch (t: Throwable) {
             FridayRuntime.update("HANDS-FREE ERROR", "Android refused the microphone foreground service", false)
+            running = false
             stopSelf(); return
         }
         runCatching {
@@ -112,7 +114,7 @@ class FridayHandsFreeService : Service() {
     }
 
     override fun onDestroy() {
-        stopped = true; restartToken++; main.removeCallbacksAndMessages(null)
+        stopped = true; running = false; restartToken++; main.removeCallbacksAndMessages(null)
         runCatching { voice?.destroy() }; voice = null; busy = false
         runCatching { agent?.close() }; agent = null
         runCatching { tts?.shutdown() }; tts = null
@@ -123,5 +125,11 @@ class FridayHandsFreeService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
     private fun createChannel() { if (Build.VERSION.SDK_INT < 26) return; getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL_ID, "FRIDAY Hands-Free", NotificationManager.IMPORTANCE_LOW).apply { description = "FRIDAY background voice assistant" }) }
     private fun buildNotification(): Notification = NotificationCompat.Builder(this, CHANNEL_ID).setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("FRIDAY hands-free active").setContentText("Speak a command — no tap required.").setOngoing(true).setCategory(NotificationCompat.CATEGORY_SERVICE).build()
-    companion object { private const val CHANNEL_ID = "friday_hands_free"; private const val NOTIFICATION_ID = 704; private const val LISTEN_TAG = "friday-listen-restart" }
+    companion object {
+        private const val CHANNEL_ID = "friday_hands_free"
+        private const val NOTIFICATION_ID = 704
+        private const val LISTEN_TAG = "friday-listen-restart"
+        @Volatile private var running = false
+        fun isRunning(): Boolean = running
+    }
 }
