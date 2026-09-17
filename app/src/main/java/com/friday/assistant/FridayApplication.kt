@@ -3,10 +3,12 @@ package com.friday.assistant
 import android.app.Application
 import android.util.Log
 
-/** Keeps application startup passive; microphone foreground work starts only from the visible HUD/assistant flow. */
+/** Keeps application startup passive and removes stale temporary runtime cache before the HUD starts. */
 class FridayApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        clearStaleRuntimeCache()
+
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             runCatching {
@@ -24,5 +26,22 @@ class FridayApplication : Application() {
                 kotlin.system.exitProcess(10)
             }
         }
+    }
+
+    /**
+     * FRIDAY does not persist user data in cache. Removing stale cache at process start
+     * prevents corrupted/transient renderer, voice, or network artifacts from surviving
+     * a crash. Preferences/Keystore data are intentionally untouched.
+     */
+    private fun clearStaleRuntimeCache() {
+        runCatching { cacheDir.deleteRecursively() }
+        runCatching { externalCacheDir?.deleteRecursively() }
+        runCatching {
+            codeCacheDir.deleteRecursively()
+        }
+        // Re-create the directories Android expects after cleanup.
+        runCatching { cacheDir.mkdirs() }
+        runCatching { externalCacheDir?.mkdirs() }
+        runCatching { codeCacheDir.mkdirs() }
     }
 }
