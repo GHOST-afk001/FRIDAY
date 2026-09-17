@@ -55,7 +55,7 @@ class FridayHudActivity : ComponentActivity() {
             }
             hud = view; setContentView(view)
             scope.launch { FridayStateFlow.state.collect { value -> if (!destroyed) hud?.render(value) } }
-            FridayRuntime.update("READY", "FRIDAY HUD ready — hands-free voice active", true)
+            FridayRuntime.update("READY", "FRIDAY HUD ready", true)
             requestMicrophoneFirst()
         } catch (_: Throwable) {
             hudFailed = true
@@ -76,12 +76,13 @@ class FridayHudActivity : ComponentActivity() {
     }
 
     private fun queueBackgroundVoice() {
-        if (voiceStartQueued || destroyed) return
+        if (voiceStartQueued || destroyed || FridayHandsFreeService.isRunning()) return
         voiceStartQueued = true
-        window.decorView.postDelayed({ voiceStartQueued = false; if (!destroyed && !isFinishing) startBackgroundVoice() }, 900L)
+        window.decorView.postDelayed({ voiceStartQueued = false; if (!destroyed && !isFinishing && !FridayHandsFreeService.isRunning()) startBackgroundVoice() }, 900L)
     }
 
     private fun startBackgroundVoice() {
+        if (FridayHandsFreeService.isRunning()) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { requestMicrophoneFirst(); return }
         runCatching { ContextCompat.startForegroundService(this, Intent(this, FridayHandsFreeService::class.java)); FridayRuntime.update("STARTING", "FRIDAY voice engine starting", true) }
             .onFailure { FridayRuntime.update("HANDS-FREE ERROR", "Android refused FRIDAY's microphone service", false) }

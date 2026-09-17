@@ -17,8 +17,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.friday.assistant.ai.FridayAgent
 import com.friday.assistant.runtime.FridayRuntime
+import java.util.concurrent.atomic.AtomicBoolean
 
-/** Persistent foreground voice engine. SpeechRecognizer is used as the reliable command path. */
+/** Persistent foreground voice engine. Starts only from an allowed user-visible Android context. */
 class FridayHandsFreeService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private var voice: VoiceManager? = null
@@ -32,13 +33,14 @@ class FridayHandsFreeService : Service() {
     override fun onCreate() {
         super.onCreate()
         stopped = false
+        running.set(true)
         try {
             createChannel()
             val notification = buildNotification()
-            if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-            } else startForeground(NOTIFICATION_ID, notification)
-        } catch (t: Throwable) {
+            if (Build.VERSION.SDK_INT >= 34) startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            else startForeground(NOTIFICATION_ID, notification)
+        } catch (_: Throwable) {
+            running.set(false)
             FridayRuntime.update("HANDS-FREE ERROR", "Android refused the microphone foreground service", false)
             stopSelf(); return
         }
@@ -49,7 +51,7 @@ class FridayHandsFreeService : Service() {
         }
         runCatching { tts = TTSManager(applicationContext) { FridayRuntime.update("TTS ERROR", "Android speech output is unavailable", false) } }
         runCatching { agent = FridayAgent(applicationContext) }
-        main.postDelayed({ if (!stopped) startListening() }, 1200L)
+        main.postDelayed({ if (!stopped) startListening() }, 900L)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -60,7 +62,7 @@ class FridayHandsFreeService : Service() {
     private fun startListening() {
         if (stopped || busy) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            FridayRuntime.update("MIC PERMISSION", "Allow microphone access for FRIDAY", false); scheduleRestart(2000L); return
+            FridayRuntime.update("MIC PERMISSION", "Allow microphone access for FRIDAY", false); scheduleRestart(2500L); return
         }
         busy = true
         runCatching { voice?.destroy() }; voice = null
@@ -81,21 +83,21 @@ class FridayHandsFreeService : Service() {
                                 if (stopped) return@post
                                 val spoken = answer.trim().ifBlank { "I didn't get a response, Boss." }
                                 FridayRuntime.update("SPEAKING", spoken.take(240), true)
-                                runCatching { tts?.speak(spoken) { finishCycle(300L) } ?: finishCycle(300L) }
-                                    .onFailure { finishCycle(300L) }
+                                runCatching { tts?.speak(spoken) { finishCycle(350L) } ?: finishCycle(350L) }
+                                    .onFailure { finishCycle(500L) }
                             }
                         }
-                    }.onFailure { finishCycle(300L) }
+                    }.onFailure { finishCycle(500L) }
                 }
                 override fun onError(message: String) {
                     if (stopped) return
                     FridayRuntime.update("VOICE RETRY", message, true)
-                    finishCycle(if (message.contains("permission", true)) 2000L else 700L)
+                    finishCycle(if (message.contains("permission", true)) 2500L else 900L)
                 }
             })
             voice = newVoice; newVoice.start()
         } catch (_: Throwable) {
-            busy = false; voice = null; FridayRuntime.update("VOICE RETRY", "Android speech engine could not start", true); scheduleRestart(1200L)
+            busy = false; voice = null; FridayRuntime.update("VOICE RETRY", "Android speech engine could not start", true); scheduleRestart(1400L)
         }
     }
 
@@ -112,7 +114,7 @@ class FridayHandsFreeService : Service() {
     }
 
     override fun onDestroy() {
-        stopped = true; restartToken++; main.removeCallbacksAndMessages(null)
+        stopped = true; running.set(false); restartToken++; main.removeCallbacksAndMessages(null)
         runCatching { voice?.destroy() }; voice = null; busy = false
         runCatching { agent?.close() }; agent = null
         runCatching { tts?.shutdown() }; tts = null
@@ -123,5 +125,5 @@ class FridayHandsFreeService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
     private fun createChannel() { if (Build.VERSION.SDK_INT < 26) return; getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL_ID, "FRIDAY Hands-Free", NotificationManager.IMPORTANCE_LOW).apply { description = "FRIDAY background voice assistant" }) }
     private fun buildNotification(): Notification = NotificationCompat.Builder(this, CHANNEL_ID).setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("FRIDAY hands-free active").setContentText("Speak a command — no tap required.").setOngoing(true).setCategory(NotificationCompat.CATEGORY_SERVICE).build()
-    companion object { private const val CHANNEL_ID = "friday_hands_free"; private const val NOTIFICATION_ID = 704; private const val LISTEN_TAG = "friday-listen-restart" }
+    companion object { private const val CHANNEL_ID = "friday_hands_free"; private const val NOTIFICATION_ID = 704; private const val LISTEN_TAG = "friday-listen-restart"; private val running = AtomicBoolean(false); fun isRunning() = running.get() }
 }
