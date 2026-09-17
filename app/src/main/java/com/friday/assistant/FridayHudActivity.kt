@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -12,6 +13,7 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
 import com.friday.assistant.ai.SecureApiKeyStore
@@ -34,11 +36,25 @@ class FridayHudActivity : ComponentActivity() {
         enterImmersive()
         attachHud()
         startHandsFreeAutomatically()
+        window.decorView.postDelayed({
+            if (!destroyed && !hasGeminiKey()) showGeminiDialog()
+        }, 700L)
     }
 
     private fun attachHud() {
-        runCatching {
-            val view = FridayGreenHudView(this)
+        val view = runCatching { FridayGreenHudView(this) }.getOrElse {
+            val fallback = TextView(this).apply {
+                setBackgroundColor(Color.BLACK)
+                setTextColor(Color.rgb(0, 255, 135))
+                textSize = 20f
+                text = "FRIDAY\n\nLIVE HUD INITIALIZING...\n\nTap here to configure Gemini API key"
+                setPadding(40, 80, 40, 40)
+                setOnClickListener { showGeminiDialog() }
+            }
+            FridayRuntime.update("HUD FALLBACK", "Live HUD could not initialize", false)
+            fallback
+        }
+        if (view is FridayGreenHudView) {
             view.actions = object : FridayGreenHudView.Actions {
                 override fun onGeminiTap() = showGeminiDialog()
                 override fun onAssistantTap() = openAssistantRole()
@@ -47,16 +63,22 @@ class FridayHudActivity : ComponentActivity() {
             }
             hud = view
             setContentView(view)
-            scope.launch { FridayStateFlow.state.collect { if (!destroyed) hud?.render(it) } }
+            scope.launch {
+                FridayStateFlow.state.collect { if (!destroyed) hud?.render(it) }
+            }
             FridayRuntime.update("READY", "FRIDAY live HUD ready", true)
-        }.onFailure {
-            FridayRuntime.update("HUD ERROR", "Live HUD failed safely", false)
+        } else {
+            setContentView(view)
         }
     }
 
     private fun enterImmersive() {
-        if (Build.VERSION.SDK_INT >= 30) window.insetsController?.let { c -> c.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars()); c.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE }
-        else @Suppress("DEPRECATION") run { window.decorView.systemUiVisibility = 5894 }
+        if (Build.VERSION.SDK_INT >= 30) {
+            window.insetsController?.let { c ->
+                c.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                c.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else @Suppress("DEPRECATION") run { window.decorView.systemUiVisibility = 5894 }
     }
 
     private fun startHandsFreeAutomatically() {
@@ -76,21 +98,59 @@ class FridayHudActivity : ComponentActivity() {
         if (requestCode == REQUEST_MIC && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startHandsFreeAutomatically()
     }
 
+    private fun hasGeminiKey(): Boolean = runCatching {
+        !SecureApiKeyStore(applicationContext).read().isNullOrBlank()
+    }.getOrDefault(false)
+
     private fun showGeminiDialog() {
-        val input = EditText(this).apply { hint = "Paste Gemini API key"; setSingleLine(true); setTextColor(android.graphics.Color.WHITE); setHintTextColor(android.graphics.Color.GRAY) }
-        val box = FrameLayout(this).apply { setPadding(24, 0, 24, 0); addView(input, FrameLayout.LayoutParams(-1, -2)) }
-        val dialog = AlertDialog.Builder(this).setTitle("GEMINI CORE").setMessage("Key is stored locally using Android Keystore-backed encryption.").setView(box).setNegativeButton("CANCEL", null).setPositiveButton("CONNECT", null).create()
-        dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            val key = input.text?.toString()?.trim().orEmpty()
-            if (key.isBlank()) { input.error = "Enter Gemini API key"; return@setOnClickListener }
-            if (runCatching { SecureApiKeyStore(applicationContext).save(key) }.getOrDefault(false)) { FridayRuntime.update("GEMINI CONNECTED", "Cloud brain ready", true); hud?.setGeminiReady(true); dialog.dismiss() }
-            else input.error = "Could not securely store key"
-        }}
+        val input = EditText(this).apply {
+            hint = "Paste Gemini API key"
+            setSingleLine(true)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+            setPadding(12, 12, 12, 12)
+        }
+        val box = FrameLayout(this).apply {
+            setPadding(24, 0, 24, 0)
+            addView(input, FrameLayout.LayoutParams(-1, -2))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("GEMINI CORE")
+            .setMessage("Enter your Gemini API key. It is stored locally using Android Keystore-backed encryption.")
+            .setView(box)
+            .setNegativeButton("CANCEL", null)
+            .setPositiveButton("CONNECT", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val key = input.text?.toString()?.trim().orEmpty()
+                if (key.isBlank()) {
+                    input.error = "Enter Gemini API key"
+                    return@setOnClickListener
+                }
+                if (runCatching { SecureApiKeyStore(applicationContext).save(key) }.getOrDefault(false)) {
+                    FridayRuntime.update("GEMINI CONNECTED", "Cloud brain ready", true)
+                    hud?.setGeminiReady(true)
+                    dialog.dismiss()
+                } else input.error = "Could not securely store key"
+            }
+        }
         dialog.show()
     }
 
-    private fun openAssistantRole() { runCatching { if (Build.VERSION.SDK_INT >= 29) { val roles = getSystemService(android.app.role.RoleManager::class.java); if (roles?.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT) == true) startActivity(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT)) else startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) } } }
+    private fun openAssistantRole() {
+        runCatching {
+            if (Build.VERSION.SDK_INT >= 29) {
+                val roles = getSystemService(android.app.role.RoleManager::class.java)
+                if (roles?.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT) == true) startActivity(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))
+                else startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
+            }
+        }
+    }
+
     private fun openAccessibility() { runCatching { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } }
+
     override fun onDestroy() { destroyed = true; scope.cancel(); super.onDestroy() }
+
     companion object { private const val REQUEST_MIC = 7101 }
 }
