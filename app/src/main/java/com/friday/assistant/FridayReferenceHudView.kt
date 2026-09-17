@@ -45,7 +45,8 @@ class FridayReferenceHudView(context: Context) : View(context) {
     private var cpu = 0f
     private var previousTotal = 0L
     private var previousIdle = 0L
-    private var telemetry = DeviceTelemetry.snapshot(context)
+    // Telemetry is deliberately lazy/safe: a vendor-specific sensor failure must never crash HUD construction.
+    private var telemetry = runCatching { DeviceTelemetry.snapshot(context.applicationContext) }.getOrNull()
 
     private val bg = Color.rgb(4, 2, 3)
     private val panel = Color.rgb(17, 6, 8)
@@ -56,12 +57,7 @@ class FridayReferenceHudView(context: Context) : View(context) {
     private val soft = Color.rgb(196, 99, 105)
     private val white = Color.rgb(244, 220, 221)
 
-    init {
-        isClickable = true
-        // Keep the reference HUD appearance, but let Android use the phone's hardware canvas.
-        // Forcing a software layer here was unnecessary and could make this continuously animated
-        // full-screen renderer unstable on modern Samsung devices.
-    }
+    init { isClickable = true }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -150,7 +146,7 @@ class FridayReferenceHudView(context: Context) : View(context) {
         text(c, "•••", 688f, 713f, 12f, soft, true)
         task(c, taskText(), 752f)
         task(c, "Voice: ${state.stage}", 781f)
-        task(c, "Network: ${telemetry.network}", 810f)
+        task(c, "Network: ${telemetry?.network ?: "--"}", 810f)
         task(c, "Gemini: ${if (geminiReady()) "CONNECTED" else "OFFLINE"}", 839f)
         graph(c, 452f, 858f, 706f, 914f)
         text(c, "ACTIVE LOG", 451f, 947f, 13f, white, true)
@@ -302,13 +298,16 @@ class FridayReferenceHudView(context: Context) : View(context) {
     }
 
     private fun sample() {
-        telemetry = runCatching { DeviceTelemetry.snapshot(context) }.getOrElse { telemetry }
-        battery = telemetry.batteryPercent
-        ramUsed = telemetry.ramUsedGb
-        ramTotal = telemetry.ramTotalGb
-        storageUsed = telemetry.storageUsedGb
-        storageTotal = telemetry.storageTotalGb
-        temperature = telemetry.batteryTempC
+        telemetry = runCatching { DeviceTelemetry.snapshot(context.applicationContext) }.getOrElse { telemetry }
+        val current = telemetry
+        if (current != null) {
+            battery = current.batteryPercent
+            ramUsed = current.ramUsedGb
+            ramTotal = current.ramTotalGb
+            storageUsed = current.storageUsedGb
+            storageTotal = current.storageTotalGb
+            temperature = current.batteryTempC
+        }
         val activity = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         if (activity != null) {
             val cpuNow = readCpu()
