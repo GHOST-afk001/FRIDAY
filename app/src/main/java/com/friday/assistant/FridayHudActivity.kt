@@ -24,7 +24,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
-/** Main FRIDAY screen. The first frame is deliberately minimal so HUD construction can never block launcher startup. */
+/** Main FRIDAY screen. The supplied reference HUD remains the only visual surface. */
 class FridayHudActivity : ComponentActivity() {
     private var hud: FridayReferenceHudView? = null
     private val scope = MainScope()
@@ -38,11 +38,7 @@ class FridayHudActivity : ComponentActivity() {
         enterImmersiveHud()
         setContentView(startupView())
 
-        // Do not construct the custom renderer during Activity launch. Samsung can reject heavy
-        // canvas/software-renderer initialization on the launch transaction; delaying it isolates that path.
-        window.decorView.post {
-            if (!destroyed) attachHudSafely()
-        }
+        window.decorView.post { if (!destroyed) attachHudSafely() }
     }
 
     private fun startupView(): TextView = TextView(this).apply {
@@ -64,6 +60,14 @@ class FridayHudActivity : ComponentActivity() {
             }
             hud = view
             setContentView(view)
+
+            // Keep the HUD state synchronized with the real voice/brain runtime.
+            scope.launch {
+                FridayStateFlow.state.collect { value ->
+                    if (!destroyed) hud?.render(value)
+                }
+            }
+
             FridayRuntime.update("READY", "FRIDAY HUD ready — hands-free voice active", true)
             requestMicrophoneFirst()
         } catch (_: Throwable) {
