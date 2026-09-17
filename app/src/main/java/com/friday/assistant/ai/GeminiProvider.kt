@@ -9,7 +9,7 @@ import java.net.URL
 data class GeminiToolCall(val id: String, val name: String, val args: JSONObject)
 data class GeminiReply(val text: String? = null, val toolCall: GeminiToolCall? = null, val modelContent: JSONObject? = null)
 
-/** Gemini bridge with native function calling for real Android actions. */
+/** REST Gemini bridge with native function calling for Android actions. */
 class GeminiProvider(context: Context) {
     private val keyStore = SecureApiKeyStore(context)
     private val model = "gemini-3.8-flash"
@@ -44,9 +44,18 @@ class GeminiProvider(context: Context) {
     private fun request(contents: JSONArray): Result<GeminiReply> {
         val apiKey = runCatching { keyStore.read() }.getOrNull() ?: return Result.failure(IllegalStateException("Gemini API key is not configured."))
         return runCatching {
-            val declaration = JSONObject().put("name", "android_command").put("description", "Execute a supported Android command on the user's phone. Return only an action that the local executor can perform.").put("parameters", JSONObject().put("type", "OBJECT").put("properties", JSONObject().put("command", JSONObject().put("type", "STRING").put("description", "Natural-language Android action to execute"))).put("required", JSONArray().put("command")))
+            val declaration = JSONObject()
+                .put("name", "android_command")
+                .put("description", "Execute a supported Android command on the user's phone.")
+                .put("parameters", JSONObject()
+                    .put("type", "OBJECT")
+                    .put("properties", JSONObject().put("command", JSONObject().put("type", "STRING").put("description", "Natural-language Android action to execute")))
+                    .put("required", JSONArray().put("command")))
             val tools = JSONArray().put(JSONObject().put("functionDeclarations", JSONArray().put(declaration)))
-            val body = JSONObject().put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", SYSTEM_PROMPT)))).put("contents", contents).put("tools", tools).put("generationConfig", JSONObject().put("maxOutputTokens", 1200))
+            val body = JSONObject()
+                .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", SYSTEM_PROMPT))))
+                .put("contents", contents).put("tools", tools)
+                .put("generationConfig", JSONObject().put("maxOutputTokens", 1200))
             val connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"; connectTimeout = 12000; readTimeout = 30000; doOutput = true
                 setRequestProperty("Content-Type", "application/json"); setRequestProperty("x-goog-api-key", apiKey); setRequestProperty("Cache-Control", "no-store")
@@ -71,9 +80,9 @@ class GeminiProvider(context: Context) {
         var call: GeminiToolCall? = null
         for (i in 0 until parts.length()) {
             val part = parts.optJSONObject(i) ?: continue
-            part.optString("text").takeIf { it.isNotBlank() }?.let { text = if (text == null) it else "$text\n$it" }
-            val fc = part.optJSONObject("functionCall")
-            if (fc != null) call = GeminiToolCall(fc.optString("id", "android_command_$i"), fc.optString("name"), fc.optJSONObject("args") ?: JSONObject())
+            val value = part.optString("text").trim()
+            if (value.isNotBlank()) text = if (text == null) value else "$text\n$value"
+            part.optJSONObject("functionCall")?.let { fc -> call = GeminiToolCall(fc.optString("id", "android_command_$i"), fc.optString("name"), fc.optJSONObject("args") ?: JSONObject()) }
         }
         return GeminiReply(text?.trim(), call, content)
     }
@@ -81,9 +90,7 @@ class GeminiProvider(context: Context) {
     companion object {
         private const val SYSTEM_PROMPT = """
 You are FRIDAY, Imroz Sir's personal Android AI assistant. Address him as Imroz Sir or Boss. Understand Hindi, Hinglish and English naturally.
-
-You are the reasoning brain; Android's local executor is your hands. For phone actions, use android_command rather than merely describing what to do. Only request actions that are actually supported by the local executor. Never claim an action succeeded unless the executor returns success. Respect confirmation requirements for calls, messages and cross-app control. Never bypass Android permissions, security screens, authentication or privacy boundaries.
-
+You are the reasoning brain; Android's local executor is your hands. For phone actions, use android_command. Only request supported actions. Never claim an action succeeded unless the executor confirms success. Respect confirmation requirements for calls, messages and cross-app control. Never bypass Android permissions, authentication, security or privacy boundaries.
 For normal questions, answer naturally and concisely. Keep spoken responses short and clear for TTS. Do not pretend to have live web access.
 """
     }
