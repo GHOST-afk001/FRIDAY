@@ -21,7 +21,42 @@ class FridayAccessibilityService : AccessibilityService() {
         FridayRuntime.update("AUTOMATION READY", "Accessibility control is connected", true)
     }
 
-    override fun onAccessibilityEvent(event: android.view.accessibility.AccessibilityEvent?) = Unit
+    override fun onAccessibilityEvent(event: android.view.accessibility.AccessibilityEvent?) {
+        if (event?.packageName?.toString() != WHATSAPP_PACKAGE) return
+        if (event.eventType != android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            event.eventType != android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
+        pendingWhatsAppReply?.let { reply ->
+            if (replyToWhatsApp(reply)) pendingWhatsAppReply = null
+        }
+    }
+
+    fun replyToWhatsApp(replyText: String): Boolean {
+        if (replyText.isBlank()) return false
+        return try {
+            val root = rootInActiveWindow ?: return false
+            val entry = findByViewId(root, "$WHATSAPP_PACKAGE:id/entry")
+                ?: return false
+            val args = android.os.Bundle().apply {
+                putCharSequence(
+                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                    replyText
+                )
+            }
+            if (!entry.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
+            val send = findByViewId(root, "$WHATSAPP_PACKAGE:id/send") ?: return false
+            send.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun findByViewId(root: AccessibilityNodeInfo, viewId: String): AccessibilityNodeInfo? {
+        return try {
+            root.findAccessibilityNodeInfosByViewId(viewId).firstOrNull { it.isVisibleToUser }
+        } catch (_: Throwable) {
+            null
+        }
+    }
 
     override fun onInterrupt() {
         if (instance === this) instance = null
@@ -91,6 +126,8 @@ class FridayAccessibilityService : AccessibilityService() {
     }
 
     companion object {
+        private const val WHATSAPP_PACKAGE = "com.whatsapp"
+        @Volatile private var pendingWhatsAppReply: String? = null
         @Volatile private var instance: FridayAccessibilityService? = null
 
         fun isConnected(): Boolean = instance != null
@@ -101,5 +138,12 @@ class FridayAccessibilityService : AccessibilityService() {
         fun openRecents(): Boolean = instance?.openRecents() == true
         fun openNotifications(): Boolean = instance?.openNotifications() == true
         fun tap(x: Float, y: Float): Boolean = instance?.tap(x, y) == true
+        fun replyToWhatsApp(replyText: String): Boolean {
+            val service = instance ?: return false
+            return if (service.replyToWhatsApp(replyText)) true else {
+                pendingWhatsAppReply = replyText
+                false
+            }
+        }
     }
 }

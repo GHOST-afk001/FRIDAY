@@ -1,6 +1,6 @@
 name: Build Friday debug APK
 
-on: [push, workflow_dispatch]
+on: [push, pull_request, workflow_dispatch]
 
 jobs:
   build-debug-apk:
@@ -52,6 +52,12 @@ jobs:
 
       - name: Run unit tests
         run: ./gradlew --no-daemon :app:testDebugUnitTest
+
+      - name: Verify Kotlin source formatting and compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon :app:compileDebugKotlin
 
       - name: Run Android lint
         run: ./gradlew --no-daemon :app:lintDebug

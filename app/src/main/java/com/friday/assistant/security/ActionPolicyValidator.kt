@@ -47,8 +47,11 @@ class ActionPolicyValidator {
         }
         is FridayAction.AccessibilityCommand -> {
             val command = action.command.trim()
-            if (command.isBlank()) Outcome.Rejected("I need an automation command before controlling another app.")
-            else Outcome.RequiresConfirmation(action, "I need your confirmation before controlling another app's visible UI.")
+            when {
+                command.isBlank() -> Outcome.Rejected("I need an automation command before controlling another app.")
+                command.startsWith("whatsapp_message|") -> Outcome.Approved(action)
+                else -> Outcome.RequiresConfirmation(action, "I need your confirmation before controlling another app's visible UI.")
+            }
         }
         else -> Outcome.Approved(action)
     }

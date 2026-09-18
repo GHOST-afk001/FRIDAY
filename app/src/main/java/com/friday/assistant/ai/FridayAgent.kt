@@ -5,6 +5,9 @@ import com.friday.assistant.commands.AppLauncher
 import com.friday.assistant.commands.FridayCommandProcessor
 import com.friday.assistant.commands.FridayResponse
 import com.friday.assistant.commands.UniversalCommandRouter
+import com.friday.assistant.runtime.FridayMemory
+import com.friday.assistant.runtime.FridayNotifications
+import com.friday.assistant.runtime.FridayNotificationReply
 import com.friday.assistant.runtime.FridayRuntime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,10 +27,8 @@ class FridayAgent(context: Context) {
     private val local = FridayCommandProcessor()
     private val launcher = AppLauncher(appContext)
     private val gemini = GeminiProvider(appContext)
-    private val historyPrefs = appContext.getSharedPreferences("friday_memory", Context.MODE_PRIVATE)
-    private val profilePrefs = appContext.getSharedPreferences("friday_profile", Context.MODE_PRIVATE)
+    private val memory = FridayMemory(appContext)
     private val brainScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val memoryLock = Any()
     private val requestGeneration = AtomicLong(0L)
     @Volatile private var closed = false
     @Volatile private var activeRequest: Job? = null
@@ -39,6 +40,27 @@ class FridayAgent(context: Context) {
     fun handle(input: String, callback: (String, Boolean) -> Unit) {
         if (closed) return
         FridayRuntime.update("UNDERSTANDING", "Checking local Android commands", true)
+
+        handleRememberRequest(input)?.let { answer ->
+            remember("user", input)
+            remember("assistant", answer)
+            callback(answer, true)
+            return
+        }
+
+        handleNotificationReply(input)?.let { answer ->
+            remember("user", input)
+            remember("assistant", answer)
+            callback(answer, true)
+            return
+        }
+
+        handleNotificationQuery(input)?.let { answer ->
+            remember("user", input)
+            remember("assistant", answer)
+            callback(answer, true)
+            return
+        }
 
         handleIdentity(input)?.let { answer ->
             remember("user", input)
@@ -75,6 +97,8 @@ class FridayAgent(context: Context) {
                 FridayRuntime.update("AI THINKING", "Gemini is reasoning and can request Android actions", true)
 
                 val enrichedInput = buildString {
+                    append(memory.contextForBrain()).append("\n")
+                    append("Current notification context: ").append(FridayNotifications.describe()).append("\n")
                     append("Use your Android tool when the owner's request requires a phone action. ")
                     append("If the request is ordinary conversation or explanation, answer directly. ")
                     append("Never claim a device action succeeded unless the Android tool reports success.")
@@ -197,13 +221,13 @@ class FridayAgent(context: Context) {
         val value = input.trim()
         val lower = value.lowercase(Locale.ROOT)
         if (lower.matches(Regex("(?:what is|what's|whats) my name\\??")) || lower in setOf("mera naam kya hai", "mera name kya hai", "main kaun hoon", "who am i")) {
-            return "Aap Imroz Sir hain. Main FRIDAY hoon, aapki personal AI assistant."
+            return "Aap " + memory.ownerName() + " Sir hain. Main FRIDAY hoon, aapki personal AI assistant."
         }
         val match = Regex("^(?:my name is|mera naam|mera name|call me)\\s+([\\p{L}][\\p{L} .'-]{1,29})(?:\\s+hai)?[.!]?$", RegexOption.IGNORE_CASE).find(value) ?: return null
         val name = match.groupValues[1].trim().replace(Regex("\\s+hai$", RegexOption.IGNORE_CASE), "").trim()
         if (name.isBlank()) return null
-        profilePrefs.edit().putString("owner_name", name).apply()
-        return "Understood, Imroz Sir. Main aapka naam yaad rakhungi."
+        memory.setOwnerName(name)
+        return "Understood, " + name + " Sir. Main aapka naam yaad rakhungi."
     }
 
     fun close() {
@@ -217,22 +241,53 @@ class FridayAgent(context: Context) {
         FridayRuntime.update("IDLE", "FRIDAY brain stopped", true)
     }
 
-    private fun remember(role: String, text: String) {
-        synchronized(memoryLock) {
-            val items = loadHistoryLocked().toMutableList()
-            items.add(role to text.take(1200))
-            val trimmed = items.takeLast(30)
-            val encoded = trimmed.joinToString("\n") { "${it.first}|${it.second.replace("\n", " ")}" }
-            historyPrefs.edit().putString("history", encoded).apply()
+    private fun handleNotificationReply(input: String): String? {
+        val lower = input.trim().lowercase(Locale.ROOT)
+        val replyIntent = lower.contains("reply") || lower.contains("jawab") ||
+            (lower.contains("message") && lower.contains("usko"))
+        if (!replyIntent) return null
+        val target = FridayNotifications.latest()
+            ?: return "Boss, mujhe reply karne ke liye koi recent notification nahi mil rahi."
+        val message = listOf(
+            Regex("(?:reply|jawab)(?:\\s+(?:kardo|kar do|do))?\\s+(?:usko|him|her|them)\\s+(?:ki|that|bolo|bol do)\\s+(.+)$", RegexOption.IGNORE_CASE),
+            Regex("(?:message|msg)\\s+(?:usko|him|her|them)\\s+(?:ki|that|bolo|bol do)\\s+(.+)$", RegexOption.IGNORE_CASE),
+            Regex("(?:reply|jawab)\\s+(?:with|mein)\\s+(.+)$", RegexOption.IGNORE_CASE)
+        ).firstNotNullOfOrNull { it.find(input.trim())?.groupValues?.get(1)?.trim()?.removeSuffix(".") }
+            ?: return "Boss, " + target.title.ifBlank { target.app } + " ko kya reply bhejun?"
+        val sent = FridayNotificationReply.send(target, message)
+        return if (sent) "Done Boss. Maine " + target.title.ifBlank { target.app } + " ko reply bhej diya."
+        else "Boss, is notification mein direct reply action available nahi hai. Accessibility access enabled ho to main UI automation fallback use kar sakti hoon."
+    }
+
+    private fun handleNotificationQuery(input: String): String? {
+        val lower = input.trim().lowercase(Locale.ROOT)
+        val asks = lower.contains("notification") || lower.contains("message aaya") || lower.contains("msg aaya") ||
+            lower.contains("kisne message") || lower.contains("who messaged")
+        if (!asks) return null
+        val query = Regex("(?:from|se|ka|ki|ke)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,35})", RegexOption.IGNORE_CASE)
+            .find(input)?.groupValues?.get(1)?.trim()
+        return FridayNotifications.describe(query).let { result ->
+            if (result == "There are no recent notifications.") "Boss, abhi koi recent notification nahi hai." else result
         }
     }
 
-    private fun loadHistory(): List<Pair<String, String>> = synchronized(memoryLock) { loadHistoryLocked() }
+    private fun handleRememberRequest(input: String): String? {
+        val match = Regex("^(?:remember|please remember|yaad rakhna|yaad rakh|yaad rakh lo|save this)\\s*[:,-]?\\s*(.+)$", RegexOption.IGNORE_CASE).find(input.trim())
+            ?: return null
+        val fact = match.groupValues[1].trim().removeSuffix(".")
+        return if (memory.rememberFact(fact)) {
+            "Done Boss. Main ise apni persistent memory mein yaad rakhungi."
+        } else {
+            "Boss, main passwords, OTPs ya API keys ko memory mein save nahi karungi."
+        }
+    }
 
-    private fun loadHistoryLocked(): List<Pair<String, String>> = historyPrefs.getString("history", "").orEmpty().lineSequence().mapNotNull {
-        val p = it.indexOf('|')
-        if (p <= 0) null else it.substring(0, p) to it.substring(p + 1)
-    }.toList()
+    private fun remember(role: String, text: String) {
+        memory.rememberConversation(role, text)
+    }
+
+    private fun loadHistory(): List<Pair<String, String>> = memory.history()
+
 
     companion object {
         private const val MAX_TOOL_TURNS = 4

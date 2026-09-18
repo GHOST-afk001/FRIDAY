@@ -9,7 +9,7 @@ class FridayCommandProcessor {
         val raw = input.trim()
         if (raw.isBlank()) return FridayResponse("I didn't catch that. Please say it again.")
         parseWhatsappMessage(raw)?.let { (name, message) ->
-            return FridayResponse("${name.trim()} ko WhatsApp message prepare karne ke liye confirmation chahiye.", FridayAction.AccessibilityCommand("whatsapp_message|${name.trim()}|${message.trim()}"), needsConfirmation = true)
+            return FridayResponse("${name.trim()} ko WhatsApp message bhej rahi hoon.", FridayAction.AccessibilityCommand("whatsapp_message|${name.trim()}|${message.trim()}"), needsConfirmation = false)
         }
         CompoundCommandParser.parse(raw, this)?.let { return it }
         return processWithoutCompound(raw)
