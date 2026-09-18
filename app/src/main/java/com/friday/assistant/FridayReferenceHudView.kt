@@ -12,7 +12,6 @@ import android.os.Looper
 import android.view.MotionEvent
 import android.view.View
 import com.friday.assistant.ai.SecureApiKeyStore
-import com.friday.assistant.runtime.DeviceTelemetry
 import com.friday.assistant.runtime.FridayUiState
 import kotlin.math.cos
 import kotlin.math.max
@@ -37,7 +36,6 @@ class FridayReferenceHudView(context: Context) : View(context) {
     private var cpu = 0f
     private var previousTotal = 0L
     private var previousIdle = 0L
-    private var telemetry = runCatching { DeviceTelemetry.snapshot(context.applicationContext) }.getOrNull()
     private val bg = Color.rgb(4, 2, 3)
     private val panel = Color.rgb(17, 6, 8)
     private val panel2 = Color.rgb(25, 9, 11)
@@ -102,7 +100,7 @@ class FridayReferenceHudView(context: Context) : View(context) {
     private fun box(c:Canvas,left:Float,top:Float,right:Float,bottom:Float,color:Int,radius:Float,stroke:Int?){paint.style=if(stroke!=null)Paint.Style.STROKE else Paint.Style.FILL;paint.strokeWidth=1f;paint.color=stroke?:color;paint.alpha=255;c.drawRoundRect(RectF(left,top,right,bottom),radius,radius,paint);paint.style=Paint.Style.FILL}
     private fun line(c:Canvas,x1:Float,y1:Float,x2:Float,y2:Float,color:Int,width:Float){paint.style=Paint.Style.STROKE;paint.strokeWidth=width;paint.color=color;paint.alpha=255;c.drawLine(x1,y1,x2,y2,paint);paint.style=Paint.Style.FILL}
     private fun text(c:Canvas,value:String,x:Float,y:Float,size:Float,color:Int,bold:Boolean){paint.style=Paint.Style.FILL;paint.color=color;paint.alpha=255;paint.textSize=size;paint.typeface=if(bold)android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.BOLD)else android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.NORMAL);c.drawText(value,x,y,paint)}
-    private fun sample(){telemetry=runCatching{DeviceTelemetry.snapshot(context.applicationContext)}.getOrElse{telemetry};val current=telemetry;if(current!=null){battery=current.batteryPercent;ramUsed=current.ramUsedGb;ramTotal=current.ramTotalGb;storageUsed=current.storageUsedGb;storageTotal=current.storageTotalGb;temperature=current.batteryTempC};val cpuNow=readCpu();if(cpuNow>=0f)cpu=cpuNow}
+    private fun sample(){val cpuNow=readCpu();if(cpuNow>=0f)cpu=cpuNow}
     private fun readCpu():Float=runCatching{val first=java.io.File("/proc/stat").bufferedReader().use{it.readLine()};val parts=first.trim().split(Regex("\\s+"));if(parts.size<5)return 0f;val user=parts[1].toLong();val nice=parts[2].toLong();val system=parts[3].toLong();val idle=parts[4].toLong();val iowait=parts.getOrNull(5)?.toLongOrNull()?:0L;val irq=parts.getOrNull(6)?.toLongOrNull()?:0L;val softirq=parts.getOrNull(7)?.toLongOrNull()?:0L;val total=user+nice+system+idle+iowait+irq+softirq;if(previousTotal==0L){previousTotal=total;previousIdle=idle;return 0f};val totalDelta=total-previousTotal;val idleDelta=idle-previousIdle;previousTotal=total;previousIdle=idle;if(totalDelta<=0L)0f else ((totalDelta-idleDelta).toFloat()/totalDelta*100f).coerceIn(0f,100f)}.getOrDefault(0f)
     private fun geminiReady():Boolean=runCatching{SecureApiKeyStore(context).read()?.isNotBlank()==true}.getOrDefault(false)
     private fun clock():String=java.text.SimpleDateFormat("HH:mm",java.util.Locale.getDefault()).format(java.util.Date())
