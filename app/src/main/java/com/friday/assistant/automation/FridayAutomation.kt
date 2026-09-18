@@ -2,6 +2,9 @@ package com.friday.assistant.automation
 
 /** Safe command bridge for explicit cross-app UI automation. */
 object FridayAutomation {
+    fun isConnected(): Boolean = FridayAccessibilityService.isConnected()
+
+    fun clickSend(): Boolean = FridayAccessibilityService.clickText("Send") || FridayAccessibilityService.clickText("भेजें") || FridayAccessibilityService.clickDescription("Send")
     fun tryExecute(input: String): String? {
         if (!FridayAccessibilityService.isConnected()) return null
         val text = input.trim()

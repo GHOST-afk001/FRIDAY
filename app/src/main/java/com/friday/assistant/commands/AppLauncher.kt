@@ -12,6 +12,8 @@ import android.provider.AlarmClock
 import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.provider.Settings
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.ContextCompat
 import com.friday.assistant.automation.FridayAutomation
 import com.friday.assistant.runtime.FridayRuntime
@@ -126,8 +128,12 @@ class AppLauncher(private val context: Context) {
         val phone = number.filter { it.isDigit() }
         if (phone.isBlank()) return false
         val uri = Uri.parse("https://wa.me/$phone?text=${Uri.encode(message)}")
+        if (!FridayAutomation.isConnected()) return false
         val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.whatsapp") }
-        return if (start(intent)) true else start(Intent(Intent.ACTION_VIEW, uri))
+        val opened = start(intent) || start(Intent(Intent.ACTION_VIEW, uri))
+        if (!opened) return false
+        Handler(Looper.getMainLooper()).postDelayed({ FridayAutomation.clickSend() }, 1800L)
+        return true
     }
 
     private fun openCalculator(): Boolean {

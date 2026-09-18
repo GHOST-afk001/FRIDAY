@@ -217,9 +217,10 @@ class FridayWakeDetector(
         } catch (e: SecurityException) {
             FridayRuntime.update("MIC ERROR", "Android denied wake microphone access", false)
             Log.w(TAG, "Microphone access unavailable", e)
-        } catch (e: Exception) {
-            FridayRuntime.update("WAKE ERROR", e.message ?: "Wake detector stopped unexpectedly", false)
-            Log.e(TAG, "Wake detector stopped", e)
+        } catch (e: Throwable) {
+            // Optional wake-word/native failures must never take down the FRIDAY process.
+            FridayRuntime.update("WAKE ERROR", e.message ?: e.javaClass.simpleName, false)
+            Log.e(TAG, "Wake detector stopped safely", e)
         } finally {
             try { localRecorder?.stop() } catch (_: Exception) {}
             try { localRecorder?.release() } catch (_: Exception) {}
