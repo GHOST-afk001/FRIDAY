@@ -56,6 +56,7 @@ class FridayHudActivity : ComponentActivity() {
         setContentView(buildHud())
         runtimeSubscription = FridayRuntime.observe(::renderRuntime)
         renderRuntime(FridayRuntime.status)
+        startHandsFreeIfReady()
     }
 
     private fun buildHud(): View {
@@ -138,6 +139,13 @@ class FridayHudActivity : ComponentActivity() {
         bottom.addView(geminiStatusLabel)
         bottom.addView(wakeStatusLabel)
         bottom.addView(systemStatusLabel)
+
+        val keyButton = android.widget.Button(this).apply {
+            text = "GEMINI API KEY / BRAIN SETTINGS"
+            setOnClickListener { showGeminiKeyDialog() }
+        }
+        bottom.addView(keyButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(8) })
+
         root.addView(bottom, matchWrap())
 
         return root
@@ -186,6 +194,59 @@ class FridayHudActivity : ComponentActivity() {
             systemStatusLabel?.text = "SYSTEM • " + if (healthy) "NOMINAL" else status.stage
             orbLabel?.text = if (active) "◉" else "◉"
             orbLabel?.setTextColor(if (healthy) orange else red)
+        }
+    }
+
+    private fun showGeminiKeyDialog() {
+        val input = android.widget.EditText(this).apply {
+            hint = "Paste Gemini API key"
+            singleLine = true
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(4), dp(24), 0)
+            addView(input, LinearLayout.LayoutParams(-1, dp(52)))
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("FRIDAY Gemini Brain")
+            .setMessage(if (agent.hasApiKey()) "Gemini is already connected. Paste a new key to replace it." else "Add your Gemini API key to enable FRIDAY's AI brain.")
+            .setView(box)
+            .setPositiveButton("SAVE & CONNECT") { _, _ ->
+                val key = input.text?.toString()?.trim().orEmpty()
+                if (key.isBlank()) {
+                    android.widget.Toast.makeText(this, "Please enter a Gemini API key.", android.widget.Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                agent.configureApiKey(key)
+                FridayRuntime.update("GEMINI READY", "Gemini API key connected", true)
+                startHandsFreeIfReady()
+            }
+            .setNegativeButton("CANCEL", null)
+            .show()
+    }
+
+    private fun startHandsFreeIfReady() {
+        if (!agent.hasApiKey()) {
+            FridayRuntime.update("GEMINI SETUP", "Add your Gemini API key to activate FRIDAY", true)
+            return
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_MIC)
+            return
+        }
+        runCatching {
+            com.friday.assistant.voice.FridayAlwaysOnService.start(this)
+            FridayRuntime.update("WAKE LISTENING", "Hands-free active • say Hey Friday", true)
+        }.onFailure {
+            FridayRuntime.update("VOICE ERROR", it.message ?: "Could not start hands-free service", false)
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_MIC && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            startHandsFreeIfReady()
         }
     }
 
