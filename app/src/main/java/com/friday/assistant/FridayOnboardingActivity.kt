@@ -48,6 +48,9 @@ import com.friday.assistant.ai.FridayAgent
 import com.friday.assistant.runtime.FridayStateFlow
 import com.friday.assistant.ui.FridayDynamicOrb
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** First-run bridge. Kept visually consistent with the main FRIDAY HUD. */
 class FridayOnboardingActivity : ComponentActivity() {
@@ -122,6 +125,9 @@ class FridayOnboardingActivity : ComponentActivity() {
     private fun Onboarding() {
         var key by remember { mutableStateOf("") }
         var saved by remember { mutableStateOf(agent.hasApiKey()) }
+        var connecting by remember { mutableStateOf(false) }
+        var connectError by remember { mutableStateOf<String?>(null) }
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
         var accessibility by remember { mutableStateOf(isAccessibilityEnabled()) }
         var assistantSelected by remember { mutableStateOf(isAssistantSelected()) }
         val orbState by FridayStateFlow.state.collectAsState()
@@ -191,7 +197,10 @@ class FridayOnboardingActivity : ComponentActivity() {
                                         }
                                     },
                                     modifier = Modifier.fillMaxWidth()
-                                ) { Text("CONNECT GEMINI BRAIN") }
+                                ) { Text(if (connecting) "VERIFYING GEMINI…" else "CONNECT GEMINI BRAIN") }
+                                connectError?.let { message ->
+                                    Text(message, color = Color(0xFFFF6B6B), fontSize = 9.sp, textAlign = TextAlign.Center)
+                                }
                             }
 
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
