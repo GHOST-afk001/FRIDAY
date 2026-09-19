@@ -33,7 +33,7 @@ class FridayAgent(context: Context) {
     @Volatile private var closed = false
     @Volatile private var activeRequest: Job? = null
 
-    fun configureApiKey(key: String) { if (!closed) gemini.setApiKey(key) }
+    fun configureApiKey(key: String): Boolean = !closed && gemini.setApiKey(key)
     fun hasApiKey() = !closed && gemini.isConfigured()
     fun clearApiKey() { if (!closed) gemini.clearApiKey() }
 
