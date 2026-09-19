@@ -11,9 +11,25 @@ android {
         applicationId = "com.friday.assistant"
         minSdk = 27
         targetSdk = 36
-        versionCode = 447
-        versionName = "4.47"
+        versionCode = 448
+        versionName = "4.48"
     }
+
+    signingConfigs {
+        create("fridayStable") {
+            storeFile = file("../signing/friday-release.jks")
+            storePassword = "FridayStable2026!"
+            keyAlias = "friday"
+            keyPassword = "FridayStable2026!"
+        }
+    }
+
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("fridayStable")
+        }
+    }
+
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
