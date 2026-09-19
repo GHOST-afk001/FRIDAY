@@ -12,7 +12,6 @@ import android.os.Looper
 import android.view.MotionEvent
 import android.view.View
 import com.friday.assistant.ai.SecureApiKeyStore
-import com.friday.assistant.runtime.DeviceTelemetry
 import com.friday.assistant.runtime.FridayUiState
 import kotlin.math.cos
 import kotlin.math.max
@@ -37,7 +36,6 @@ class FridayReferenceHudView(context: Context) : View(context) {
     private var cpu = 0f
     private var previousTotal = 0L
     private var previousIdle = 0L
-    private var telemetry = runCatching { DeviceTelemetry.snapshot(context.applicationContext) }.getOrNull()
     private val bg = Color.rgb(4, 2, 3)
     private val panel = Color.rgb(17, 6, 8)
     private val panel2 = Color.rgb(25, 9, 11)
@@ -86,7 +84,7 @@ class FridayReferenceHudView(context: Context) : View(context) {
         text(c,"DATA  •  SYSTEM TELEMETRY",58f,500f,7f,soft,true); text(c,"LIVE",684f,500f,7f,orange,true); drawCore(c,384f,562f); text(c,"GEMINI 3.8",333f,598f,17f,orange,true); text(c,"CORE",360f,621f,17f,orange,true); text(c,"PROTOCOL",340f,644f,17f,orange,true); text(c,state.stage.take(24),314f,661f,8f,if(state.healthy) soft else red,true)
         box(c,40f,682f,421f,1157f,panel,20f,line); box(c,434f,682f,728f,1157f,panel,20f,line); text(c,"MESSAGES / NOTIFICATIONS",56f,713f,13f,white,true); text(c,"•••",365f,713f,12f,soft,true); icons(c)
         val voiceMessage=if(state.stage=="HEARD")state.detail else "FRIDAY hands-free engine"; notification(c,"VOICE",voiceMessage,"LIVE",778f,0); notification(c,"SYSTEM","Microphone + command path","LIVE",846f,1); notification(c,"AI CORE",if(geminiReady())"Gemini cloud brain connected" else "Gemini setup required","NOW",914f,2); notification(c,"FRIDAY","Waiting for your next command","NOW",982f,3)
-        text(c,"CURRENT TASK",451f,713f,13f,white,true); text(c,"•••",688f,713f,12f,soft,true); task(c,taskText(),752f); task(c,"Voice: ${state.stage}",781f); task(c,"Network: ${telemetry?.network ?: "--"}",810f); task(c,"Gemini: ${if(geminiReady())"CONNECTED" else "OFFLINE"}",839f); graph(c,452f,858f,706f,914f)
+        text(c,"CURRENT TASK",451f,713f,13f,white,true); text(c,"•••",688f,713f,12f,soft,true); task(c,taskText(),752f); task(c,"Voice: ${state.stage}",781f); task(c,"Network: ${"--" ?: "--"}",810f); task(c,"Gemini: ${if(geminiReady())"CONNECTED" else "OFFLINE"}",839f); graph(c,452f,858f,706f,914f)
         text(c,"ACTIVE LOG",451f,947f,13f,white,true); text(c,"•••",688f,947f,12f,soft,true); log(c,"Runtime heartbeat",980f,0); log(c,"Speech recognition",1008f,1); log(c,"Local command router",1036f,2); log(c,"Android action bridge",1064f,3); log(c,"TTS response",1092f,4)
         text(c,"MIC",59f,1190f,8f,soft,true); val amp=(state.audioAmplitude*100f).toInt().coerceIn(0,100); text(c,"$amp%",91f,1190f,8f,orange,true); meter(c,59f,1202f,406f,amp/100f); text(c,"${state.stage}  •  ${short(state.detail)}",59f,1228f,8f,soft,false); text(c,"VOICE: HANDS-FREE   •   CORE: LIVE   •   ACTIONS: LOCAL",59f,1252f,7f,soft,false); text(c,"FRIDAY  //  PERSONAL INTELLIGENCE SYSTEM",59f,1307f,8f,Color.rgb(102,48,54),true)
     }
@@ -102,7 +100,7 @@ class FridayReferenceHudView(context: Context) : View(context) {
     private fun box(c:Canvas,left:Float,top:Float,right:Float,bottom:Float,color:Int,radius:Float,stroke:Int?){paint.style=if(stroke!=null)Paint.Style.STROKE else Paint.Style.FILL;paint.strokeWidth=1f;paint.color=stroke?:color;paint.alpha=255;c.drawRoundRect(RectF(left,top,right,bottom),radius,radius,paint);paint.style=Paint.Style.FILL}
     private fun line(c:Canvas,x1:Float,y1:Float,x2:Float,y2:Float,color:Int,width:Float){paint.style=Paint.Style.STROKE;paint.strokeWidth=width;paint.color=color;paint.alpha=255;c.drawLine(x1,y1,x2,y2,paint);paint.style=Paint.Style.FILL}
     private fun text(c:Canvas,value:String,x:Float,y:Float,size:Float,color:Int,bold:Boolean){paint.style=Paint.Style.FILL;paint.color=color;paint.alpha=255;paint.textSize=size;paint.typeface=if(bold)android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.BOLD)else android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.NORMAL);c.drawText(value,x,y,paint)}
-    private fun sample(){telemetry=runCatching{DeviceTelemetry.snapshot(context.applicationContext)}.getOrElse{telemetry};val current=telemetry;if(current!=null){battery=current.batteryPercent;ramUsed=current.ramUsedGb;ramTotal=current.ramTotalGb;storageUsed=current.storageUsedGb;storageTotal=current.storageTotalGb;temperature=current.batteryTempC};val cpuNow=readCpu();if(cpuNow>=0f)cpu=cpuNow}
+    private fun sample(){val cpuNow=readCpu();if(cpuNow>=0f)cpu=cpuNow}
     private fun readCpu():Float=runCatching{val first=java.io.File("/proc/stat").bufferedReader().use{it.readLine()};val parts=first.trim().split(Regex("\\s+"));if(parts.size<5)return 0f;val user=parts[1].toLong();val nice=parts[2].toLong();val system=parts[3].toLong();val idle=parts[4].toLong();val iowait=parts.getOrNull(5)?.toLongOrNull()?:0L;val irq=parts.getOrNull(6)?.toLongOrNull()?:0L;val softirq=parts.getOrNull(7)?.toLongOrNull()?:0L;val total=user+nice+system+idle+iowait+irq+softirq;if(previousTotal==0L){previousTotal=total;previousIdle=idle;return 0f};val totalDelta=total-previousTotal;val idleDelta=idle-previousIdle;previousTotal=total;previousIdle=idle;if(totalDelta<=0L)0f else ((totalDelta-idleDelta).toFloat()/totalDelta*100f).coerceIn(0f,100f)}.getOrDefault(0f)
     private fun geminiReady():Boolean=runCatching{SecureApiKeyStore(context).read()?.isNotBlank()==true}.getOrDefault(false)
     private fun clock():String=java.text.SimpleDateFormat("HH:mm",java.util.Locale.getDefault()).format(java.util.Date())

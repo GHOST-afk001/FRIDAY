@@ -1,223 +1,140 @@
 package com.friday.assistant
 
-import android.Manifest
-import android.app.AlertDialog
-import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Color
-import android.os.Build
+import android.graphics.Typeface
 import android.os.Bundle
-import android.provider.Settings
 import android.view.Gravity
-import android.view.WindowInsets
-import android.view.WindowInsetsController
-import android.view.WindowManager
-import android.widget.EditText
+import android.view.View
+import android.view.ViewGroup
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.Space
 import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.core.content.ContextCompat
-import com.friday.assistant.ai.GeminiProvider
-import com.friday.assistant.ai.SecureApiKeyStore
-import com.friday.assistant.runtime.FridayRuntime
-import com.friday.assistant.runtime.FridayStateFlow
-import com.friday.assistant.voice.FridayHandsFreeService
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.MainScope
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import android.graphics.drawable.GradientDrawable
 
-/** Stable FRIDAY launcher. Keeps the proven reference HUD without auto-starting a microphone FGS. */
+/**
+ * Native HUD step 1.
+ *
+ * This rebuilds the visible FRIDAY HUD using standard Android Views only.
+ * No Canvas, custom drawing, animation, telemetry, voice, permissions or Gemini startup.
+ * Build #790 proved this View hierarchy is stable on the Samsung device.
+ */
 class FridayHudActivity : ComponentActivity() {
-    private var hud: FridayReferenceHudView? = null
-    private val scope = MainScope()
-    private var destroyed = false
+
+    private val orange = Color.rgb(255, 137, 48)
+    private val red = Color.rgb(229, 72, 78)
+    private val pale = Color.rgb(244, 220, 221)
+    private val panel = Color.rgb(15, 8, 10)
+    private val border = Color.rgb(107, 31, 37)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        enterImmersiveHud()
-        setContentView(startupView())
-        window.decorView.post { if (!destroyed) attachHudSafely() }
+        setContentView(buildHud())
     }
 
-    private fun startupView(): TextView = TextView(this).apply {
-        setBackgroundColor(Color.rgb(4, 2, 3))
-        setTextColor(Color.rgb(255, 137, 48))
-        textSize = 16f
-        text = "FRIDAY"
+    private fun buildHud(): View {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            setBackgroundColor(Color.rgb(4, 2, 3))
+            layoutParams = ViewGroup.LayoutParams(-1, -1)
+        }
+
+        val header = panelLayout()
+        header.addView(label("ULTIMATE", 27f, pale, true))
+        header.addView(label("FRIDAY • J.A.R.V.I.S / ULTRON CORE AI", 12f, orange, false))
+        header.addView(label("FRIDAY", 34f, red, true))
+        root.addView(header, matchWrap())
+
+        root.addView(space(14))
+
+        val statusRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val mode = panelLayout()
+        mode.addView(label("MODE", 11f, red, true))
+        mode.addView(label("STANDBY", 18f, orange, true))
+        statusRow.addView(mode, LinearLayout.LayoutParams(0, dp(74), 1f))
+
+        statusRow.addView(space(10))
+
+        val health = panelLayout()
+        health.addView(label("SYSTEM HEALTH", 11f, red, true))
+        health.addView(label("ONLINE", 18f, orange, true))
+        statusRow.addView(health, LinearLayout.LayoutParams(0, dp(74), 1f))
+
+        root.addView(statusRow)
+
+        root.addView(space(18))
+
+        val core = panelLayout().apply {
+            gravity = Gravity.CENTER
+        }
+        core.addView(label("◉", 54f, orange, true))
+        core.addView(label("GEMINI CORE", 18f, pale, true))
+        core.addView(label("AI ENGINE READY", 11f, orange, false))
+
+        val coreBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            progress = 72
+            progressTintList = android.content.res.ColorStateList.valueOf(orange)
+            layoutParams = LinearLayout.LayoutParams(dp(190), dp(5)).apply {
+                topMargin = dp(14)
+            }
+        }
+        core.addView(coreBar)
+
+        root.addView(core, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        root.addView(space(18))
+
+        val bottom = panelLayout()
+        bottom.addView(label("HUD STATUS", 11f, red, true))
+        bottom.addView(label("VOICE • OFFLINE     GEMINI • OFFLINE", 12f, orange, false))
+        bottom.addView(label("WAKE • STANDBY     SYSTEM • NOMINAL", 11f, pale, false))
+        root.addView(bottom, matchWrap())
+
+        return root
+    }
+
+    private fun panelLayout(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER_HORIZONTAL
+        setPadding(dp(16), dp(12), dp(16), dp(12))
+        background = GradientDrawable().apply {
+            setColor(panel)
+            setStroke(dp(1), border)
+            cornerRadius = dp(16).toFloat()
+        }
+    }
+
+    private fun label(
+        textValue: String,
+        size: Float,
+        color: Int,
+        bold: Boolean
+    ): TextView = TextView(this).apply {
+        text = textValue
+        textSize = size
+        setTextColor(color)
+        typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
         gravity = Gravity.CENTER
-    }
-
-    private fun attachHudSafely() {
-        try {
-            val view = FridayReferenceHudView(this)
-            view.actions = object : FridayReferenceHudView.Actions {
-                override fun onGeminiTap() { showGeminiDialog() }
-                override fun onAssistantTap() { openAssistantRole() }
-                override fun onAutomationTap() { openAccessibility() }
-                // This is an explicit, visible-user fallback. It is never started from onResume.
-                override fun onOrbTap() { startManualVoiceFallback() }
-            }
-            hud = view
-            setContentView(view)
-            scope.launch {
-                FridayStateFlow.state.collect { value ->
-                    if (!destroyed) hud?.render(value)
-                }
-            }
-            FridayRuntime.update("READY", "FRIDAY HUD ready", true)
-            requestMicrophoneIfNeeded()
-        } catch (_: Throwable) {
-            FridayRuntime.update("HUD ERROR", "FRIDAY HUD initialization failed safely", false)
-            setContentView(startupView().apply { text = "FRIDAY\n\nHUD initialization failed safely." })
+        includeFontPadding = true
+        layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = dp(3)
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        destroyed = false
-        enterImmersiveHud()
-        // Deliberately no microphone-service startup here. Android 14+ treats microphone
-        // foreground services as while-in-use and can throw when they are created from a
-        // background lifecycle. The selected VoiceInteractionService owns the always-on wake path.
+    private fun space(value: Int): Space = Space(this).apply {
+        layoutParams = LinearLayout.LayoutParams(value, value)
     }
 
-    private fun enterImmersiveHud() {
-        if (Build.VERSION.SDK_INT >= 30) {
-            window.insetsController?.let { controller ->
-                controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
-                controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            run {
-                window.decorView.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
-                    android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                    android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                    android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                    android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                    android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            }
-        }
-    }
+    private fun matchWrap(): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(-1, -2)
 
-    private fun requestMicrophoneIfNeeded() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_MIC)
-        } else {
-            FridayRuntime.update("MIC READY", "Microphone permission is available for Hey Friday", true)
-        }
-    }
-
-    private fun startManualVoiceFallback() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestMicrophoneIfNeeded()
-            return
-        }
-        runCatching {
-            ContextCompat.startForegroundService(this, Intent(this, FridayHandsFreeService::class.java))
-        }.onSuccess {
-            FridayRuntime.update("VOICE FALLBACK", "Listening for one command…", true)
-        }.onFailure {
-            FridayRuntime.update("VOICE ERROR", "Android refused the microphone fallback", false)
-        }
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_MIC) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                FridayRuntime.update("MIC READY", "Microphone permission granted; Hey Friday can listen", true)
-            } else {
-                FridayRuntime.update("MIC BLOCKED", "Microphone permission is required for hands-free voice", false)
-            }
-        }
-    }
-
-    private fun showGeminiDialog() {
-        val input = EditText(this).apply {
-            hint = "Paste Gemini API key"
-            setSingleLine(true)
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.GRAY)
-            setPadding(24, 16, 24, 16)
-        }
-        val box = android.widget.FrameLayout(this).apply {
-            setPadding(22, 0, 22, 0)
-            addView(input, android.widget.FrameLayout.LayoutParams(-1, -2))
-        }
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("GEMINI CORE")
-            .setMessage("Paste your Gemini API key. CONNECT verifies it with Gemini before accepting it. The key is stored locally using Android Keystore-backed encryption.")
-            .setView(box)
-            .setNegativeButton("CANCEL", null)
-            .setPositiveButton("CONNECT", null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val key = input.text?.toString()?.trim().orEmpty()
-                if (key.isBlank()) {
-                    input.error = "Enter a Gemini API key"
-                    return@setOnClickListener
-                }
-                val oldKey = runCatching { SecureApiKeyStore(applicationContext).read() }.getOrNull()
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
-                FridayRuntime.update("GEMINI CONNECTING", "Verifying Gemini API key…", true)
-                scope.launch {
-                    val result = withContext(Dispatchers.IO) {
-                        runCatching {
-                            val store = SecureApiKeyStore(applicationContext)
-                            if (!store.save(key)) error("Secure key storage failed")
-                            GeminiProvider(applicationContext).ask("Reply with exactly: CONNECTED").getOrThrow()
-                        }
-                    }
-                    if (result.isSuccess) {
-                        FridayRuntime.update("GEMINI CONNECTED", "Cloud brain verified and ready", true)
-                        hud?.invalidate()
-                        dialog.dismiss()
-                    } else {
-                        val store = SecureApiKeyStore(applicationContext)
-                        runCatching { if (!oldKey.isNullOrBlank()) store.save(oldKey) else store.clear() }
-                        dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
-                        input.error = "Gemini connection failed. Check the key and try again."
-                        FridayRuntime.update("GEMINI ERROR", result.exceptionOrNull()?.message ?: "Gemini connection failed", false)
-                    }
-                }
-            }
-        }
-        dialog.show()
-    }
-
-    private fun openAssistantRole() {
-        runCatching {
-            if (Build.VERSION.SDK_INT >= 29) {
-                val roles = getSystemService(android.app.role.RoleManager::class.java)
-                if (roles?.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT) == true) {
-                    startActivity(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))
-                } else {
-                    startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
-                }
-            } else {
-                startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
-            }
-        }.onFailure {
-            FridayRuntime.update("ASSISTANT SETUP", "Open Android voice assistant settings", false)
-        }
-    }
-
-    private fun openAccessibility() {
-        runCatching { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-            .onFailure { FridayRuntime.update("AUTOMATION SETUP", "Open Android Accessibility settings", false) }
-    }
-
-    override fun onDestroy() {
-        destroyed = true
-        scope.cancel()
-        super.onDestroy()
-    }
-
-    companion object {
-        private const val REQUEST_MIC = 7101
-    }
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 }
