@@ -1,8 +1,15 @@
 package com.friday.assistant
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.Typeface
+import android.os.BatteryManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -12,13 +19,17 @@ import android.widget.Space
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import android.graphics.drawable.GradientDrawable
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
- * Native HUD step 1.
+ * Native HUD step 2.
  *
- * This rebuilds the visible FRIDAY HUD using standard Android Views only.
- * No Canvas, custom drawing, animation, telemetry, voice, permissions or Gemini startup.
- * Build #790 proved this View hierarchy is stable on the Samsung device.
+ * Keeps the stable native-View approach from Build #790/#805, but makes the
+ * visible HUD live: clock/date, battery health, mode interaction and a
+ * continuously refreshed system panel. No Canvas, coroutines, Gemini startup,
+ * microphone, wake-word runtime or system assistant bridge is started here.
  */
 class FridayHudActivity : ComponentActivity() {
 
@@ -28,9 +39,41 @@ class FridayHudActivity : ComponentActivity() {
     private val panel = Color.rgb(15, 8, 10)
     private val border = Color.rgb(107, 31, 37)
 
+    private lateinit var clockLabel: TextView
+    private lateinit var dateLabel: TextView
+    private lateinit var modeLabel: TextView
+    private lateinit var batteryLabel: TextView
+    private lateinit var batteryBar: ProgressBar
+    private lateinit var systemLabel: TextView
+    private lateinit var voiceLabel: TextView
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var standby = true
+
+    private val tick = object : Runnable {
+        override fun run() {
+            refreshLiveHud()
+            handler.postDelayed(this, 1000L)
+        }
+    }
+
+    private val batteryReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            updateBattery(intent)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(buildHud())
+        registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        handler.post(tick)
+    }
+
+    override fun onDestroy() {
+        handler.removeCallbacks(tick)
+        runCatching { unregisterReceiver(batteryReceiver) }
+        super.onDestroy()
     }
 
     private fun buildHud(): View {
@@ -43,6 +86,13 @@ class FridayHudActivity : ComponentActivity() {
 
         val header = panelLayout()
         header.addView(label("ULTIMATE", 27f, pale, true))
+
+        clockLabel = label("--:--:--", 21f, orange, true)
+        header.addView(clockLabel)
+
+        dateLabel = label("--", 11f, pale, false)
+        header.addView(dateLabel)
+
         header.addView(label("FRIDAY • J.A.R.V.I.S / ULTRON CORE AI", 12f, orange, false))
         header.addView(label("FRIDAY", 34f, red, true))
         root.addView(header, matchWrap())
@@ -54,17 +104,28 @@ class FridayHudActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        val mode = panelLayout()
+        val mode = panelLayout().apply {
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                standby = !standby
+                updateMode()
+            }
+        }
         mode.addView(label("MODE", 11f, red, true))
-        mode.addView(label("STANDBY", 18f, orange, true))
-        statusRow.addView(mode, LinearLayout.LayoutParams(0, dp(74), 1f))
+        modeLabel = label("STANDBY", 18f, orange, true)
+        mode.addView(modeLabel)
+        mode.addView(label("TAP TO TOGGLE", 8f, pale, false))
+        statusRow.addView(mode, LinearLayout.LayoutParams(0, dp(86), 1f))
 
         statusRow.addView(space(10))
 
         val health = panelLayout()
         health.addView(label("SYSTEM HEALTH", 11f, red, true))
-        health.addView(label("ONLINE", 18f, orange, true))
-        statusRow.addView(health, LinearLayout.LayoutParams(0, dp(74), 1f))
+        systemLabel = label("ONLINE", 18f, orange, true)
+        health.addView(systemLabel)
+        health.addView(label("HUD RUNTIME ACTIVE", 8f, pale, false))
+        statusRow.addView(health, LinearLayout.LayoutParams(0, dp(86), 1f))
 
         root.addView(statusRow)
 
@@ -77,15 +138,23 @@ class FridayHudActivity : ComponentActivity() {
         core.addView(label("GEMINI CORE", 18f, pale, true))
         core.addView(label("AI ENGINE READY", 11f, orange, false))
 
-        val coreBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+        batteryBar = ProgressBar(
+            this,
+            null,
+            android.R.attr.progressBarStyleHorizontal
+        ).apply {
             max = 100
-            progress = 72
-            progressTintList = android.content.res.ColorStateList.valueOf(orange)
+            progress = 0
+            progressTintList =
+                android.content.res.ColorStateList.valueOf(orange)
             layoutParams = LinearLayout.LayoutParams(dp(190), dp(5)).apply {
                 topMargin = dp(14)
             }
         }
-        core.addView(coreBar)
+        core.addView(batteryBar)
+
+        batteryLabel = label("BATTERY --%", 10f, pale, false)
+        core.addView(batteryLabel)
 
         root.addView(core, LinearLayout.LayoutParams(-1, 0, 1f))
 
@@ -93,11 +162,41 @@ class FridayHudActivity : ComponentActivity() {
 
         val bottom = panelLayout()
         bottom.addView(label("HUD STATUS", 11f, red, true))
-        bottom.addView(label("VOICE • OFFLINE     GEMINI • OFFLINE", 12f, orange, false))
+        voiceLabel = label("VOICE • OFFLINE     GEMINI • OFFLINE", 12f, orange, false)
+        bottom.addView(voiceLabel)
         bottom.addView(label("WAKE • STANDBY     SYSTEM • NOMINAL", 11f, pale, false))
         root.addView(bottom, matchWrap())
 
         return root
+    }
+
+    private fun refreshLiveHud() {
+        val now = Date()
+        clockLabel.text = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(now)
+        dateLabel.text =
+            SimpleDateFormat("EEE • dd MMM yyyy", Locale.getDefault()).format(now)
+
+        updateMode()
+    }
+
+    private fun updateMode() {
+        modeLabel.text = if (standby) "STANDBY" else "ACTIVE"
+        voiceLabel.text =
+            if (standby) {
+                "VOICE • OFFLINE     GEMINI • OFFLINE"
+            } else {
+                "VOICE • READY       GEMINI • OFFLINE"
+            }
+    }
+
+    private fun updateBattery(intent: Intent) {
+        val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
+        if (level >= 0 && scale > 0) {
+            val percent = (level * 100 / scale).coerceIn(0, 100)
+            batteryBar.progress = percent
+            batteryLabel.text = "BATTERY $percent%"
+        }
     }
 
     private fun panelLayout(): LinearLayout = LinearLayout(this).apply {
