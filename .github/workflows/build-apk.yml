@@ -30,13 +30,6 @@ jobs:
           set -euo pipefail
           sdkmanager --sdk_root="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"             "platform-tools"             "platforms;android-36"             "build-tools;36.0.0"
 
-      - name: Restore stable FRIDAY signing key
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p signing
-          base64 --decode signing/friday-release.jks.b64 > signing/friday-release.jks
-          test -s signing/friday-release.jks
 
       - name: Prepare Hey Friday wake runtime
         shell: bash
