@@ -16,7 +16,7 @@ class GeminiProvider(context: Context) {
     @Volatile private var activeConnection: HttpURLConnection? = null
 
     fun isConfigured(): Boolean = runCatching { !keyStore.read().isNullOrBlank() }.getOrDefault(false)
-    fun setApiKey(key: String) = keyStore.save(key.trim())
+    fun setApiKey(key: String): Boolean = runCatching {\n        val clean = key.trim()\n        if (clean.isBlank()) return false\n        if (!validateKey(clean)) return false\n        keyStore.save(clean)\n    }.getOrDefault(false)\n\n    private fun validateKey(key: String): Boolean {\n        val connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash").openConnection() as HttpURLConnection).apply {\n            requestMethod = "GET"\n            connectTimeout = 8000\n            readTimeout = 10000\n            setRequestProperty("x-goog-api-key", key)\n            setRequestProperty("Cache-Control", "no-store")\n        }\n        activeConnection = connection\n        return try {\n            val code = connection.responseCode\n            code in 200..299\n        } finally {\n            if (activeConnection === connection) activeConnection = null\n            connection.disconnect()\n        }\n    }
     fun clearApiKey() = keyStore.clear()
     fun cancel() { activeConnection?.disconnect() }
 
