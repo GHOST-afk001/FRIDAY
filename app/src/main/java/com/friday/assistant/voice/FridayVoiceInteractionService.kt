@@ -31,14 +31,38 @@ class FridayVoiceInteractionService : VoiceInteractionService() {
     override fun onReady() {
         super.onReady()
         if (destroyed) return
-        // Intentionally do not start FridayWakeCoordinator here.
-        // This callback is system-managed and can happen before the launcher has ever
-        // been opened. Native wake/ONNX startup is deferred to a safe explicit path.
-        FridayRuntime.update(
-            "ASSISTANT READY",
-            "FRIDAY Assistant ready; native wake runtime deferred",
-            true
-        )
+
+        // The selected Android assistant owns the long-lived hands-free wake detector.
+        // Start it only after Android has actually bound the assistant service.
+        val micGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (!micGranted) {
+            FridayRuntime.update(
+                "ASSISTANT READY",
+                "FRIDAY Assistant is active; microphone permission is required for wake",
+                true
+            )
+            return
+        }
+
+        runCatching {
+            FridayWakeCoordinator.start(this)
+        }.onSuccess {
+            FridayRuntime.update(
+                "ASSISTANT READY",
+                "FRIDAY Assistant active; hands-free wake listener started",
+                true
+            )
+        }.onFailure {
+            FridayRuntime.update(
+                "WAKE ERROR",
+                it.message ?: "FRIDAY wake listener could not start",
+                false
+            )
+        }
     }
 
     internal fun showFridaySessionFromWake(confidence: Float) {
