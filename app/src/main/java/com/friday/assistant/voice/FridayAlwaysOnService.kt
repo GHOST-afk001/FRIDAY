@@ -21,6 +21,7 @@ import com.friday.assistant.runtime.FridayRuntime
 class FridayAlwaysOnService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private var detector: FridayWakeDetector? = null
+    // SpeechRecognizer fallback keeps hands-free wake working on devices where the bundled\n    // native wake model cannot acquire AudioRecord reliably. It listens one utterance at a time.\n    private var wakeVoice: VoiceManager? = null
     private var voice: VoiceManager? = null
     private var tts: TTSManager? = null
     private var agent: FridayAgent? = null
@@ -50,38 +51,105 @@ class FridayAlwaysOnService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (detector?.isRunning() != true && !destroyed) startWake()
+        if (detector?.isRunning() != true && wakeVoice == null && !destroyed) startWake()
         return START_STICKY
     }
 
     private fun startWake() {
-        if (destroyed || detector?.isRunning() == true || commandActive) return
-        val newDetector = FridayWakeDetector(
-            context = applicationContext,
-            onWake = { confidence, _ ->
-                if (destroyed || commandActive) return@FridayWakeDetector
-                commandActive = true
-                FridayRuntime.update("WAKE ACCEPTED", "Hey Friday detected • listening for your command", true)
-                stopWake()
-                main.post { startCommandListening(confidence) }
-            },
-            onAudioFocusLost = { permanent ->
+        if (destroyed || commandActive || wakeVoice != null) return
+
+        // Do not keep AudioRecord and SpeechRecognizer open at the same time.
+        // The speech wake path is the compatibility fallback for phones where the
+        // bundled native Hey Friday engine cannot obtain the microphone reliably.
+        FridayRuntime.update("WAKE LISTENING", "Hands-free active • say Hey Friday", true)
+
+        wakeVoice = VoiceManager(applicationContext, object : VoiceManager.Listener {
+            override fun onListening() {
                 if (!destroyed && !commandActive) {
-                    FridayRuntime.update("WAKE RECOVERING", "Microphone focus changed; restarting wake listener", true)
-                    main.postDelayed({ if (!destroyed && !commandActive) startWake() }, if (permanent) 1200L else 700L)
-                }
-            },
-            onStopped = {
-                main.post {
-                    if (!destroyed && !commandActive && detector?.isRunning() != true) {
-                        main.postDelayed({ if (!destroyed && !commandActive) startWake() }, 500L)
-                    }
+                    FridayRuntime.update("WAKE LISTENING", "Mic active • say Hey Friday", true)
                 }
             }
-        )
-        detector = newDetector
-        newDetector.start()
-        FridayRuntime.update("WAKE LISTENING", "Hands-free active • say Hey Friday", true)
+
+            override fun onAmplitude(value: Float) {
+                if (!destroyed && !commandActive) {
+                    com.friday.assistant.runtime.FridayStateFlow.updateAmplitude(value)
+                }
+            }
+
+            override fun onResult(text: String) {
+                if (destroyed || commandActive) return
+                val spoken = text.trim()
+                val normalized = spoken.lowercase(java.util.Locale.ROOT)
+                    .replace(Regex("[^a-z0-9\\s]"), " ")
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
+
+                val wakeIndex = listOf("hey friday", "hey friday", "friday")
+                    .map { normalized.indexOf(it) }
+                    .filter { it >= 0 }
+                    .minOrNull()
+
+                if (wakeIndex == null) {
+                    // SpeechRecognizer is one-shot; immediately arm the next short
+                    // recognition window without requiring an orb tap.
+                    restartWake(250L)
+                    return
+                }
+
+                val wakeText = normalized.substring(wakeIndex)
+                val command = wakeText.removePrefix("hey friday").removePrefix("friday").trim()
+
+                commandActive = true
+                FridayRuntime.update("WAKE ACCEPTED", "Hey Friday detected • listening for your command", true)
+                stopWakeSpeech()
+
+                if (command.isNotBlank()) {
+                    handleCommand(command)
+                } else {
+                    main.post { startCommandListening(1f) }
+                }
+            }
+
+            override fun onError(message: String) {
+                if (destroyed || commandActive) return
+                // Network/timeout/busy errors should not turn hands-free mode off.
+                // Re-arm automatically after a short cooldown.
+                restartWake(500L)
+            }
+        })
+        wakeVoice?.start()
+    }
+
+    private fun restartWake(delayMs: Long) {
+        if (destroyed || commandActive) return
+        stopWakeSpeech()
+        main.postDelayed({
+            if (!destroyed && !commandActive) startWake()
+        }, delayMs)
+    }
+
+    private fun stopWakeSpeech() {
+        runCatching { wakeVoice?.destroy() }
+        wakeVoice = null
+        com.friday.assistant.runtime.FridayStateFlow.resetAmplitude()
+    }
+
+    private fun handleCommand(command: String) {
+        if (destroyed) return
+        val currentAgent = agent ?: run {
+            speakAndResume("Boss, FRIDAY brain abhi ready nahi hai.")
+            return
+        }
+        FridayRuntime.update("HEARD", command, true)
+        runCatching {
+            currentAgent.handle(command) { answer, _ ->
+                main.post {
+                    if (!destroyed) speakAndResume(answer.trim().ifBlank { "Done, Boss." })
+                }
+            }
+        }.onFailure {
+            speakAndResume("Boss, command process nahi ho paayi.")
+        }
     }
 
     private fun stopWake() {
