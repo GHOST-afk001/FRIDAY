@@ -8,6 +8,7 @@ class FridayCommandProcessor {
     fun process(input: String): FridayResponse {
         val raw = input.trim()
         if (raw.isBlank()) return FridayResponse("I didn't catch that. Please say it again.")
+        parseAppThenSearch(raw)?.let { return it }
         parseWhatsappMessage(raw)?.let { (name, message) ->
             return FridayResponse("${name.trim()} ko WhatsApp message bhej rahi hoon.", FridayAction.AccessibilityCommand("whatsapp_message|${name.trim()}|${message.trim()}"), needsConfirmation = false)
         }
@@ -98,6 +99,26 @@ class FridayCommandProcessor {
         val reverse = Regex("(?:search|find|khojo|khoj|dhundo|dhoondo)\\s+(.+?)\\s+(?:on|in|par)\\s+youtube$", RegexOption.IGNORE_CASE).find(c)
         val query = direct?.groupValues?.get(1) ?: openThenSearch?.groupValues?.get(1) ?: reverse?.groupValues?.get(1) ?: return null
         return query.trim().replace(Regex("\\s+(?:karo|kar|please|do)$", RegexOption.IGNORE_CASE), "").trim().takeIf { it.isNotBlank() }
+    }
+
+    private fun parseAppThenSearch(raw: String): FridayResponse? {
+        val source = raw.trim().replace(Regex("^\\s*(?:hey\\s+)?friday\\b\\s*", RegexOption.IGNORE_CASE), "").trim()
+        val match = Regex(
+            "^(?:open|launch|start|khol(?:o|kar|ke)?|kholo)\\s+(youtube|spotify|chrome|google|instagram)\\s+(?:and|aur|then|phir|fir)\\s+(?:search|find|khojo|dhundo|dhoondo)\\s+(.+)$",
+            RegexOption.IGNORE_CASE
+        ).find(source) ?: return null
+        val app = match.groupValues[1].lowercase(Locale.ROOT)
+        val query = match.groupValues[2].trim()
+            .replace(Regex("\\s+(?:karo|kar|please|do)$", RegexOption.IGNORE_CASE), "")
+            .trim()
+            .takeIf { it.isNotBlank() } ?: return null
+        return when (app) {
+            "youtube" -> FridayResponse("YouTube par $query search kar rahi hoon.", FridayAction.YouTubeSearch(query))
+            "spotify" -> FridayResponse("Spotify par $query search kar rahi hoon.", FridayAction.SpotifySearch(query))
+            "chrome", "google" -> FridayResponse("Google par $query search kar rahi hoon.", FridayAction.OpenApp("__web_search__:$query", "Web search"))
+            "instagram" -> FridayResponse("Instagram khol rahi hoon. Search ke liye Accessibility control chahiye.", FridayAction.Sequence(listOf(FridayAction.Instagram, FridayAction.AccessibilityCommand("click Search"))), needsConfirmation = true)
+            else -> null
+        }
     }
 
     private fun parseWhatsappMessage(raw: String): Pair<String, String>? {

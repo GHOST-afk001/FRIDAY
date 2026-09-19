@@ -16,7 +16,7 @@ class GeminiProvider(context: Context) {
     @Volatile private var activeConnection: HttpURLConnection? = null
 
     fun isConfigured(): Boolean = runCatching { !keyStore.read().isNullOrBlank() }.getOrDefault(false)
-    fun setApiKey(key: String) = keyStore.save(key.trim())
+    fun setApiKey(key: String): Boolean = keyStore.save(key.trim())
     fun clearApiKey() = keyStore.clear()
     fun cancel() { activeConnection?.disconnect() }
 

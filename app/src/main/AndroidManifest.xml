@@ -25,13 +25,13 @@
             <intent-filter><action android:name="android.intent.action.ASSIST" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
         </activity>
         <activity android:name=".FridayOnboardingActivity" android:exported="false" />
-        <!-- Temporarily keep the system-managed VoiceInteractionService disabled while stabilizing
-             the launcher. This prevents Android from starting the assistant bridge before the
-             visible FRIDAY process is proven stable on the real Samsung device. -->
-        <service android:name=".voice.FridayVoiceInteractionService" android:label="FRIDAY" android:enabled="false" android:exported="true" android:process=":voice" android:permission="android.permission.BIND_VOICE_INTERACTION"><intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter><meta-data android:name="android.voice_interaction" android:resource="@xml/voice_interaction_service" /></service>
+        <!-- System-managed assistant bridge. Android starts this service when FRIDAY is selected
+             as the device assistant; it owns the long-lived hands-free wake listener. -->
+        <service android:name=".voice.FridayVoiceInteractionService" android:label="FRIDAY" android:enabled="true" android:exported="true" android:process=":voice" android:permission="android.permission.BIND_VOICE_INTERACTION"><intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter><meta-data android:name="android.voice_interaction" android:resource="@xml/voice_interaction_service" /></service>
         <service android:name=".voice.FridayVoiceInteractionSessionService" android:exported="true" android:process=":voice" android:permission="android.permission.BIND_VOICE_INTERACTION" />
         <service android:name=".runtime.FridayNotificationListenerService" android:exported="false" android:label="FRIDAY Notification Access" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"><intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter><meta-data android:name="android.service.notification.default_filter_types" android:value="conversations|alerting" /></service>
         <service android:name=".automation.FridayAccessibilityService" android:exported="false" android:label="FRIDAY Automation" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/friday_accessibility_service" /></service>
         <service android:name=".voice.FridayHandsFreeService" android:exported="false" android:foregroundServiceType="microphone" />
+        <service android:name=".voice.FridayAlwaysOnService" android:exported="false" android:foregroundServiceType="microphone" />
     </application>
 </manifest>
