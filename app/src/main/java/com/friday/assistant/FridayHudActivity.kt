@@ -200,7 +200,7 @@ class FridayHudActivity : ComponentActivity() {
     private fun showGeminiKeyDialog() {
         val input = android.widget.EditText(this).apply {
             hint = "Paste Gemini API key"
-            singleLine = true
+            setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
         val box = LinearLayout(this).apply {
@@ -243,7 +243,7 @@ class FridayHudActivity : ComponentActivity() {
         }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_MIC && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
             startHandsFreeIfReady()
