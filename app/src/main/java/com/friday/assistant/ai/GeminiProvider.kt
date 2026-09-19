@@ -16,7 +16,30 @@ class GeminiProvider(context: Context) {
     @Volatile private var activeConnection: HttpURLConnection? = null
 
     fun isConfigured(): Boolean = runCatching { !keyStore.read().isNullOrBlank() }.getOrDefault(false)
-    fun setApiKey(key: String): Boolean = runCatching {\n        val clean = key.trim()\n        if (clean.isBlank()) return false\n        if (!validateKey(clean)) return false\n        keyStore.save(clean)\n    }.getOrDefault(false)\n\n    private fun validateKey(key: String): Boolean {\n        val connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash").openConnection() as HttpURLConnection).apply {\n            requestMethod = "GET"\n            connectTimeout = 8000\n            readTimeout = 10000\n            setRequestProperty("x-goog-api-key", key)\n            setRequestProperty("Cache-Control", "no-store")\n        }\n        activeConnection = connection\n        return try {\n            val code = connection.responseCode\n            code in 200..299\n        } finally {\n            if (activeConnection === connection) activeConnection = null\n            connection.disconnect()\n        }\n    }
+    fun setApiKey(key: String): Boolean = runCatching {
+        val clean = key.trim()
+        if (clean.isBlank()) return false
+        if (!validateKey(clean)) return false
+        keyStore.save(clean)
+    }.getOrDefault(false)
+
+    private fun validateKey(key: String): Boolean {
+        val connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash").openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 8000
+            readTimeout = 10000
+            setRequestProperty("x-goog-api-key", key)
+            setRequestProperty("Cache-Control", "no-store")
+        }
+        activeConnection = connection
+        return try {
+            val code = connection.responseCode
+            code in 200..299
+        } finally {
+            if (activeConnection === connection) activeConnection = null
+            connection.disconnect()
+        }
+    }
     fun clearApiKey() = keyStore.clear()
     fun cancel() { activeConnection?.disconnect() }
 
@@ -81,7 +104,8 @@ class GeminiProvider(context: Context) {
         for (i in 0 until parts.length()) {
             val part = parts.optJSONObject(i) ?: continue
             val value = part.optString("text").trim()
-            if (value.isNotBlank()) text = if (text == null) value else "$text\n$value"
+            if (value.isNotBlank()) text = if (text == null) value else "$text
+$value"
             part.optJSONObject("functionCall")?.let { fc -> call = GeminiToolCall(fc.optString("id", "android_command_$i"), fc.optString("name"), fc.optJSONObject("args") ?: JSONObject()) }
         }
         return GeminiReply(text?.trim(), call, content)
