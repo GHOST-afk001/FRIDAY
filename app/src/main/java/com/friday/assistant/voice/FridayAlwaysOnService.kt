@@ -85,8 +85,11 @@ class FridayAlwaysOnService : Service() {
     }
 
     private fun stopWake() {
-        detector?.let { runCatching { it.stop() } }
+        val d = detector ?: return
         detector = null
+        // Do not start SpeechRecognizer until AudioRecord has fully released the microphone.
+        // Starting both back-to-back can make Samsung report a busy/failed recognizer.
+        runCatching { d.stopAndWait(2500L) }
     }
 
     private fun startCommandListening(confidence: Float) {
