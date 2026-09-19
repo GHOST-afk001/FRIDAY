@@ -188,9 +188,14 @@ class FridayOnboardingActivity : ComponentActivity() {
                                 Button(
                                     onClick = {
                                         if (key.isNotBlank()) {
-                                            agent.configureApiKey(key.trim())
-                                            key = ""
-                                            saved = agent.hasApiKey()
+                                            val persisted = agent.configureApiKey(key.trim())
+                                            if (persisted) {
+                                                key = ""
+                                                saved = agent.hasApiKey()
+                                                Toast.makeText(this@FridayOnboardingActivity, "Gemini key saved permanently.", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                Toast.makeText(this@FridayOnboardingActivity, "Gemini key could not be saved. Please try again.", Toast.LENGTH_LONG).show()
+                                            }
                                         }
                                     },
                                     modifier = Modifier.fillMaxWidth()
