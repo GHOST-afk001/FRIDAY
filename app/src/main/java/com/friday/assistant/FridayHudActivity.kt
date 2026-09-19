@@ -218,8 +218,14 @@ class FridayHudActivity : ComponentActivity() {
                     android.widget.Toast.makeText(this, "Please enter a Gemini API key.", android.widget.Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
-                agent.configureApiKey(key)
-                FridayRuntime.update("GEMINI READY", "Gemini API key connected", true)
+                val saved = agent.configureApiKey(key)
+                if (!saved) {
+                    android.widget.Toast.makeText(this, "Gemini key save failed. Please try again.", android.widget.Toast.LENGTH_LONG).show()
+                    FridayRuntime.update("GEMINI SAVE ERROR", "API key could not be persisted", false)
+                    return@setPositiveButton
+                }
+                FridayRuntime.update("GEMINI READY", "Gemini API key saved and connected", true)
+                android.widget.Toast.makeText(this, "Gemini connected. FRIDAY hands-free is starting.", android.widget.Toast.LENGTH_SHORT).show()
                 startHandsFreeIfReady()
             }
             .setNegativeButton("CANCEL", null)
