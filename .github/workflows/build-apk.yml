@@ -28,10 +28,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager --sdk_root="${ANDROID_SDK_ROOT:-$ANDROID_HOME}" \
-            "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;36.0.0"
+          sdkmanager --sdk_root="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"             "platform-tools"             "platforms;android-36"             "build-tools;36.0.0"
+
+      - name: Restore stable FRIDAY signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p signing
+          base64 --decode signing/friday-release.jks.b64 > signing/friday-release.jks
+          test -s signing/friday-release.jks
 
       - name: Prepare Hey Friday wake runtime
         shell: bash
@@ -48,7 +53,8 @@ jobs:
           test -n "$WAKE_FILE"
           cp "$MEL_FILE" app/src/main/assets/melspectrogram.onnx
           cp "$WAKE_FILE" app/src/main/assets/hey_friday.onnx
-          printf '%s\n' '{"model_type":"multi_keyword","keywords":["Hey Friday"],"model_file":"hey_friday.onnx","mel_time":98,"cons_frames":3,"n_mels":32}' > app/src/main/assets/model_info.json
+          printf '%s
+' '{"model_type":"multi_keyword","keywords":["Hey Friday"],"model_file":"hey_friday.onnx","mel_time":98,"cons_frames":3,"n_mels":32}' > app/src/main/assets/model_info.json
 
       - name: Run unit tests
         run: ./gradlew --no-daemon :app:testDebugUnitTest
