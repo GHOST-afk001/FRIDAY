@@ -21,7 +21,9 @@ import com.friday.assistant.runtime.FridayRuntime
 class FridayAlwaysOnService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private var detector: FridayWakeDetector? = null
-    // SpeechRecognizer fallback keeps hands-free wake working on devices where the bundled\n    // native wake model cannot acquire AudioRecord reliably. It listens one utterance at a time.\n    private var wakeVoice: VoiceManager? = null
+    // SpeechRecognizer fallback keeps hands-free wake working on devices where the bundled
+    // native wake model cannot acquire AudioRecord reliably. It listens one utterance at a time.
+    private var wakeVoice: VoiceManager? = null
     private var voice: VoiceManager? = null
     private var tts: TTSManager? = null
     private var agent: FridayAgent? = null
