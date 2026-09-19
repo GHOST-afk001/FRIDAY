@@ -173,8 +173,12 @@ class FridayWakeDetector(
 
                 val result = process.invoke(engine, frame) ?: continue
                 if (!running.get()) continue
-                val word = result.javaClass.getField("wakeWord").get(result) as? String ?: ""
+                val modelWord = result.javaClass.getField("wakeWord").get(result) as? String
                 val probability = result.javaClass.getField("probability").getFloat(result)
+                // The bundled engine has its own 0.50 detection gate and returns a null wakeWord below it.
+                // FRIDAY uses a recall-first 0.30 threshold, so with the single Hey Friday model,
+                // treat a score above our threshold as the known wake word.
+                val word = modelWord ?: if (probability >= THRESHOLD) "Hey Friday" else ""
                 // The bundled model recommends 3 windows. Two strong windows are enough for
                 // a phone-mic wake because each window is already ~1 second of audio.
                 val requiredFrames = result.javaClass.getField("recommendedConsFrames").getInt(result).coerceIn(2, 3)
