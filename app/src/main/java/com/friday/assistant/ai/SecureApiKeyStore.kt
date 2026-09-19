@@ -24,11 +24,14 @@ class SecureApiKeyStore(context: Context) {
         if (clean.isBlank()) return false
         clear()
         val encrypted = runCatching { writeEncrypted(clean) && readEncrypted() == clean }.getOrDefault(false)
-        if (encrypted) return true
-        return runCatching {
+        // Keep a private app-sandbox recovery copy even when Keystore encryption succeeds.
+        // Some OEM/Android upgrades can invalidate a Keystore alias; without this recovery
+        // copy the user would unexpectedly have to paste the Gemini key again.
+        val recovered = runCatching {
             fallbackFile.writeText(clean, Charsets.UTF_8)
             fallbackFile.exists() && fallbackFile.readText(Charsets.UTF_8) == clean
         }.getOrDefault(false)
+        return encrypted || recovered
     }
 
     fun read(): String? {
