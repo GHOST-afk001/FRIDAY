@@ -110,6 +110,9 @@ class FridayOnboardingActivity : ComponentActivity() {
             return
         }
         getSharedPreferences("friday_onboarding", MODE_PRIVATE).edit().putBoolean("completed", true).apply()
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            runCatching { com.friday.assistant.voice.FridayAlwaysOnService.start(this) }
+        }
         openHud()
     }
 
