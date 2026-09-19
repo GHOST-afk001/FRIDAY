@@ -9,10 +9,10 @@ import com.friday.assistant.runtime.FridayRuntime
 /**
  * Lightweight system assistant bridge.
  *
- * Android keeps the selected VoiceInteractionService alive. Do not start the native
- * ONNX wake runtime from onReady(): a native wake failure here can make Android report
- * FRIDAY itself as crashing before the launcher is ever opened. Wake capture is started
- * only from an explicit FRIDAY-controlled path after the UI/runtime is known to be healthy.
+ * Android keeps the selected VoiceInteractionService alive. The wake detector
+ * is isolated in :voice and is started only after Android reports the assistant
+ * service ready. Native wake failures are caught by FridayWakeDetector and must
+ * never be allowed to crash the launcher process.
  */
 class FridayVoiceInteractionService : VoiceInteractionService() {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -23,7 +23,7 @@ class FridayVoiceInteractionService : VoiceInteractionService() {
         destroyed = false
         FridayRuntime.update(
             "ASSISTANT SERVICE",
-            "FRIDAY Android Assistant bridge ready; wake runtime deferred",
+            "FRIDAY Android Assistant bridge is running",
             true
         )
     }
@@ -31,14 +31,28 @@ class FridayVoiceInteractionService : VoiceInteractionService() {
     override fun onReady() {
         super.onReady()
         if (destroyed) return
-        // Intentionally do not start FridayWakeCoordinator here.
-        // This callback is system-managed and can happen before the launcher has ever
-        // been opened. Native wake/ONNX startup is deferred to a safe explicit path.
+
         FridayRuntime.update(
             "ASSISTANT READY",
-            "FRIDAY Assistant ready; native wake runtime deferred",
+            "Starting isolated Hey Friday wake listener",
             true
         )
+
+        // Keep startup off the system callback itself. This gives Android a moment
+        // to finish binding the voice process before microphone/native initialization.
+        mainHandler.postDelayed({
+            if (!destroyed) {
+                runCatching {
+                    FridayWakeCoordinator.start(this)
+                }.onFailure {
+                    FridayRuntime.update(
+                        "WAKE START FAILED",
+                        it.message ?: "Wake listener could not start",
+                        false
+                    )
+                }
+            }
+        }, 1200L)
     }
 
     internal fun showFridaySessionFromWake(confidence: Float) {
