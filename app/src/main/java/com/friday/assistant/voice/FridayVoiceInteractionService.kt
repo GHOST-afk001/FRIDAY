@@ -31,14 +31,48 @@ class FridayVoiceInteractionService : VoiceInteractionService() {
     override fun onReady() {
         super.onReady()
         if (destroyed) return
-        // Persistent hands-free capture is owned by FridayAlwaysOnService. Keeping the
-        // system assistant bridge lightweight prevents two AudioRecord instances from
-        // fighting over the microphone on Samsung/Android devices.
-        FridayRuntime.update(
-            "ASSISTANT READY",
-            "FRIDAY Android Assistant bridge active; hands-free service owns wake capture",
-            true
-        )
+
+        // Android keeps the selected VoiceInteractionService alive for background
+        // hotwording. Start our microphone foreground service from this system-owned
+        // context rather than relying on a tap in the HUD.
+        val micGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        val agent = com.friday.assistant.ai.FridayAgent(applicationContext)
+        val configured = agent.hasApiKey()
+        agent.close()
+
+        if (!micGranted) {
+            FridayRuntime.update(
+                "ASSISTANT READY",
+                "FRIDAY selected; microphone permission required for hands-free wake",
+                true
+            )
+            return
+        }
+
+        if (!configured) {
+            FridayRuntime.update(
+                "GEMINI SETUP",
+                "FRIDAY selected; Gemini API key is not configured",
+                true
+            )
+            return
+        }
+
+        runCatching {
+            FridayAlwaysOnService.start(this)
+        }.onSuccess {
+            FridayRuntime.update("WAKE LISTENING", "Hands-free active • say Hey Friday", true)
+        }.onFailure {
+            FridayRuntime.update(
+                "WAKE ERROR",
+                it.message ?: "Android refused FRIDAY hands-free service",
+                false
+            )
+        }
     }
 
     internal fun showFridaySessionFromWake(confidence: Float) {
@@ -75,6 +109,7 @@ class FridayVoiceInteractionService : VoiceInteractionService() {
 
     override fun onShutdown() {
         destroyed = true
+        runCatching { FridayAlwaysOnService.stop(this) }
         FridayWakeCoordinator.stop()
         FridayRuntime.update(
             "ASSISTANT STOPPED",
