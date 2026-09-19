@@ -25,8 +25,12 @@
             <intent-filter><action android:name="android.intent.action.ASSIST" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
         </activity>
         <activity android:name=".FridayOnboardingActivity" android:exported="false" />
-        <service android:name=".voice.FridayVoiceInteractionService" android:label="FRIDAY" android:exported="true" android:permission="android.permission.BIND_VOICE_INTERACTION"><intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter><meta-data android:name="android.voice_interaction" android:resource="@xml/voice_interaction_service" /></service>
-        <service android:name=".voice.FridayVoiceInteractionSessionService" android:exported="true" android:permission="android.permission.BIND_VOICE_INTERACTION" />
+        <!-- Keep the always-running voice stack out of the UI process. The selected VoiceInteractionService
+             is system-managed and starts the native wake runtime; a native crash there must not take down
+             the launcher HUD. SessionService stays in the same isolated voice process so the wake coordinator
+             remains shared between the two voice components. -->
+        <service android:name=".voice.FridayVoiceInteractionService" android:label="FRIDAY" android:exported="true" android:process=":voice" android:permission="android.permission.BIND_VOICE_INTERACTION"><intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter><meta-data android:name="android.voice_interaction" android:resource="@xml/voice_interaction_service" /></service>
+        <service android:name=".voice.FridayVoiceInteractionSessionService" android:exported="true" android:process=":voice" android:permission="android.permission.BIND_VOICE_INTERACTION" />
         <service android:name=".runtime.FridayNotificationListenerService" android:exported="false" android:label="FRIDAY Notification Access" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"><intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter><meta-data android:name="android.service.notification.default_filter_types" android:value="conversations|alerting" /></service>
         <service android:name=".automation.FridayAccessibilityService" android:exported="false" android:label="FRIDAY Automation" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/friday_accessibility_service" /></service>
         <service android:name=".voice.FridayHandsFreeService" android:exported="false" android:foregroundServiceType="microphone" />
