@@ -19,6 +19,34 @@ class GeminiProvider(context: Context) {
     fun clearApiKey() = keyStore.clear()
     fun cancel() { activeConnection?.disconnect() }
 
+    /** Performs a minimal Gemini request without tools so key/model/network failures are isolated. */
+    fun testConnection(): Result<String> {
+        val apiKey = runCatching { keyStore.read() }.getOrNull()
+            ?: return Result.failure(IllegalStateException("Gemini API key is not configured."))
+        return runCatching {
+            val body = JSONObject()
+                .put("contents", JSONArray().put(
+                    JSONObject()
+                        .put("role", "user")
+                        .put("parts", JSONArray().put(JSONObject().put("text", "Reply with exactly: OK")))
+                ))
+                .put("generationConfig", JSONObject().put("maxOutputTokens", 16))
+            val connection = openConnection(apiKey)
+            activeConnection = connection
+            try {
+                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                val code = connection.responseCode
+                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+                val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code !in 200..299) throw IllegalStateException(formatHttpError(code, response))
+                parseReply(JSONObject(response)).text?.ifBlank { "OK" } ?: "OK"
+            } finally {
+                if (activeConnection === connection) activeConnection = null
+                connection.disconnect()
+            }
+        }
+    }
+
     fun ask(prompt: String, history: List<Pair<String, String>> = emptyList()): Result<String> = runCatching {
         val reply = askWithTools(prompt, history).getOrThrow()
         reply.text ?: error("Gemini requested an Android tool but no executor was attached")
@@ -30,7 +58,7 @@ class GeminiProvider(context: Context) {
     fun continueWithToolResult(history: List<Pair<String, String>>, prompt: String, modelContent: JSONObject, call: GeminiToolCall, result: JSONObject): Result<GeminiReply> {
         val contents = buildConversation(history, prompt)
         contents.put(modelContent)
-        contents.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("functionResponse", JSONObject().put("name", call.name).put("call_id", call.id).put("response", result)))))
+        contents.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("functionResponse", JSONObject().put("name", call.name).put("id", call.id).put("response", result)))))
         return request(contents)
     }
 
@@ -59,31 +87,36 @@ class GeminiProvider(context: Context) {
                 .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", SYSTEM_PROMPT))))
                 .put("contents", contents).put("tools", tools)
                 .put("generationConfig", JSONObject().put("maxOutputTokens", 1200))
-            val connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                connectTimeout = 12000
-                readTimeout = 30000
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json")
-                setRequestProperty("x-goog-api-key", apiKey)
-                setRequestProperty("Cache-Control", "no-store")
-            }
+            val connection = openConnection(apiKey)
             activeConnection = connection
             try {
                 connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
                 val code = connection.responseCode
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
                 val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (code !in 200..299) {
-                    val detail = runCatching { JSONObject(response).optJSONObject("error")?.optString("message") }.getOrNull().orEmpty()
-                    error(if (detail.isNotBlank()) "Gemini HTTP $code: $detail" else "Gemini HTTP $code")
-                }
+                if (code !in 200..299) error(formatHttpError(code, response))
                 parseReply(JSONObject(response))
             } finally {
                 if (activeConnection === connection) activeConnection = null
                 connection.disconnect()
             }
         }
+    }
+
+    private fun openConnection(apiKey: String): HttpURLConnection =
+        (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 12000
+            readTimeout = 30000
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("x-goog-api-key", apiKey)
+            setRequestProperty("Cache-Control", "no-store")
+        }
+
+    private fun formatHttpError(code: Int, response: String): String {
+        val detail = runCatching { JSONObject(response).optJSONObject("error")?.optString("message") }.getOrNull().orEmpty()
+        return if (detail.isNotBlank()) "Gemini HTTP $code: $detail" else "Gemini HTTP $code"
     }
 
     private fun parseReply(root: JSONObject): GeminiReply {
