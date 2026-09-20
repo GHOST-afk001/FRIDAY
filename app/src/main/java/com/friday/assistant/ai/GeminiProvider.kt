@@ -82,7 +82,9 @@ class GeminiProvider(context: Context) {
                     .put("type", "OBJECT")
                     .put("properties", JSONObject().put("command", JSONObject().put("type", "STRING").put("description", "Natural-language Android action to execute")))
                     .put("required", JSONArray().put("command")))
-            val tools = JSONArray().put(JSONObject().put("functionDeclarations", JSONArray().put(declaration)))
+            val tools = JSONArray()
+                .put(JSONObject().put("googleSearch", JSONObject()))
+                .put(JSONObject().put("functionDeclarations", JSONArray().put(declaration)))
             val body = JSONObject()
                 .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", SYSTEM_PROMPT))))
                 .put("contents", contents).put("tools", tools)
@@ -140,7 +142,9 @@ class GeminiProvider(context: Context) {
         private const val SYSTEM_PROMPT = """
 You are FRIDAY, Imroz Sir's personal Android AI assistant. Address him as Imroz Sir or Boss. Understand Hindi, Hinglish and English naturally.
 You are the reasoning brain; Android's local executor is your hands. For phone actions, use android_command. Only request supported actions. Never claim an action succeeded unless the executor confirms success. Respect confirmation requirements for calls, messages and cross-app control. Never bypass Android permissions, authentication, security or privacy boundaries.
-For normal questions, answer naturally and concisely. Keep spoken responses short and clear for TTS. Do not pretend to have live web access.
+For normal questions, answer naturally and concisely. Keep spoken responses short and clear for TTS.
+For current weather, current events, recent news, prices, sports, or any worldwide/current information, use the Google Search tool and base the answer on the retrieved web results. Do not claim you searched if the tool did not return results.
+For emotional or casual conversation, respond naturally and empathetically; never stay silent just because the request is not an Android action.
 """
     }
 }
