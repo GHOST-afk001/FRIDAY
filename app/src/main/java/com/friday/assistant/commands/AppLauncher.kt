@@ -125,14 +125,22 @@ class AppLauncher(private val context: Context) {
         val name = parts[1].trim(); val message = parts[2].trim()
         if (name.isBlank() || message.isBlank()) return false
         val number = findUniqueContactNumber(name) ?: return false
-        val phone = number.filter { it.isDigit() }
+        var phone = number.filter { it.isDigit() }
+        if (phone.length == 10) phone = "91$phone"
         if (phone.isBlank()) return false
         val uri = Uri.parse("https://wa.me/$phone?text=${Uri.encode(message)}")
         if (!FridayAutomation.isConnected()) return false
         val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.whatsapp") }
         val opened = start(intent) || start(Intent(Intent.ACTION_VIEW, uri))
         if (!opened) return false
-        Handler(Looper.getMainLooper()).postDelayed({ FridayAutomation.clickSend() }, 1800L)
+        val handler = Handler(Looper.getMainLooper())
+        val sendDeadline = System.currentTimeMillis() + 7000L
+        val trySend = object : Runnable {
+            override fun run() {
+                if (!FridayAutomation.clickSend() && System.currentTimeMillis() < sendDeadline) handler.postDelayed(this, 900L)
+            }
+        }
+        handler.postDelayed(trySend, 1400L)
         return true
     }
 
