@@ -46,7 +46,12 @@ class AppLauncher(private val context: Context) {
             is FridayAction.DialNumber -> start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${action.number}")))
             is FridayAction.DialContact -> {
                 val number = findUniqueContactNumber(action.name) ?: return false
-                start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(number)}")))
+                val clean = number.filter { it.isDigit() || it == '+' }
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+                    start(Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(clean)}")))
+                } else {
+                    start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(clean)}")))
+                }
             }
             is FridayAction.SmsContact -> {
                 val number = findUniqueContactNumber(action.name) ?: return false
@@ -104,11 +109,13 @@ class AppLauncher(private val context: Context) {
 
     private fun openYouTubeSearch(query: String): Boolean {
         val encoded = Uri.encode(query)
-        val youtube = context.packageManager.getLaunchIntentForPackage("com.google.android.youtube")
-        if (youtube != null) {
-            val deepLink = Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube://results?search_query=$encoded")).apply { setPackage("com.google.android.youtube") }
-            if (start(deepLink)) return true
+        val youtubeSearch = Intent(Intent.ACTION_SEARCH).apply {
+            setPackage("com.google.android.youtube")
+            putExtra("query", query)
         }
+        if (start(youtubeSearch)) return true
+        val deepLink = Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube://results?search_query=$encoded")).apply { setPackage("com.google.android.youtube") }
+        if (start(deepLink)) return true
         return start(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=$encoded")))
     }
 
