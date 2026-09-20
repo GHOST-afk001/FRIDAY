@@ -4,7 +4,14 @@ package com.friday.assistant.automation
 object FridayAutomation {
     fun isConnected(): Boolean = FridayAccessibilityService.isConnected()
 
-    fun clickSend(): Boolean = FridayAccessibilityService.clickText("Send") || FridayAccessibilityService.clickText("भेजें") || FridayAccessibilityService.clickDescription("Send")
+    fun clickSend(): Boolean =
+        FridayAccessibilityService.clickText("Send") ||
+        FridayAccessibilityService.clickText("send") ||
+        FridayAccessibilityService.clickText("भेजें") ||
+        FridayAccessibilityService.clickText("Bhej") ||
+        FridayAccessibilityService.clickDescription("Send") ||
+        FridayAccessibilityService.clickDescription("Send message") ||
+        FridayAccessibilityService.clickDescription("भेजें")
     fun tryExecute(input: String): String? {
         if (!FridayAccessibilityService.isConnected()) return null
         val text = input.trim()
