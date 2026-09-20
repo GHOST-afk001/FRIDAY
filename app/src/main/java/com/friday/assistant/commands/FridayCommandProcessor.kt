@@ -33,6 +33,8 @@ class FridayCommandProcessor {
         if (Regex("(^|\\s)date(\\s|$)").containsMatchIn(normalized) || normalized.contains("tarikh") || normalized.contains("tariq") || normalized.contains("तारीख") || normalized.contains("डेट")) return FridayResponse("Aaj ${DateFormat.getDateInstance(DateFormat.LONG).format(Date())} hai.")
         if (normalized.contains("standby") || normalized.contains("so jao") || normalized.contains("stop listening")) return FridayResponse("Understood Boss. Standby mode.")
 
+        parseDirectWebSearch(normalized)?.let { return FridayResponse("Google par $it search kar rahi hoon.", FridayAction.OpenApp("__web_search__:$it", "Web search")) }
+
         if (isEmergencySosCommand(normalized)) return FridayResponse("Emergency dialer mein 112 open karne ke liye confirmation chahiye.", FridayAction.EmergencySos, needsConfirmation = true)
 
         parseAccessibilityCommand(normalized)?.let { return it }
@@ -43,7 +45,12 @@ class FridayCommandProcessor {
             else { val clock = alarm as FridayAction.Alarm; FridayResponse("Alarm ${String.format(Locale.US, "%02d:%02d", clock.hour, clock.minute)} ke liye set kar rahi hoon.", clock) }
         }
 
-        if (normalized.contains("flashlight") || normalized.contains("flash light") || normalized.contains("torch") || normalized.contains("light on") || normalized.contains("light off") || normalized.contains("फ्लैशलाइट")) {
+        if (normalized.contains("flashlight") || normalized.contains("flash light") || normalized.contains("torch") ||
+            normalized.contains("light on") || normalized.contains("light off") ||
+            normalized.contains("torch on") || normalized.contains("torch off") ||
+            normalized.contains("torch chalu") || normalized.contains("torch band") ||
+            normalized.contains("flashlight on") || normalized.contains("flashlight off") ||
+            normalized.contains("फ्लैशलाइट") || normalized.contains("टॉर्च")) {
             return if (normalized.contains("off") || normalized.contains("band")) FridayResponse("Torch off kar rahi hoon.", FridayAction.FlashlightOff) else FridayResponse("Torch on kar rahi hoon.", FridayAction.FlashlightOn)
         }
         if (normalized.contains("volume") && (normalized.contains("up") || normalized.contains("increase") || normalized.contains("badha"))) return FridayResponse("Volume badha rahi hoon.", FridayAction.VolumeUp)
@@ -81,7 +88,7 @@ class FridayCommandProcessor {
             normalized.startsWith("tap ") && normalized.length > 4 -> "tap ${normalized.substringAfter("tap ").trim()}"
             else -> return null
         }
-        return FridayResponse("I need confirmation before controlling another app's visible UI.", FridayAction.AccessibilityCommand(command), needsConfirmation = true)
+        return FridayResponse("Visible UI control execute kar rahi hoon.", FridayAction.AccessibilityCommand(command), needsConfirmation = false)
     }
 
     private fun isGreeting(c: String) = c == "hello" || c == "hello friday" || c == "hi friday" || c == "namaste" || c == "नमस्ते"
@@ -104,6 +111,18 @@ class FridayCommandProcessor {
     private fun isMessagesAppCommand(c: String): Boolean {
         val normalized = c.trim().replace(Regex("\\s+"), " ")
         return normalized in setOf("messages", "message app", "open messages", "open message app", "open the messages app", "open the message app", "messages app kholo", "message app kholo", "messages kholo", "messages khol do", "message app khol do", "messages खोलो", "मैसेज खोलो")
+    }
+
+    private fun parseDirectWebSearch(c: String): String? {
+        val match = Regex(
+            "^(?:search|google search|google par search|internet par search|web par search)\\s+(.+)$",
+            RegexOption.IGNORE_CASE
+        ).find(c) ?: return null
+        return match.groupValues[1]
+            .trim()
+            .replace(Regex("\\s+(?:karo|kar|please|do)$", RegexOption.IGNORE_CASE), "")
+            .trim()
+            .takeIf { it.isNotBlank() }
     }
 
     private fun parseYoutubeSearch(c: String): String? {

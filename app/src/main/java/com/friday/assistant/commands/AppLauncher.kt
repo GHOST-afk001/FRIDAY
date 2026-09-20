@@ -162,10 +162,25 @@ class AppLauncher(private val context: Context) {
     }
 
     private fun setTorch(enabled: Boolean): Boolean {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return false
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            // A background service cannot show a runtime permission dialog itself. Bring the
+            // FRIDAY HUD forward so Android can present the normal camera permission prompt.
+            runCatching {
+                val intent = Intent(context, com.friday.assistant.FridayHudActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    putExtra(com.friday.assistant.FridayHudActivity.EXTRA_REQUEST_CAMERA_PERMISSION, true)
+                }
+                context.startActivity(intent)
+                FridayRuntime.update("CAMERA PERMISSION", "Allow camera access once to control the flashlight.", false)
+            }
+            return false
+        }
         val camera = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        val id = camera.cameraIdList.firstOrNull { camera.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true } ?: return false
-        camera.setTorchMode(id, enabled); return true
+        val id = camera.cameraIdList.firstOrNull {
+            camera.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+        } ?: return false
+        camera.setTorchMode(id, enabled)
+        return true
     }
 
     private fun findUniqueContactNumber(name: String): String? {

@@ -44,12 +44,21 @@ class FridayAccessibilityService : AccessibilityService() {
                 )
             }
             if (!entry.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
-            val send = findByViewId(root, "$WHATSAPP_PACKAGE:id/send")
-                ?: findNodeByDescription(root, "Send")
-                ?: findNodeByDescription(root, "Send message")
-                ?: findNode(root, "Send")
-                ?: findNode(root, "भेजें")
-                ?: findNode(root, "Bhej")
+            // WhatsApp can rebuild the composer after ACTION_SET_TEXT; reacquire the tree.
+            val freshRoot = rootInActiveWindow ?: root
+            val send = findByViewId(freshRoot, "$WHATSAPP_PACKAGE:id/send")
+                ?: findNodeByDescription(freshRoot, "Send")
+                ?: findNodeByDescription(freshRoot, "Send message")
+                ?: findNode(freshRoot, "Send")
+                ?: findNode(freshRoot, "SEND")
+                ?: findNode(freshRoot, "भेजें")
+                ?: findNode(freshRoot, "Bhej")
+                ?: findNodeRecursive(freshRoot) { n ->
+                    n.isVisibleToUser &&
+                        n.isClickable &&
+                        (n.contentDescription?.toString()?.contains("send", ignoreCase = true) == true ||
+                         n.text?.toString()?.contains("send", ignoreCase = true) == true)
+                }
                 ?: return false
             performClick(send)
         } catch (_: Throwable) {
@@ -103,6 +112,14 @@ class FridayAccessibilityService : AccessibilityService() {
             n.isVisibleToUser && (n.isScrollable || n.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD })
         } ?: return false
         return node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+    }
+
+    fun scrollBackward(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val node = findNodeRecursive(root) { n ->
+            n.isVisibleToUser && (n.isScrollable || n.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD })
+        } ?: return false
+        return node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
     }
 
     fun goHome(): Boolean = performGlobalAction(GLOBAL_ACTION_HOME)
@@ -167,6 +184,7 @@ class FridayAccessibilityService : AccessibilityService() {
         fun clickDescription(description: String): Boolean = instance?.clickDescription(description) == true
         fun setText(text: String): Boolean = instance?.setText(text) == true
         fun scrollForward(): Boolean = instance?.scrollForward() == true
+        fun scrollBackward(): Boolean = instance?.scrollBackward() == true
         fun goHome(): Boolean = instance?.goHome() == true
         fun goBack(): Boolean = instance?.goBack() == true
         fun openRecents(): Boolean = instance?.openRecents() == true

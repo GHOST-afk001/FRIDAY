@@ -55,6 +55,10 @@ class FridayHudActivity : ComponentActivity() {
         agent = FridayAgent(applicationContext)
         setContentView(buildHud())
         runtimeSubscription = FridayRuntime.observe(::renderRuntime)
+        if (intent.getBooleanExtra(EXTRA_REQUEST_CAMERA_PERMISSION, false) &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), REQUEST_CAMERA)
+        }
         renderRuntime(FridayRuntime.status)
         startHandsFreeIfReady()
     }
@@ -164,6 +168,12 @@ class FridayHudActivity : ComponentActivity() {
         }
         bottom.addView(permissionsButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
 
+        val diagnosticsButton = android.widget.Button(this).apply {
+            text = "RUN DEVICE CONTROL DIAGNOSTICS"
+            setOnClickListener { runDiagnostics() }
+        }
+        bottom.addView(diagnosticsButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
+
         root.addView(bottom, matchWrap())
 
         return root
@@ -259,6 +269,46 @@ class FridayHudActivity : ComponentActivity() {
             .show()
     }
 
+    private fun runDiagnostics() {
+        val mic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val camera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        val contacts = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+        val notifications = android.os.Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+        val accessibilityEnabled = runCatching {
+            val manager = getSystemService(android.view.accessibility.AccessibilityManager::class.java)
+            manager?.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+                ?.any { info ->
+                    info.resolveInfo?.serviceInfo?.packageName == packageName &&
+                        info.resolveInfo?.serviceInfo?.name == "com.friday.assistant.automation.FridayAccessibilityService"
+                } == true
+        }.getOrDefault(false)
+
+        val assistantHeld = if (android.os.Build.VERSION.SDK_INT >= 29) runCatching {
+            getSystemService(android.app.role.RoleManager::class.java)?.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT) == true
+        }.getOrDefault(false) else false
+
+        val power = getSystemService(android.os.PowerManager::class.java)
+        val batteryOptimized = power?.isIgnoringBatteryOptimizations(packageName) == false
+        val report = buildString {
+            appendLine("Gemini: ${if (agent.hasApiKey()) "READY" else "MISSING"}")
+            appendLine("Microphone: ${if (mic) "OK" else "MISSING"}")
+            appendLine("Camera/flashlight permission: ${if (camera) "OK" else "MISSING"}")
+            appendLine("Contacts/WhatsApp lookup: ${if (contacts) "OK" else "MISSING"}")
+            appendLine("Notifications: ${if (notifications) "OK" else "MISSING"}")
+            appendLine("Accessibility automation: ${if (accessibilityEnabled) "ON" else "OFF"}")
+            appendLine("Android Assistant role: ${if (assistantHeld) "SELECTED" else "NOT SELECTED"}")
+            appendLine("Battery optimization: ${if (batteryOptimized) "ACTIVE — background may be limited" else "IGNORED"}")
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("FRIDAY Device Diagnostics")
+            .setMessage(report)
+            .setPositiveButton("OK", null)
+            .setNeutralButton("ACCESSIBILITY") { _, _ -> openAccessibility() }
+            .show()
+    }
+
     private fun requestDevicePermissions() {
         val needed = mutableListOf<String>()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) needed += Manifest.permission.RECORD_AUDIO
@@ -293,6 +343,13 @@ class FridayHudActivity : ComponentActivity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_CAMERA) {
+            android.widget.Toast.makeText(
+                this,
+                if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) "Camera permission granted. Flashlight is ready." else "Camera permission denied. Flashlight cannot be controlled.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
         if (requestCode == REQUEST_MIC || requestCode == REQUEST_DEVICE_PERMISSIONS) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startHandsFreeIfReady()
         }
@@ -380,5 +437,7 @@ class FridayHudActivity : ComponentActivity() {
     companion object {
         private const val REQUEST_MIC = 7101
         private const val REQUEST_DEVICE_PERMISSIONS = 7102
+        private const val REQUEST_CAMERA = 7103
+        const val EXTRA_REQUEST_CAMERA_PERMISSION = "friday_request_camera_permission"
     }
 }
