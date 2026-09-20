@@ -60,7 +60,7 @@ class FridayHudActivity : ComponentActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), REQUEST_CAMERA)
         }
         if (intent.getBooleanExtra(EXTRA_REQUEST_CALL_PERMISSION, false) &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+            ContextCompat.checkSelfPermission(this@FridayHudActivity, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CALL_PHONE), REQUEST_CALL)
         }
         renderRuntime(FridayRuntime.status)
