@@ -79,6 +79,25 @@ class FridayAccessibilityService : AccessibilityService() {
         return performClick(node)
     }
 
+    fun setText(text: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val node = findNodeRecursive(root) { n ->
+            n.isVisibleToUser && n.isEditable
+        } ?: return false
+        val args = android.os.Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        }
+        return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+    }
+
+    fun scrollForward(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val node = findNodeRecursive(root) { n ->
+            n.isVisibleToUser && (n.isScrollable || n.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD })
+        } ?: return false
+        return node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+    }
+
     fun goHome(): Boolean = performGlobalAction(GLOBAL_ACTION_HOME)
     fun goBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
     fun openRecents(): Boolean = performGlobalAction(GLOBAL_ACTION_RECENTS)
@@ -133,6 +152,8 @@ class FridayAccessibilityService : AccessibilityService() {
         fun isConnected(): Boolean = instance != null
         fun clickText(text: String): Boolean = instance?.clickText(text) == true
         fun clickDescription(description: String): Boolean = instance?.clickDescription(description) == true
+        fun setText(text: String): Boolean = instance?.setText(text) == true
+        fun scrollForward(): Boolean = instance?.scrollForward() == true
         fun goHome(): Boolean = instance?.goHome() == true
         fun goBack(): Boolean = instance?.goBack() == true
         fun openRecents(): Boolean = instance?.openRecents() == true
