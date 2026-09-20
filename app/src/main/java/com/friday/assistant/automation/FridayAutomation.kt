@@ -5,6 +5,7 @@ object FridayAutomation {
     fun isConnected(): Boolean = FridayAccessibilityService.isConnected()
 
     fun clickSend(): Boolean =
+        FridayAccessibilityService.clickResourceId("com.whatsapp:id/send") ||
         FridayAccessibilityService.clickText("Send") ||
         FridayAccessibilityService.clickText("send") ||
         FridayAccessibilityService.clickText("भेजें") ||
@@ -41,6 +42,11 @@ object FridayAutomation {
                 val value = text.substringAfter("type ").trim()
                 if (value.isBlank()) return null
                 if (FridayAccessibilityService.setText(value)) "Typed the requested text." else "I couldn't find an editable field."
+            }
+            lower.startsWith("click_id ") -> {
+                val id = text.substringAfter("click_id ").trim()
+                if (id.isBlank()) return null
+                if (FridayAccessibilityService.clickResourceId(id)) "Clicked the requested control." else "I couldn't find that control."
             }
             lower.startsWith("wait_click_type|") -> {
                 val parts = text.substringAfter("wait_click_type|").split("|", limit = 2)
