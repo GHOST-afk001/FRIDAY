@@ -61,10 +61,6 @@ class FridayHudActivity : ComponentActivity() {
         }
         renderRuntime(FridayRuntime.status)
         startHandsFreeIfReady()
-        if (intent.getBooleanExtra(EXTRA_REQUEST_CAMERA_PERMISSION, false) &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), REQUEST_CAMERA)
-        }
     }
 
     private fun buildHud(): View {
@@ -476,7 +472,6 @@ class FridayHudActivity : ComponentActivity() {
         const val EXTRA_REQUEST_CAMERA_PERMISSION = "request_camera_permission"
         private const val REQUEST_MIC = 7101
         private const val REQUEST_DEVICE_PERMISSIONS = 7102
-        private const val REQUEST_CAMERA = 7103
         private const val REQUEST_CAMERA = 7103
         const val EXTRA_REQUEST_CAMERA_PERMISSION = "friday_request_camera_permission"
     }
