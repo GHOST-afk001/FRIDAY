@@ -12,7 +12,7 @@ data class GeminiReply(val text: String? = null, val toolCall: GeminiToolCall? =
 /** REST Gemini bridge with native function calling for Android actions. */
 class GeminiProvider(context: Context) {
     private val keyStore = SecureApiKeyStore(context)
-    private val model = "gemini-3.8-flash"
+    // Current Gemini Flash model used by FRIDAY\n    private val model = "gemini-3.8-flash"
     @Volatile private var activeConnection: HttpURLConnection? = null
 
     fun isConfigured(): Boolean = runCatching { !keyStore.read().isNullOrBlank() }.getOrDefault(false)
