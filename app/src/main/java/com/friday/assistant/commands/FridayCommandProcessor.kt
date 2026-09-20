@@ -46,7 +46,7 @@ class FridayCommandProcessor {
         if (normalized.contains("volume") && (normalized.contains("down") || normalized.contains("decrease") || normalized.contains("kam"))) return FridayResponse("Volume kam kar rahi hoon.", FridayAction.VolumeDown)
 
         parseYoutubeSearch(normalized)?.let { return FridayResponse("YouTube par ${it} search kar rahi hoon.", FridayAction.YouTubeSearch(it)) }
-        if (normalized.contains("youtube")) return FridayResponse("YouTube khol rahi hoon.", FridayAction.YouTube)
+        if (normalized.contains("youtube") || normalized.contains("यूट्यूब") || normalized.contains("यूट्यूब")) return FridayResponse("YouTube khol rahi hoon.", FridayAction.YouTube)
         if (normalized.contains("calculator") || normalized.contains("कैलकुलेटर")) return FridayResponse("Calculator khol rahi hoon.", FridayAction.Calculator)
         if (normalized.contains("settings") || normalized.contains("सेटिंग")) return FridayResponse("Settings khol rahi hoon.", FridayAction.Settings)
         if (normalized.contains("camera") || normalized.contains("कैमरा")) return FridayResponse("Camera khol rahi hoon.", FridayAction.Camera)
