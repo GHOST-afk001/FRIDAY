@@ -469,7 +469,6 @@ class FridayHudActivity : ComponentActivity() {
         (value * resources.displayMetrics.density).toInt()
 
     companion object {
-        const val EXTRA_REQUEST_CAMERA_PERMISSION = "request_camera_permission"
         private const val REQUEST_MIC = 7101
         private const val REQUEST_DEVICE_PERMISSIONS = 7102
         private const val REQUEST_CAMERA = 7103
