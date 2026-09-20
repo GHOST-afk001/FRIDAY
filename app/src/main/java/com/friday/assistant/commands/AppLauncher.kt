@@ -58,12 +58,15 @@ class AppLauncher(private val context: Context) {
             }
             is FridayAction.AccessibilityCommand -> {
                 val command = action.command.trim()
-                if (command.startsWith("whatsapp_message|")) openWhatsAppMessage(command)
-                else {
-                    val result = FridayAutomation.tryExecute(command)
-                    if (result != null) true else {
-                        FridayRuntime.update("AUTOMATION BLOCKED", "Enable FRIDAY Accessibility access in Android settings.", false)
-                        false
+                when {
+                    command.startsWith("whatsapp_ui|") -> openWhatsAppUiTask(command)
+                    command.startsWith("whatsapp_message|") -> openWhatsAppMessage(command)
+                    else -> {
+                        val result = FridayAutomation.tryExecute(command)
+                        if (result != null) true else {
+                            FridayRuntime.update("AUTOMATION BLOCKED", "Enable FRIDAY Accessibility access in Android settings.", false)
+                            false
+                        }
                     }
                 }
             }
@@ -119,6 +122,23 @@ class AppLauncher(private val context: Context) {
         return start(Intent(Intent.ACTION_VIEW, Uri.parse("https://open.spotify.com/search/$encoded")))
     }
 
+    private fun openWhatsAppUiTask(command: String): Boolean {
+        val parts = command.split('|', limit = 3)
+        if (parts.size != 3) return false
+        val name = parts[1].trim()
+        val message = parts[2].trim()
+        if (name.isBlank() || message.isBlank()) return false
+        if (!FridayAutomation.isConnected()) {
+            FridayRuntime.update("AUTOMATION BLOCKED", "Enable FRIDAY Accessibility access before WhatsApp automation.", false)
+            return false
+        }
+        val opened = openPackageOrUrl("com.whatsapp", "https://www.whatsapp.com")
+        if (!opened) return false
+        com.friday.assistant.automation.FridayAccessibilityService.queueWhatsAppUiTask(name, message)
+        FridayRuntime.update("WHATSAPP AUTOMATION", "Finding $name and preparing the message", true)
+        return true
+    }
+
     private fun openWhatsAppMessage(command: String): Boolean {
         val parts = command.split('|', limit = 3)
         if (parts.size != 3) return false
@@ -163,6 +183,7 @@ class AppLauncher(private val context: Context) {
 
     private fun setTorch(enabled: Boolean): Boolean {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            pendingTorchRequest = enabled
             // A background service cannot show a runtime permission dialog itself. Bring the
             // FRIDAY HUD forward so Android can present the normal camera permission prompt.
             runCatching {
@@ -181,6 +202,16 @@ class AppLauncher(private val context: Context) {
         } ?: return false
         camera.setTorchMode(id, enabled)
         return true
+    }
+
+    companion object {
+        @Volatile private var pendingTorchRequest: Boolean? = null
+
+        fun resumePendingTorch(context: Context): Boolean {
+            val request = pendingTorchRequest ?: return false
+            pendingTorchRequest = null
+            return AppLauncher(context.applicationContext).launch(if (request) FridayAction.FlashlightOn else FridayAction.FlashlightOff)
+        }
     }
 
     private fun findUniqueContactNumber(name: String): String? {
