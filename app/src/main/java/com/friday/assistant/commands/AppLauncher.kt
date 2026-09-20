@@ -133,14 +133,19 @@ class AppLauncher(private val context: Context) {
         val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.whatsapp") }
         val opened = start(intent) || start(Intent(Intent.ACTION_VIEW, uri))
         if (!opened) return false
+        // Queue the message so Accessibility events can retry after WhatsApp has
+        // actually rendered the chat. This is more reliable than a single timed click.
+        com.friday.assistant.automation.FridayAccessibilityService.queueWhatsAppMessage(message)
         val handler = Handler(Looper.getMainLooper())
-        val sendDeadline = System.currentTimeMillis() + 7000L
+        val sendDeadline = System.currentTimeMillis() + 12000L
         val trySend = object : Runnable {
             override fun run() {
-                if (!FridayAutomation.clickSend() && System.currentTimeMillis() < sendDeadline) handler.postDelayed(this, 900L)
+                if (!FridayAutomation.clickSend() && System.currentTimeMillis() < sendDeadline) {
+                    handler.postDelayed(this, 500L)
+                }
             }
         }
-        handler.postDelayed(trySend, 1400L)
+        handler.postDelayed(trySend, 1200L)
         return true
     }
 
