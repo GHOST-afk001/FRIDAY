@@ -88,6 +88,7 @@ class GeminiProvider(context: Context) {
             val body = JSONObject()
                 .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", SYSTEM_PROMPT))))
                 .put("contents", contents).put("tools", tools)
+                .put("toolConfig", JSONObject().put("includeServerSideToolInvocations", true))
                 .put("generationConfig", JSONObject().put("maxOutputTokens", 1200))
             val connection = openConnection(apiKey)
             activeConnection = connection
