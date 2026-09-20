@@ -189,8 +189,9 @@ class FridayCommandProcessor {
             val value = relative.groupValues[1].toLongOrNull() ?: return null
             val unit = relative.groupValues[2].lowercase(Locale.ROOT)
             val multiplier = when (unit) {
-                "hour", "hours", "hr", "hrs", "घंटा", "घंटे" -> 3600L
-                "minute", "minutes", "min", "mins", "मिनट" -> 60L
+                "hour", "hours", "hr", "hrs", "h", "घंटा", "घंटे" -> 3600L
+                "minute", "minutes", "min", "mins", "m", "मिनट" -> 60L
+                "second", "seconds", "sec", "secs", "s", "सेकंड" -> 1L
                 else -> 1L
             }
             return (value * multiplier).takeIf { it in 60L..86400L }?.toInt()?.let { FridayAction.AlarmAfter(it) }
