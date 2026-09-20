@@ -9,10 +9,9 @@ import java.net.URL
 data class GeminiToolCall(val id: String, val name: String, val args: JSONObject)
 data class GeminiReply(val text: String? = null, val toolCall: GeminiToolCall? = null, val modelContent: JSONObject? = null)
 
-/** REST Gemini bridge with native function calling for Android actions. */
 class GeminiProvider(context: Context) {
     private val keyStore = SecureApiKeyStore(context)
-    // Current Gemini Flash model used by FRIDAY\n    private val model = "gemini-3.8-flash"
+    private val model = "gemini-3.8-flash"
     @Volatile private var activeConnection: HttpURLConnection? = null
 
     fun isConfigured(): Boolean = runCatching { !keyStore.read().isNullOrBlank() }.getOrDefault(false)
@@ -25,7 +24,8 @@ class GeminiProvider(context: Context) {
         reply.text ?: error("Gemini requested an Android tool but no executor was attached")
     }
 
-    fun askWithTools(prompt: String, history: List<Pair<String, String>> = emptyList()): Result<GeminiReply> = request(buildConversation(history, prompt))
+    fun askWithTools(prompt: String, history: List<Pair<String, String>> = emptyList()): Result<GeminiReply> =
+        request(buildConversation(history, prompt))
 
     fun continueWithToolResult(history: List<Pair<String, String>>, prompt: String, modelContent: JSONObject, call: GeminiToolCall, result: JSONObject): Result<GeminiReply> {
         val contents = buildConversation(history, prompt)
@@ -36,13 +36,16 @@ class GeminiProvider(context: Context) {
 
     private fun buildConversation(history: List<Pair<String, String>>, prompt: String): JSONArray {
         val contents = JSONArray()
-        history.takeLast(16).forEach { (role, text) -> contents.put(JSONObject().put("role", if (role == "assistant") "model" else "user").put("parts", JSONArray().put(JSONObject().put("text", text)))) }
+        history.takeLast(16).forEach { (role, text) ->
+            contents.put(JSONObject().put("role", if (role == "assistant") "model" else "user").put("parts", JSONArray().put(JSONObject().put("text", text))))
+        }
         contents.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt))))
         return contents
     }
 
     private fun request(contents: JSONArray): Result<GeminiReply> {
-        val apiKey = runCatching { keyStore.read() }.getOrNull() ?: return Result.failure(IllegalStateException("Gemini API key is not configured."))
+        val apiKey = runCatching { keyStore.read() }.getOrNull()
+            ?: return Result.failure(IllegalStateException("Gemini API key is not configured."))
         return runCatching {
             val declaration = JSONObject()
                 .put("name", "android_command")
@@ -57,8 +60,13 @@ class GeminiProvider(context: Context) {
                 .put("contents", contents).put("tools", tools)
                 .put("generationConfig", JSONObject().put("maxOutputTokens", 1200))
             val connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"; connectTimeout = 12000; readTimeout = 30000; doOutput = true
-                setRequestProperty("Content-Type", "application/json"); setRequestProperty("x-goog-api-key", apiKey); setRequestProperty("Cache-Control", "no-store")
+                requestMethod = "POST"
+                connectTimeout = 12000
+                readTimeout = 30000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("x-goog-api-key", apiKey)
+                setRequestProperty("Cache-Control", "no-store")
             }
             activeConnection = connection
             try {
@@ -71,7 +79,10 @@ class GeminiProvider(context: Context) {
                     error(if (detail.isNotBlank()) "Gemini HTTP $code: $detail" else "Gemini HTTP $code")
                 }
                 parseReply(JSONObject(response))
-            } finally { if (activeConnection === connection) activeConnection = null; connection.disconnect() }
+            } finally {
+                if (activeConnection === connection) activeConnection = null
+                connection.disconnect()
+            }
         }
     }
 
@@ -85,7 +96,9 @@ class GeminiProvider(context: Context) {
             val part = parts.optJSONObject(i) ?: continue
             val value = part.optString("text").trim()
             if (value.isNotBlank()) text = if (text == null) value else "$text\n$value"
-            part.optJSONObject("functionCall")?.let { fc -> call = GeminiToolCall(fc.optString("id", "android_command_$i"), fc.optString("name"), fc.optJSONObject("args") ?: JSONObject()) }
+            part.optJSONObject("functionCall")?.let { fc ->
+                call = GeminiToolCall(fc.optString("id", "android_command_$i"), fc.optString("name"), fc.optJSONObject("args") ?: JSONObject())
+            }
         }
         return GeminiReply(text?.trim(), call, content)
     }
