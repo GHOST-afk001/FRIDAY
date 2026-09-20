@@ -84,8 +84,12 @@ class FridayCommandProcessor {
             normalized in setOf("go back", "back", "peeche jao", "वापस जाओ") -> "back"
             normalized in setOf("open recents", "recent apps", "recent kholo", "recent apps kholo", "रीसेंट खोलो") -> "recents"
             normalized in setOf("open notifications", "notifications kholo", "notification kholo", "नोटिफिकेशन खोलो") -> "notifications"
+            normalized.startsWith("click_id ") && normalized.length > 9 -> "click_id ${normalized.substringAfter("click_id ").trim()}"
             normalized.startsWith("click ") && normalized.length > 6 -> "click:${normalized.substringAfter("click ").trim()}"
+            normalized.startsWith("type ") && normalized.length > 5 -> "type ${normalized.substringAfter("type ").trim()}"
             normalized.startsWith("tap ") && normalized.length > 4 -> "tap ${normalized.substringAfter("tap ").trim()}"
+            normalized == "scroll down" || normalized == "scroll" || normalized == "neeche scroll karo" -> "scroll down"
+            normalized.startsWith("wait_click_type|") -> normalized
             else -> return null
         }
         return FridayResponse("Visible UI control execute kar rahi hoon.", FridayAction.AccessibilityCommand(command), needsConfirmation = false)
