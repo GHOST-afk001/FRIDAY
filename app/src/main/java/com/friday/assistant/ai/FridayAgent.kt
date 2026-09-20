@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -36,6 +37,17 @@ class FridayAgent(context: Context) {
     fun configureApiKey(key: String): Boolean = !closed && gemini.setApiKey(key)
     fun hasApiKey() = !closed && gemini.isConfigured()
     fun clearApiKey() { if (!closed) gemini.clearApiKey() }
+
+    fun verifyGemini(callback: (Boolean, String) -> Unit) {
+        if (closed) return
+        brainScope.launch {
+            val result = gemini.testConnection()
+            val message = result.getOrElse { it.message ?: "Gemini connection failed" }
+            withContext(Dispatchers.Main.immediate) {
+                if (!closed) callback(result.isSuccess, message)
+            }
+        }
+    }
 
     fun handle(input: String, callback: (String, Boolean) -> Unit) {
         if (closed) return
@@ -105,8 +117,15 @@ class FridayAgent(context: Context) {
                     append("\nUser message: ").append(input)
                 }
 
-                var reply = gemini.askWithTools(enrichedInput, history).getOrElse {
-                    FridayRuntime.update("BRAIN ERROR", "Gemini request failed; no device action was claimed", false)
+                var requestResult = gemini.askWithTools(enrichedInput, history)
+                var retry = 0
+                while (requestResult.isFailure && retry < 2 && isActive && !closed) {
+                    retry++
+                    delay(700L * retry)
+                    requestResult = gemini.askWithTools(enrichedInput, history)
+                }
+                var reply = requestResult.getOrElse {
+                    FridayRuntime.update("BRAIN ERROR", it.message ?: "Gemini request failed; no device action was claimed", false)
                     finishFailure(input, callback, myGeneration)
                     return@launch
                 }
