@@ -50,7 +50,14 @@ class AppLauncher(private val context: Context) {
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
                     start(Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(clean)}")))
                 } else {
-                    start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(clean)}")))
+                    pendingCallNumber = clean
+                    runCatching {
+                        context.startActivity(Intent(context, com.friday.assistant.FridayHudActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                            putExtra(com.friday.assistant.FridayHudActivity.EXTRA_REQUEST_CALL_PERMISSION, true)
+                        })
+                    }
+                    false
                 }
             }
             is FridayAction.SmsContact -> {
@@ -223,11 +230,19 @@ class AppLauncher(private val context: Context) {
 
     companion object {
         @Volatile private var pendingTorchRequest: Boolean? = null
+        @Volatile private var pendingCallNumber: String? = null
 
         fun resumePendingTorch(context: Context): Boolean {
             val request = pendingTorchRequest ?: return false
             pendingTorchRequest = null
             return AppLauncher(context.applicationContext).launch(if (request) FridayAction.FlashlightOn else FridayAction.FlashlightOff)
+        }
+
+        fun resumePendingCall(context: Context): Boolean {
+            val number = pendingCallNumber ?: return false
+            pendingCallNumber = null
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) return false
+            return AppLauncher(context.applicationContext).start(Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(number)}")))
         }
     }
 
