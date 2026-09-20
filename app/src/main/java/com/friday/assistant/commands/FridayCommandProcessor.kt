@@ -142,7 +142,8 @@ class FridayCommandProcessor {
         val patterns = listOf(
             Regex("^(?:open|launch|start|khol(?:o|kar|ke)?|kholo)\\s+whatsapp\\s+(?:and|aur|then|phir|fir)\\s+(?:say|tell|bolo|bolna)\\s+(?:hi|hello|hey)\\s+(?:to|ko)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,30})$", RegexOption.IGNORE_CASE),
             Regex("^whatsapp\\s+(?:khol(?:o|kar|ke)?|kholo|open)\\s+(?:and|aur|then|phir|fir)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,30}?)\\s+(?:ko|to)\\s+(?:say|tell|bolo|bolna)\\s+(hi|hello|hey)$", RegexOption.IGNORE_CASE),
-            Regex("^(?:open|launch|start|khol(?:o|kar|ke)?|kholo)\\s+whatsapp\\s+(?:and|aur|then|phir|fir)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,30}?)\\s+(?:ko|to)\\s+(hi|hello|hey)\\s+(?:bolo|bolna|bhejo|bhej do)$", RegexOption.IGNORE_CASE)
+            Regex("^(?:open|launch|start|khol(?:o|kar|ke)?|kholo)\\s+whatsapp\\s+(?:and|aur|then|phir|fir)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,40}?)\\s+(?:ko|to)\\s+(hi|hello|hey)\\s+(?:bolo|bolna|bhejo|bhej do)$", RegexOption.IGNORE_CASE),
+            Regex("^(?:open|launch|start|khol(?:o|kar|ke)?|kholo)\\s+whatsapp\\s+(?:and|aur|then|phir|fir)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,40}?)\\s+(?:ko|to)\\s+(?:bolo|bolna|bhejo|bhej do)\\s+(.+)$", RegexOption.IGNORE_CASE)
         )
         return patterns.firstNotNullOfOrNull { match ->
             val g = match.find(source)?.groupValues ?: return@firstNotNullOfOrNull null
@@ -155,7 +156,8 @@ class FridayCommandProcessor {
     private fun parseWhatsappMessage(raw: String): Pair<String, String>? {
         val source = raw.trim().replace(Regex("^\\s*(?:hey\\s+)?friday\\b\\s*", RegexOption.IGNORE_CASE), "").trim()
         val patterns = listOf(
-            Regex("^(?:whatsapp)(?:\\s+(?:par|pe|mein|me))?\\s+(?:message|msg|text|sms)\\s+(?:karo|kar|send|bhejo|bhej do)?\\s*(?:to|ko|mein|par|pe)?\\s*([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,30}?)\\s+(?:ki|that|message|text|bolo|bolna)\\s+(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^(?:open|launch|start|khol(?:o|kar|ke)?|kholo)\\s+whatsapp\\s+(?:and|aur|then|phir|fir)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,40}?)\\s+(?:ko|to)\\s+(?:message|msg|text|bolo|bolna|bhejo|bhej do)\\s*(?::|,|-|\\s+ki\\s+|\\s+that\\s+)?(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^(?:whatsapp)(?:\\s+(?:par|pe|mein|me))?\\s+(?:message|msg|text|sms)\\s+(?:karo|kar|send|bhejo|bhej do)?\\s*(?:to|ko|mein|par|pe)?\\s*([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,40}?)\\s+(?:ki|that|message|text|bolo|bolna)\\s+(.+)$", RegexOption.IGNORE_CASE),
             Regex("^(?:message|msg|text)\\s+(?:on\\s+)?whatsapp\\s+(?:to|ko)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,30}?)\\s+(?:ki|that|message|text)\\s+(.+)$", RegexOption.IGNORE_CASE)
         )
         return patterns.firstNotNullOfOrNull { it.find(source)?.groupValues?.let { g -> g[1].trim() to g[2].trim() } }
