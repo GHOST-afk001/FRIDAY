@@ -12,6 +12,9 @@ class FridayCommandProcessor {
         parseWhatsappMessage(raw)?.let { (name, message) ->
             return FridayResponse("${name.trim()} ko WhatsApp message bhej rahi hoon.", FridayAction.AccessibilityCommand("whatsapp_message|${name.trim()}|${message.trim()}"), needsConfirmation = false)
         }
+        parseWhatsappQuickMessage(raw)?.let { (name, message) ->
+            return FridayResponse("${name.trim()} ko WhatsApp par “${message.trim()}” bhej rahi hoon.", FridayAction.AccessibilityCommand("whatsapp_message|${name.trim()}|${message.trim()}"), needsConfirmation = false)
+        }
         CompoundCommandParser.parse(raw, this)?.let { return it }
         return processWithoutCompound(raw)
     }
@@ -119,6 +122,23 @@ class FridayCommandProcessor {
             "instagram" -> FridayResponse("Instagram khol rahi hoon. Search ke liye Accessibility control chahiye.", FridayAction.Sequence(listOf(FridayAction.Instagram, FridayAction.AccessibilityCommand("click Search"))), needsConfirmation = true)
             else -> null
         }
+    }
+
+    private fun parseWhatsappQuickMessage(raw: String): Pair<String, String>? {
+        val source = raw.trim()
+            .replace(Regex("^\\s*(?:hey\\s+)?friday\\b\\s*", RegexOption.IGNORE_CASE), "")
+            .trim()
+        val patterns = listOf(
+            Regex("^(?:open|launch|start|khol(?:o|kar|ke)?|kholo)\\s+whatsapp\\s+(?:and|aur|then|phir|fir)\\s+(?:say|tell|bolo|bolna)\\s+(?:hi|hello|hey)\\s+(?:to|ko)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,30})$", RegexOption.IGNORE_CASE),
+            Regex("^whatsapp\\s+(?:khol(?:o|kar|ke)?|kholo|open)\\s+(?:and|aur|then|phir|fir)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,30}?)\\s+(?:ko|to)\\s+(?:say|tell|bolo|bolna)\\s+(hi|hello|hey)$", RegexOption.IGNORE_CASE),
+            Regex("^(?:open|launch|start|khol(?:o|kar|ke)?|kholo)\\s+whatsapp\\s+(?:and|aur|then|phir|fir)\\s+([\\p{L}\\p{M}][\\p{L}\\p{M} ]{0,30}?)\\s+(?:ko|to)\\s+(hi|hello|hey)\\s+(?:bolo|bolna|bhejo|bhej do)$", RegexOption.IGNORE_CASE)
+        )
+        return patterns.firstNotNullOfOrNull { match ->
+            val g = match.find(source)?.groupValues ?: return@firstNotNullOfOrNull null
+            if (g.size >= 3 && g[2].isNotBlank()) g[1].trim() to g[2].trim()
+            else if (g.size >= 2) g[1].trim() to "hi"
+            else null
+        }?.takeIf { it.first.isNotBlank() }
     }
 
     private fun parseWhatsappMessage(raw: String): Pair<String, String>? {
