@@ -14,6 +14,8 @@ import com.friday.assistant.runtime.FridayRuntime
  */
 class FridayAccessibilityService : AccessibilityService() {
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var whatsappTask: WhatsAppTask? = null
+    private var whatsappPhase = 0
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -27,6 +29,81 @@ class FridayAccessibilityService : AccessibilityService() {
             event.eventType != android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
         pendingWhatsAppReply?.let { reply ->
             if (replyToWhatsApp(reply)) pendingWhatsAppReply = null
+        }
+        if (whatsappTask != null) runWhatsAppTask()
+    }
+
+    private fun runWhatsAppTask(): Boolean {
+        val task = whatsappTask ?: return true
+        val root = rootInActiveWindow ?: return false
+        return try {
+            when (whatsappPhase) {
+                0 -> {
+                    val search = findByViewId(root, "$WHATSAPP_PACKAGE:id/menuitem_search")
+                        ?: findByViewId(root, "$WHATSAPP_PACKAGE:id/search")
+                        ?: findNodeByDescription(root, "Search")
+                        ?: findNode(root, "Search")
+                        ?: findNode(root, "खोजें")
+                    if (search == null) return false
+                    if (!performClick(search)) return false
+                    whatsappPhase = 1
+                    mainHandler.postDelayed({ runWhatsAppTask() }, 650L)
+                    true
+                }
+                1 -> {
+                    val field = findByViewId(root, "$WHATSAPP_PACKAGE:id/search_input")
+                        ?: findByViewId(root, "$WHATSAPP_PACKAGE:id/search_src_text")
+                        ?: findNodeRecursive(root) { n -> n.isVisibleToUser && n.isEditable }
+                    if (field == null) return false
+                    val args = android.os.Bundle().apply {
+                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, task.contact)
+                    }
+                    if (!field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
+                    whatsappPhase = 2
+                    mainHandler.postDelayed({ runWhatsAppTask() }, 900L)
+                    true
+                }
+                2 -> {
+                    val contact = findNode(root, task.contact) ?: findNodeRecursive(root) {
+                        n -> n.isVisibleToUser && n.text?.toString()?.contains(task.contact, ignoreCase = true) == true
+                    }
+                    if (contact == null) return false
+                    if (!performClick(contact)) return false
+                    whatsappPhase = 3
+                    mainHandler.postDelayed({ runWhatsAppTask() }, 900L)
+                    true
+                }
+                3 -> {
+                    val entry = findByViewId(root, "$WHATSAPP_PACKAGE:id/entry")
+                        ?: findNodeRecursive(root) { n -> n.isVisibleToUser && n.isEditable }
+                        ?: return false
+                    val args = android.os.Bundle().apply {
+                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, task.message)
+                    }
+                    if (!entry.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
+                    whatsappPhase = 4
+                    mainHandler.postDelayed({ runWhatsAppTask() }, 500L)
+                    true
+                }
+                else -> {
+                    val send = findByViewId(root, "$WHATSAPP_PACKAGE:id/send")
+                        ?: findNodeByDescription(root, "Send")
+                        ?: findNodeByDescription(root, "Send message")
+                        ?: findNode(root, "Send")
+                        ?: findNode(root, "भेजें")
+                        ?: findNode(root, "Bhej")
+                        ?: return false
+                    val sent = performClick(send)
+                    if (sent) {
+                        whatsappTask = null
+                        whatsappPhase = 0
+                        FridayRuntime.update("VERIFIED", "WhatsApp message sent", true)
+                    }
+                    sent
+                }
+            }
+        } catch (_: Throwable) {
+            false
         }
     }
 
@@ -178,6 +255,7 @@ class FridayAccessibilityService : AccessibilityService() {
         private const val WHATSAPP_PACKAGE = "com.whatsapp"
         @Volatile private var pendingWhatsAppReply: String? = null
         @Volatile private var instance: FridayAccessibilityService? = null
+        private data class WhatsAppTask(val contact: String, val message: String)
 
         fun isConnected(): Boolean = instance != null
         fun clickText(text: String): Boolean = instance?.clickText(text) == true
@@ -193,6 +271,13 @@ class FridayAccessibilityService : AccessibilityService() {
         fun clickResourceId(viewId: String): Boolean = instance?.clickResourceId(viewId) == true
         fun queueWhatsAppMessage(message: String) {
             if (message.isNotBlank()) pendingWhatsAppReply = message
+        }
+        fun queueWhatsAppUiTask(contact: String, message: String) {
+            val service = instance ?: return
+            if (contact.isBlank() || message.isBlank()) return
+            service.whatsappTask = WhatsAppTask(contact.trim(), message.trim())
+            service.whatsappPhase = 0
+            service.mainHandler.post { service.runWhatsAppTask() }
         }
         fun replyToWhatsApp(replyText: String): Boolean {
             val service = instance ?: return false
