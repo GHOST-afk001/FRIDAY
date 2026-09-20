@@ -24,6 +24,7 @@ class FridayCommandProcessor {
         val command = raw.lowercase(Locale.ROOT)
         if (command.isBlank()) return FridayResponse("I didn't catch that. Please say it again.")
         if (isGreeting(command)) return FridayResponse("Yes Boss. Main Friday hoon. Bataiye.")
+        parseMood(command)?.let { return it }
         if (command.contains("who are you") || command.contains("tum kaun") || command.contains("aap kaun")) return FridayResponse("Main Friday hoon, aapki personal Android assistant. Ready when you are, Boss.")
 
         val normalized = command.replace(Regex("^\\s*(?:hey\\s+)?friday\\b\\s*"), "").trim()
@@ -84,6 +85,16 @@ class FridayCommandProcessor {
     }
 
     private fun isGreeting(c: String) = c == "hello" || c == "hello friday" || c == "hi friday" || c == "namaste" || c == "नमस्ते"
+
+    private fun parseMood(c: String): FridayResponse? {
+        val bad = listOf("mood kharab", "mood off", "mood is bad", "feeling bad", "feeling low", "sad hoon", "dukhi hoon", "मन खराब", "मूड खराब", "मूड ऑफ", "उदास हूं", "उदास हूँ")
+        val good = listOf("mood acha", "mood accha", "mood good", "happy hoon", "khush hoon", "मूड अच्छा", "मूड अच्छा है", "खुश हूं", "खुश हूँ")
+        return when {
+            bad.any { c.contains(it) } -> FridayResponse("Boss, kya hua? Main yahin hoon. Aap chahein toh mujhe bata sakte hain — main sun rahi hoon.")
+            good.any { c.contains(it) } -> FridayResponse("Ye sunke achha laga Boss 😄 Bataiye, aaj kya karna hai?")
+            else -> null
+        }
+    }
 
     private fun isEmergencySosCommand(c: String): Boolean {
         val normalized = c.trim().replace(Regex("\\s+"), " ")
