@@ -38,7 +38,7 @@ class AppLauncher(private val context: Context) {
             FridayAction.VolumeDown -> adjustVolume(AudioManager.ADJUST_LOWER)
             is FridayAction.Timer -> start(Intent(AlarmClock.ACTION_SET_TIMER).apply { putExtra(AlarmClock.EXTRA_LENGTH, action.seconds); putExtra(AlarmClock.EXTRA_SKIP_UI, true) })
             is FridayAction.Alarm -> start(Intent(AlarmClock.ACTION_SET_ALARM).apply { putExtra(AlarmClock.EXTRA_HOUR, action.hour); putExtra(AlarmClock.EXTRA_MINUTES, action.minute); putExtra(AlarmClock.EXTRA_SKIP_UI, true) })
-            is FridayAction.AlarmAfter -> setRelativeAlarm(action.seconds)
+            is FridayAction.AlarmAfter -> start(Intent(AlarmClock.ACTION_SET_TIMER).apply { putExtra(AlarmClock.EXTRA_LENGTH, action.seconds); putExtra(AlarmClock.EXTRA_SKIP_UI, true) })
             is FridayAction.MapQuery -> {
                 val uri = if (action.navigation) Uri.parse("google.navigation:q=${Uri.encode(action.query)}") else Uri.parse("geo:0,0?q=${Uri.encode(action.query)}")
                 start(Intent(Intent.ACTION_VIEW, uri))
@@ -134,20 +134,6 @@ class AppLauncher(private val context: Context) {
         if (!opened) return false
         Handler(Looper.getMainLooper()).postDelayed({ FridayAutomation.clickSend() }, 1800L)
         return true
-    }
-
-    private fun setRelativeAlarm(seconds: Int): Boolean {
-        val now = java.util.Calendar.getInstance()
-        now.timeInMillis += seconds * 1000L
-        val alarm = Intent(AlarmClock.ACTION_SET_ALARM).apply {
-            putExtra(AlarmClock.EXTRA_HOUR, now.get(java.util.Calendar.HOUR_OF_DAY))
-            putExtra(AlarmClock.EXTRA_MINUTES, now.get(java.util.Calendar.MINUTE))
-            putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-            if (android.os.Build.VERSION.SDK_INT >= 24) {
-                putExtra(AlarmClock.EXTRA_DAYS, arrayListOf(now.get(java.util.Calendar.DAY_OF_WEEK) - 1))
-            }
-        }
-        return start(alarm)
     }
 
     private fun openCalculator(): Boolean {
