@@ -306,7 +306,7 @@ class FridayHudActivity : ComponentActivity() {
             appendLine("Microphone: ${if (mic) "OK" else "MISSING"}")
             appendLine("Camera/flashlight permission: ${if (camera) "OK" else "MISSING"}")
             appendLine("Contacts/WhatsApp lookup: ${if (contacts) "OK" else "MISSING"}")
-            appendLine("Direct calling permission: ${if (ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) "OK" else "MISSING"}")
+            appendLine("Direct calling permission: ${if (ContextCompat.checkSelfPermission(this@FridayHudActivity, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) "OK" else "MISSING"}")
             appendLine("Notifications: ${if (notifications) "OK" else "MISSING"}")
             appendLine("Accessibility automation: ${if (accessibilityEnabled) "ON" else "OFF"}")
             appendLine("Android Assistant role: ${if (assistantHeld) "SELECTED" else "NOT SELECTED"}")
