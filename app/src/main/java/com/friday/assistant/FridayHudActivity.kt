@@ -146,6 +146,12 @@ class FridayHudActivity : ComponentActivity() {
         }
         bottom.addView(keyButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(8) })
 
+        val assistantButton = android.widget.Button(this).apply {
+            text = "SELECT FRIDAY AS ANDROID ASSISTANT"
+            setOnClickListener { requestAssistantRole() }
+        }
+        bottom.addView(assistantButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
+
         root.addView(bottom, matchWrap())
 
         return root
@@ -267,6 +273,23 @@ class FridayHudActivity : ComponentActivity() {
             .onFailure {
                 FridayRuntime.update("VOICE ERROR", it.message ?: "Could not start FRIDAY voice service", false)
             }
+    }
+
+    private fun requestAssistantRole() {
+        if (android.os.Build.VERSION.SDK_INT < 29) {
+            android.widget.Toast.makeText(this, "Android Assistant role needs Android 10+.", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+        runCatching {
+            val roles = getSystemService(android.app.role.RoleManager::class.java)
+            if (roles?.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT) == true) {
+                startActivity(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))
+            } else {
+                android.widget.Toast.makeText(this, "This phone does not expose the Android Assistant role.", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }.onFailure {
+            android.widget.Toast.makeText(this, "Android Assistant selection failed: ${it.message ?: "unknown error"}", android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun openAccessibility() {
