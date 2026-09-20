@@ -66,7 +66,10 @@ class GeminiProvider(context: Context) {
                 val code = connection.responseCode
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
                 val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (code !in 200..299) {\n                    val detail = runCatching { JSONObject(response).optJSONObject("error")?.optString("message") }.getOrNull().orEmpty()\n                    error(if (detail.isNotBlank()) "Gemini HTTP $code: $detail" else "Gemini HTTP $code")\n                }
+                if (code !in 200..299) {
+                    val detail = runCatching { JSONObject(response).optJSONObject("error")?.optString("message") }.getOrNull().orEmpty()
+                    error(if (detail.isNotBlank()) "Gemini HTTP $code: $detail" else "Gemini HTTP $code")
+                }
                 parseReply(JSONObject(response))
             } finally { if (activeConnection === connection) activeConnection = null; connection.disconnect() }
         }
