@@ -19,32 +19,18 @@ class GeminiProvider(context: Context) {
     fun clearApiKey() = keyStore.clear()
     fun cancel() { activeConnection?.disconnect() }
 
-    /** Performs a minimal Gemini request without tools so key/model/network failures are isolated. */
-    fun testConnection(): Result<String> {
-        val apiKey = runCatching { keyStore.read() }.getOrNull()
-            ?: return Result.failure(IllegalStateException("Gemini API key is not configured."))
-        return runCatching {
-            val body = JSONObject()
-                .put("contents", JSONArray().put(
-                    JSONObject()
-                        .put("role", "user")
-                        .put("parts", JSONArray().put(JSONObject().put("text", "Reply with exactly: OK")))
-                ))
-                .put("generationConfig", JSONObject().put("maxOutputTokens", 16))
-            val connection = openConnection(apiKey)
-            activeConnection = connection
-            try {
-                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-                val code = connection.responseCode
-                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-                val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (code !in 200..299) throw IllegalStateException(formatHttpError(code, response))
-                parseReply(JSONObject(response)).text?.ifBlank { "OK" } ?: "OK"
-            } finally {
-                if (activeConnection === connection) activeConnection = null
-                connection.disconnect()
-            }
-        }
+    /** Uses the current Gemini Interactions API so the same path supports model output,
+     * Google Search grounding, and client-side Android function calling. */
+    fun testConnection(): Result<String> = runCatching {
+        val apiKey = keyStore.read()?.takeIf { it.isNotBlank() }
+            ?: error("Gemini API key is not configured.")
+        val body = JSONObject()
+            .put("model", model)
+            .put("input", "Reply with exactly: OK")
+            .put("store", false)
+            .put("generation_config", JSONObject().put("max_output_tokens", 16))
+        val root = postInteraction(apiKey, body)
+        extractText(root).ifBlank { "OK" }
     }
 
     fun ask(prompt: String, history: List<Pair<String, String>> = emptyList()): Result<String> = runCatching {
@@ -53,99 +39,201 @@ class GeminiProvider(context: Context) {
     }
 
     fun askWithTools(prompt: String, history: List<Pair<String, String>> = emptyList()): Result<GeminiReply> =
-        request(buildConversation(history, prompt))
-
-    fun continueWithToolResult(history: List<Pair<String, String>>, prompt: String, modelContent: JSONObject, call: GeminiToolCall, result: JSONObject): Result<GeminiReply> {
-        val contents = buildConversation(history, prompt)
-        contents.put(modelContent)
-        contents.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("functionResponse", JSONObject().put("name", call.name).put("id", call.id).put("response", result)))))
-        return request(contents)
-    }
-
-    private fun buildConversation(history: List<Pair<String, String>>, prompt: String): JSONArray {
-        val contents = JSONArray()
-        history.takeLast(16).forEach { (role, text) ->
-            contents.put(JSONObject().put("role", if (role == "assistant") "model" else "user").put("parts", JSONArray().put(JSONObject().put("text", text))))
+        runCatching {
+            val apiKey = keyStore.read()?.takeIf { it.isNotBlank() }
+                ?: error("Gemini API key is not configured.")
+            val input = buildInput(history, prompt)
+            val root = postInteraction(apiKey, interactionBody(input))
+            parseInteraction(root)
         }
-        contents.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt))))
-        return contents
+
+    fun continueWithToolResult(
+        history: List<Pair<String, String>>,
+        prompt: String,
+        modelContent: JSONObject,
+        call: GeminiToolCall,
+        result: JSONObject
+    ): Result<GeminiReply> = runCatching {
+        val apiKey = keyStore.read()?.takeIf { it.isNotBlank() }
+            ?: error("Gemini API key is not configured.")
+        val interactionId = modelContent.optString("interaction_id").takeIf { it.isNotBlank() }
+            ?: error("Gemini interaction id missing after tool call")
+
+        val functionResult = JSONObject()
+            .put("type", "function_result")
+            .put("name", call.name)
+            .put("call_id", call.id)
+            .put("result", JSONArray().put(
+                JSONObject()
+                    .put("type", "text")
+                    .put("text", result.toString())
+            ))
+
+        val body = interactionBody(JSONArray().put(functionResult))
+            .put("previous_interaction_id", interactionId)
+
+        parseInteraction(postInteraction(apiKey, body))
     }
 
-    private fun request(contents: JSONArray): Result<GeminiReply> {
-        val apiKey = runCatching { keyStore.read() }.getOrNull()
-            ?: return Result.failure(IllegalStateException("Gemini API key is not configured."))
-        return runCatching {
-            val declaration = JSONObject()
-                .put("name", "android_command")
-                .put("description", "Control the user's Android phone through the local executor and Accessibility Service. Use this for every device action. You can open apps, perform web/app searches, click visible controls, type text, scroll, go Home/Back/Recents, toggle supported device controls, and send WhatsApp messages. For multi-step requests, issue one concrete action at a time and continue until the requested task is complete.")
-                .put("parameters", JSONObject()
-                    .put("type", "OBJECT")
-                    .put("properties", JSONObject().put("command", JSONObject().put("type", "STRING").put("description", "Natural-language Android action to execute")))
-                    .put("required", JSONArray().put("command")))
-            val tools = JSONArray()
-                .put(JSONObject().put("googleSearch", JSONObject()))
-                .put(JSONObject().put("functionDeclarations", JSONArray().put(declaration)))
-            val body = JSONObject()
-                .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", SYSTEM_PROMPT))))
-                .put("contents", contents).put("tools", tools)
-                .put("toolConfig", JSONObject().put("includeServerSideToolInvocations", true))
-                .put("generationConfig", JSONObject().put("maxOutputTokens", 1200))
-            val connection = openConnection(apiKey)
-            activeConnection = connection
-            try {
-                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-                val code = connection.responseCode
-                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-                val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (code !in 200..299) error(formatHttpError(code, response))
-                parseReply(JSONObject(response))
-            } finally {
-                if (activeConnection === connection) activeConnection = null
-                connection.disconnect()
-            }
+    private fun interactionBody(input: Any): JSONObject {
+        val androidFunction = JSONObject()
+            .put("type", "function")
+            .put("name", "android_command")
+            .put("description", "Control the user's Android phone through the local executor and Accessibility Service. Use this for every phone action: opening installed apps, searching inside apps, typing, clicking visible controls, scrolling, Home/Back/Recents, flashlight and other supported controls, calling contacts, and WhatsApp messages. For multi-step requests, issue concrete actions and continue until the requested task is complete.")
+            .put("parameters", JSONObject()
+                .put("type", "object")
+                .put("properties", JSONObject().put(
+                    "command",
+                    JSONObject().put("type", "string").put("description", "A concrete natural-language Android action to execute now.")
+                ))
+                .put("required", JSONArray().put("command")))
+
+        val tools = JSONArray()
+            .put(JSONObject().put("type", "google_search"))
+            .put(androidFunction)
+
+        return JSONObject()
+            .put("model", model)
+            .put("input", input)
+            .put("system_instruction", SYSTEM_PROMPT)
+            .put("tools", tools)
+            .put("store", false)
+            .put("generation_config", JSONObject().put("max_output_tokens", 1200))
+    }
+
+    private fun buildInput(history: List<Pair<String, String>>, prompt: String): JSONArray {
+        val input = JSONArray()
+        history.takeLast(12).forEach { (role, text) ->
+            input.put(
+                JSONObject().apply {
+                    put("type", if (role == "assistant") "model_output" else "user_input")
+                    put("content", JSONArray().put(JSONObject().put("type", "text").put("text", text)))
+                }
+            )
         }
+        input.put(JSONObject().put("type", "user_input").put(
+            "content", JSONArray().put(JSONObject().put("type", "text").put("text", prompt))
+        ))
+        return input
     }
 
-    private fun openConnection(apiKey: String): HttpURLConnection =
-        (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection).apply {
+    private fun postInteraction(apiKey: String, body: JSONObject): JSONObject {
+        val connection = (URL("https://generativelanguage.googleapis.com/v1beta/interactions").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 12000
-            readTimeout = 30000
+            readTimeout = 45000
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("x-goog-api-key", apiKey)
             setRequestProperty("Cache-Control", "no-store")
         }
-
-    private fun formatHttpError(code: Int, response: String): String {
-        val detail = runCatching { JSONObject(response).optJSONObject("error")?.optString("message") }.getOrNull().orEmpty()
-        return if (detail.isNotBlank()) "Gemini HTTP $code: $detail" else "Gemini HTTP $code"
+        activeConnection = connection
+        return try {
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) error(formatHttpError(code, response))
+            JSONObject(response)
+        } finally {
+            if (activeConnection === connection) activeConnection = null
+            connection.disconnect()
+        }
     }
 
-    private fun parseReply(root: JSONObject): GeminiReply {
-        val candidate = root.optJSONArray("candidates")?.optJSONObject(0) ?: error("Gemini returned no candidates")
-        val content = candidate.optJSONObject("content") ?: error("Gemini returned no content")
-        val parts = content.optJSONArray("parts") ?: JSONArray()
+    private fun parseInteraction(root: JSONObject): GeminiReply {
+        val steps = root.optJSONArray("steps") ?: JSONArray()
         var text: String? = null
         var call: GeminiToolCall? = null
-        for (i in 0 until parts.length()) {
-            val part = parts.optJSONObject(i) ?: continue
-            val value = part.optString("text").trim()
-            if (value.isNotBlank()) text = if (text == null) value else "$text\n$value"
-            part.optJSONObject("functionCall")?.let { fc ->
-                call = GeminiToolCall(fc.optString("id", "android_command_$i"), fc.optString("name"), fc.optJSONObject("args") ?: JSONObject())
+
+        for (i in 0 until steps.length()) {
+            val step = steps.optJSONObject(i) ?: continue
+            when (step.optString("type")) {
+                "function_call" -> {
+                    val args = step.optJSONObject("arguments") ?: JSONObject()
+                    call = GeminiToolCall(
+                        step.optString("id", "android_command_$i"),
+                        step.optString("name"),
+                        args
+                    )
+                }
+                "model_output" -> {
+                    val content = step.optJSONArray("content") ?: continue
+                    val parts = mutableListOf<String>()
+                    for (j in 0 until content.length()) {
+                        val item = content.optJSONObject(j)
+                        if (item != null) {
+                            val t = item.optString("text").trim()
+                            if (t.isNotBlank()) parts += t
+                        } else {
+                            val raw = content.optString(j).trim()
+                            if (raw.isNotBlank()) parts += raw
+                        }
+                    }
+                    if (parts.isNotEmpty()) text = parts.joinToString("\n")
+                }
             }
         }
-        return GeminiReply(text?.trim(), call, content)
+
+        val metadata = JSONObject()
+            .put("interaction_id", root.optString("id"))
+            .put("status", root.optString("status"))
+
+        return GeminiReply(text?.trim(), call, metadata)
+    }
+
+    private fun extractText(root: JSONObject): String {
+        val steps = root.optJSONArray("steps") ?: return ""
+        for (i in steps.length() - 1 downTo 0) {
+            val step = steps.optJSONObject(i) ?: continue
+            if (step.optString("type") != "model_output") continue
+            val content = step.optJSONArray("content") ?: continue
+            val out = buildString {
+                for (j in 0 until content.length()) {
+                    val item = content.optJSONObject(j)
+                    if (item != null) append(item.optString("text"))
+                    else append(content.optString(j))
+                }
+            }.trim()
+            if (out.isNotBlank()) return out
+        }
+        return ""
+    }
+
+    private fun formatHttpError(code: Int, response: String): String {
+        val detail = runCatching {
+            JSONObject(response).optJSONObject("error")?.optString("message")
+        }.getOrNull().orEmpty()
+        return if (detail.isNotBlank()) "Gemini HTTP $code: $detail" else "Gemini HTTP $code"
     }
 
     companion object {
         private const val SYSTEM_PROMPT = """
-You are FRIDAY, Imroz Sir's personal Android AI assistant. Address him as Imroz Sir or Boss. Understand Hindi and Hinglish as the PRIMARY language and English as the SECONDARY language. Prefer natural Indian Hinglish in spoken responses unless the user clearly speaks only English.
-You are the reasoning brain; Android's local executor plus the enabled Accessibility Service are your hands. For phone actions, ALWAYS use android_command instead of merely explaining what to do. You may open apps, search the web or inside apps, tap visible controls, type into editable fields, scroll, navigate Home/Back/Recents, toggle supported device controls, and send WhatsApp messages when the required user permissions are enabled. For multi-step requests, plan the steps and execute them in order. If the first action only opens an app, immediately perform the next requested action; do not stop early. Examples: "YouTube kholo aur Arijit Singh search karo" => open YouTube then search; "WhatsApp kholo aur Baaji ko bolo hello" => open the Baaji chat and send hello; "Chrome kholo aur BMW M3 price search karo" => open Chrome and perform the search; "flashlight on karo" => execute the flashlight action. Never claim an action succeeded unless the executor confirms success. Do not stop at merely opening an app when the user asked you to complete the task. Verify each executor result before moving to the next step. Respect confirmation requirements for calls or other protected actions. Never bypass Android permissions, authentication, security or privacy boundaries.
-For normal questions, answer naturally and concisely. Keep spoken responses short and clear for TTS.
-For current weather, current events, recent news, prices, sports, or any worldwide/current information, use the Google Search tool and base the answer on the retrieved web results. For a request to search the user's phone/browser/app, use android_command to operate the device; Google Search is for answering current information, not for pretending to control the screen. Do not claim you searched if the tool did not return results.
-For emotional or casual conversation, respond naturally and empathetically; never stay silent just because the request is not an Android action.
+You are FRIDAY, Boss's personal Android AI assistant.
+Primary language: natural Indian Hinglish. Secondary language: English.
+You are the reasoning brain; the Android executor is your hands.
+
+PHONE ACTIONS:
+Always use android_command for phone actions. Never merely explain how to do the action.
+For a multi-step request, execute the steps in order and continue until the requested task is complete.
+Examples:
+- "YouTube kholo aur Arijit Singh search karo" -> open YouTube, then search Arijit Singh.
+- "WhatsApp kholo aur Baaji ko bolo hello" -> find Baaji, open the chat, type hello, send it.
+- "Chrome kholo aur BMW M3 price search karo" -> open Chrome and search.
+- "Meld Music kholo" -> resolve the installed app by launcher label and open it.
+- "Rahul ko call karo" -> execute the call action.
+Do not claim success unless the Android executor reports success.
+
+CURRENT INFORMATION:
+For current weather, forecasts, recent news, prices, sports and other changing information, use Google Search grounding and answer from its results.
+For searching the user's phone or an app UI, use android_command, not Google Search.
+
+MEMORY:
+Use the persistent memory context supplied by the app. If the user says "remember my favorite song is X", treat it as a durable preference. If asked later, use that memory rather than pretending not to know.
+
+STYLE:
+Keep spoken answers concise, natural and useful. Address the user as Boss.
+Never bypass Android permissions, authentication or security boundaries.
 """
     }
 }
