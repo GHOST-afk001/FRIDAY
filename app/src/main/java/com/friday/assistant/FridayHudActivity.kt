@@ -59,6 +59,10 @@ class FridayHudActivity : ComponentActivity() {
             ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), REQUEST_CAMERA)
         }
+        if (intent.getBooleanExtra(EXTRA_REQUEST_CALL_PERMISSION, false) &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CALL_PHONE), REQUEST_CALL)
+        }
         renderRuntime(FridayRuntime.status)
         startHandsFreeIfReady()
     }
@@ -302,6 +306,7 @@ class FridayHudActivity : ComponentActivity() {
             appendLine("Microphone: ${if (mic) "OK" else "MISSING"}")
             appendLine("Camera/flashlight permission: ${if (camera) "OK" else "MISSING"}")
             appendLine("Contacts/WhatsApp lookup: ${if (contacts) "OK" else "MISSING"}")
+            appendLine("Direct calling permission: ${if (ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) "OK" else "MISSING"}")
             appendLine("Notifications: ${if (notifications) "OK" else "MISSING"}")
             appendLine("Accessibility automation: ${if (accessibilityEnabled) "ON" else "OFF"}")
             appendLine("Android Assistant role: ${if (assistantHeld) "SELECTED" else "NOT SELECTED"}")
@@ -345,6 +350,7 @@ class FridayHudActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) needed += Manifest.permission.RECORD_AUDIO
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) needed += Manifest.permission.CAMERA
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) needed += Manifest.permission.READ_CONTACTS
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) needed += Manifest.permission.CALL_PHONE
         if (android.os.Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             needed += Manifest.permission.POST_NOTIFICATIONS
         }
@@ -380,6 +386,9 @@ class FridayHudActivity : ComponentActivity() {
                 if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) "Camera permission granted. Flashlight is ready." else "Camera permission denied. Flashlight cannot be controlled.",
                 android.widget.Toast.LENGTH_LONG
             ).show()
+        }
+        if (requestCode == REQUEST_CALL && ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+            com.friday.assistant.commands.AppLauncher.resumePendingCall(this)
         }
         if (requestCode == REQUEST_CAMERA && ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             com.friday.assistant.commands.AppLauncher.resumePendingTorch(this)
@@ -472,6 +481,8 @@ class FridayHudActivity : ComponentActivity() {
         private const val REQUEST_MIC = 7101
         private const val REQUEST_DEVICE_PERMISSIONS = 7102
         private const val REQUEST_CAMERA = 7103
+        private const val REQUEST_CALL = 7104
+        const val EXTRA_REQUEST_CALL_PERMISSION = "request_call_permission"
         const val EXTRA_REQUEST_CAMERA_PERMISSION = "friday_request_camera_permission"
     }
 }
