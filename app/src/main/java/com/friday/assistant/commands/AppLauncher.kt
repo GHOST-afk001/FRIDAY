@@ -54,7 +54,7 @@ class AppLauncher(private val context: Context) {
                     runCatching {
                         context.startActivity(Intent(context, com.friday.assistant.FridayHudActivity::class.java).apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                            putExtra(com.friday.assistant.FridayHudActivity.EXTRA_REQUEST_CALL_PERMISSION, true)
+                            putExtra("request_call_permission", true)
                         })
                     }
                     false
