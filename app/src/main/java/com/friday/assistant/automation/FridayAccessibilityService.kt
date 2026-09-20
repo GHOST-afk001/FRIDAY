@@ -279,6 +279,13 @@ class FridayAccessibilityService : AccessibilityService() {
             service.whatsappPhase = 0
             service.mainHandler.post { service.runWhatsAppTask() }
         }
+        fun queueWhatsAppDirectTask(message: String) {
+            val service = instance ?: return
+            if (message.isBlank()) return
+            service.whatsappTask = WhatsAppTask("", message.trim())
+            service.whatsappPhase = 3
+            service.mainHandler.post { service.runWhatsAppTask() }
+        }
         fun replyToWhatsApp(replyText: String): Boolean {
             val service = instance ?: return false
             return if (service.replyToWhatsApp(replyText)) true else {
