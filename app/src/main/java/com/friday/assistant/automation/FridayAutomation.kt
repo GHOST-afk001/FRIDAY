@@ -42,6 +42,18 @@ object FridayAutomation {
                 if (value.isBlank()) return null
                 if (FridayAccessibilityService.setText(value)) "Typed the requested text." else "I couldn't find an editable field."
             }
+            lower.startsWith("wait_click_type|") -> {
+                val parts = text.substringAfter("wait_click_type|").split("|", limit = 2)
+                if (parts.size != 2 || parts[0].isBlank() || parts[1].isBlank()) return null
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    if (!FridayAccessibilityService.clickText(parts[0]) &&
+                        !FridayAccessibilityService.clickDescription(parts[0])) return@postDelayed
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        FridayAccessibilityService.setText(parts[1])
+                    }, 350L)
+                }, 1200L)
+                "Opened the requested app and started its search flow."
+            }
             lower == "scroll down" || lower == "scroll" || lower == "neeche scroll karo" ->
                 if (FridayAccessibilityService.scrollForward()) "Scrolled down." else "I couldn't scroll the current screen."
             else -> null
