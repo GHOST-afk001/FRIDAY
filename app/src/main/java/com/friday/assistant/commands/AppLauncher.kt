@@ -139,7 +139,17 @@ class AppLauncher(private val context: Context) {
             FridayRuntime.update("AUTOMATION BLOCKED", "Enable FRIDAY Accessibility access before WhatsApp automation.", false)
             return false
         }
-        val opened = openPackageOrUrl("com.whatsapp", "https://www.whatsapp.com")
+        val number = findUniqueContactNumber(name)
+        if (number != null) {
+            var phone = number.filter { it.isDigit() }
+            if (phone.length == 10) phone = "91$phone"
+            val chat = Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$phone")).apply { setPackage("com.whatsapp") }
+            if (!start(chat)) return false
+            com.friday.assistant.automation.FridayAccessibilityService.queueWhatsAppDirectTask(message)
+            FridayRuntime.update("WHATSAPP AUTOMATION", "Opened $name chat and preparing the message", true)
+            return true
+        }
+        val opened = openInstalledApp("com.whatsapp", "WhatsApp")
         if (!opened) return false
         com.friday.assistant.automation.FridayAccessibilityService.queueWhatsAppUiTask(name, message)
         FridayRuntime.update("WHATSAPP AUTOMATION", "Finding $name and preparing the message", true)
