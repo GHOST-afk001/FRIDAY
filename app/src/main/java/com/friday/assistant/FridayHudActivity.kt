@@ -158,6 +158,12 @@ class FridayHudActivity : ComponentActivity() {
         }
         bottom.addView(accessibilityButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
 
+        val permissionsButton = android.widget.Button(this).apply {
+            text = "GRANT FRIDAY DEVICE PERMISSIONS"
+            setOnClickListener { requestDevicePermissions() }
+        }
+        bottom.addView(permissionsButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
+
         root.addView(bottom, matchWrap())
 
         return root
@@ -253,6 +259,21 @@ class FridayHudActivity : ComponentActivity() {
             .show()
     }
 
+    private fun requestDevicePermissions() {
+        val needed = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) needed += Manifest.permission.RECORD_AUDIO
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) needed += Manifest.permission.CAMERA
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) needed += Manifest.permission.READ_CONTACTS
+        if (android.os.Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            needed += Manifest.permission.POST_NOTIFICATIONS
+        }
+        if (needed.isEmpty()) {
+            android.widget.Toast.makeText(this, "FRIDAY device permissions are already granted.", android.widget.Toast.LENGTH_SHORT).show()
+        } else {
+            ActivityCompat.requestPermissions(this, needed.toTypedArray(), REQUEST_DEVICE_PERMISSIONS)
+        }
+    }
+
     private fun startHandsFreeIfReady() {
         if (!agent.hasApiKey()) {
             FridayRuntime.update("GEMINI SETUP", "Add your Gemini API key to activate FRIDAY", true)
@@ -272,8 +293,8 @@ class FridayHudActivity : ComponentActivity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_MIC && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            startHandsFreeIfReady()
+        if (requestCode == REQUEST_MIC || requestCode == REQUEST_DEVICE_PERMISSIONS) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startHandsFreeIfReady()
         }
     }
 
@@ -358,5 +379,6 @@ class FridayHudActivity : ComponentActivity() {
 
     companion object {
         private const val REQUEST_MIC = 7101
+        private const val REQUEST_DEVICE_PERMISSIONS = 7102
     }
 }
