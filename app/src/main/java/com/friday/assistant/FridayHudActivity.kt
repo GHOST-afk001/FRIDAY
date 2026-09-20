@@ -152,6 +152,12 @@ class FridayHudActivity : ComponentActivity() {
         }
         bottom.addView(assistantButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
 
+        val accessibilityButton = android.widget.Button(this).apply {
+            text = "ENABLE ACCESSIBILITY AUTOMATION"
+            setOnClickListener { openAccessibility() }
+        }
+        bottom.addView(accessibilityButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
+
         root.addView(bottom, matchWrap())
 
         return root
