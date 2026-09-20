@@ -35,6 +35,7 @@ class FridayAccessibilityService : AccessibilityService() {
         return try {
             val root = rootInActiveWindow ?: return false
             val entry = findByViewId(root, "$WHATSAPP_PACKAGE:id/entry")
+                ?: findNodeRecursive(root) { n -> n.isVisibleToUser && n.isEditable }
                 ?: return false
             val args = android.os.Bundle().apply {
                 putCharSequence(
@@ -43,8 +44,14 @@ class FridayAccessibilityService : AccessibilityService() {
                 )
             }
             if (!entry.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
-            val send = findByViewId(root, "$WHATSAPP_PACKAGE:id/send") ?: return false
-            send.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            val send = findByViewId(root, "$WHATSAPP_PACKAGE:id/send")
+                ?: findNodeByDescription(root, "Send")
+                ?: findNodeByDescription(root, "Send message")
+                ?: findNode(root, "Send")
+                ?: findNode(root, "भेजें")
+                ?: findNode(root, "Bhej")
+                ?: return false
+            performClick(send)
         } catch (_: Throwable) {
             false
         }
@@ -103,6 +110,12 @@ class FridayAccessibilityService : AccessibilityService() {
     fun openRecents(): Boolean = performGlobalAction(GLOBAL_ACTION_RECENTS)
     fun openNotifications(): Boolean = performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
 
+    fun clickResourceId(viewId: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val node = findByViewId(root, viewId) ?: return false
+        return performClick(node)
+    }
+
     fun tap(x: Float, y: Float): Boolean {
         val path = Path().apply { moveTo(x, y) }
         return dispatchGesture(
@@ -159,6 +172,10 @@ class FridayAccessibilityService : AccessibilityService() {
         fun openRecents(): Boolean = instance?.openRecents() == true
         fun openNotifications(): Boolean = instance?.openNotifications() == true
         fun tap(x: Float, y: Float): Boolean = instance?.tap(x, y) == true
+        fun clickResourceId(viewId: String): Boolean = instance?.clickResourceId(viewId) == true
+        fun queueWhatsAppMessage(message: String) {
+            if (message.isNotBlank()) pendingWhatsAppReply = message
+        }
         fun replyToWhatsApp(replyText: String): Boolean {
             val service = instance ?: return false
             return if (service.replyToWhatsApp(replyText)) true else {
