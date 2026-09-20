@@ -10,7 +10,7 @@ class FridayCommandProcessor {
         if (raw.isBlank()) return FridayResponse("I didn't catch that. Please say it again.")
         parseAppThenSearch(raw)?.let { return it }
         parseWhatsappMessage(raw)?.let { (name, message) ->
-            return FridayResponse("${name.trim()} ko WhatsApp message bhej rahi hoon.", FridayAction.AccessibilityCommand("whatsapp_message|${name.trim()}|${message.trim()}"), needsConfirmation = false)
+            return FridayResponse("${name.trim()} ko WhatsApp message bhej rahi hoon.", FridayAction.AccessibilityCommand("whatsapp_ui|${name.trim()}|${message.trim()}"), needsConfirmation = false)
         }
         parseWhatsappQuickMessage(raw)?.let { (name, message) ->
             return FridayResponse("${name.trim()} ko WhatsApp par “${message.trim()}” bhej rahi hoon.", FridayAction.AccessibilityCommand("whatsapp_message|${name.trim()}|${message.trim()}"), needsConfirmation = false)
