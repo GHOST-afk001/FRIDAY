@@ -37,6 +37,13 @@ object FridayAutomation {
                 val y = parts[1].toFloatOrNull() ?: return null
                 if (FridayAccessibilityService.tap(x, y)) "Tapped the requested screen position." else "I couldn't perform that tap."
             }
+            lower.startsWith("type ") -> {
+                val value = text.substringAfter("type ").trim()
+                if (value.isBlank()) return null
+                if (FridayAccessibilityService.setText(value)) "Typed the requested text." else "I couldn't find an editable field."
+            }
+            lower == "scroll down" || lower == "scroll" || lower == "neeche scroll karo" ->
+                if (FridayAccessibilityService.scrollForward()) "Scrolled down." else "I couldn't scroll the current screen."
             else -> null
         }
     }
