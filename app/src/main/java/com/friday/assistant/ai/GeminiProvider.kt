@@ -30,7 +30,7 @@ class GeminiProvider(context: Context) {
     fun continueWithToolResult(history: List<Pair<String, String>>, prompt: String, modelContent: JSONObject, call: GeminiToolCall, result: JSONObject): Result<GeminiReply> {
         val contents = buildConversation(history, prompt)
         contents.put(modelContent)
-        contents.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("functionResponse", JSONObject().put("name", call.name).put("id", call.id).put("response", result)))))
+        contents.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("functionResponse", JSONObject().put("name", call.name).put("call_id", call.id).put("response", result)))))
         return request(contents)
     }
 
@@ -66,7 +66,7 @@ class GeminiProvider(context: Context) {
                 val code = connection.responseCode
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
                 val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (code !in 200..299) error("Gemini HTTP $code")
+                if (code !in 200..299) {\n                    val detail = runCatching { JSONObject(response).optJSONObject("error")?.optString("message") }.getOrNull().orEmpty()\n                    error(if (detail.isNotBlank()) "Gemini HTTP $code: $detail" else "Gemini HTTP $code")\n                }
                 parseReply(JSONObject(response))
             } finally { if (activeConnection === connection) activeConnection = null; connection.disconnect() }
         }
