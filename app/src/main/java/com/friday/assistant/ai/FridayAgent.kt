@@ -60,6 +60,13 @@ class FridayAgent(context: Context) {
             return
         }
 
+        handleFavoriteSong(input)?.let { answer ->
+            remember("user", input)
+            remember("assistant", answer)
+            callback(answer, true)
+            return
+        }
+
         handleNotificationReply(input)?.let { answer ->
             remember("user", input)
             remember("assistant", answer)
@@ -287,6 +294,28 @@ class FridayAgent(context: Context) {
             .find(input)?.groupValues?.get(1)?.trim()
         return FridayNotifications.describe(query).let { result ->
             if (result == "There are no recent notifications.") "Boss, abhi koi recent notification nahi hai." else result
+        }
+    }
+
+    private fun handleFavoriteSong(input: String): String? {
+        val value = input.trim()
+        val save = Regex("^(?:my|mera|meri)\\s+(?:favorite|favourite)\\s+(?:song|gaana|gana)\\s+(?:is|hai)\\s+(.+)$", RegexOption.IGNORE_CASE).find(value)
+        if (save != null) {
+            val song = save.groupValues[1].trim().removeSuffix(".")
+            if (song.isBlank()) return null
+            return if (memory.rememberFact("favorite song: $song")) {
+                "Yaad rakh liya Boss. Aapka favorite song $song hai."
+            } else {
+                "Boss, main is preference ko save nahi kar paayi."
+            }
+        }
+        val asks = Regex("^(?:what(?:'s| is)\\s+my|mera)\\s+(?:favorite|favourite)\\s+(?:song|gaana|gana)\\??$", RegexOption.IGNORE_CASE).matches(value)
+        if (!asks) return null
+        val fact = memory.facts().lastOrNull { it.lowercase(Locale.ROOT).startsWith("favorite song:") }
+        return if (fact != null) {
+            "Boss, aapka favorite song ${fact.substringAfter(":").trim()} hai."
+        } else {
+            "Boss, aapne abhi tak mujhe favorite song nahi bataya. Aap bata denge toh main yaad rakhungi."
         }
     }
 
