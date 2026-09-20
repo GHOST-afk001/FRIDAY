@@ -200,8 +200,18 @@ class VoiceManager(
             RecognizerIntent.EXTRA_LANGUAGE_MODEL,
             RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
         )
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, speechLocale())
+        // Hinglish first: Indian English is the primary recognition locale, with
+        // Hindi enabled as the secondary language on Android 14+ language-switching APIs.
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-IN")
+        if (Build.VERSION.SDK_INT >= 34) {
+            putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_DETECTION, true)
+            putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_SWITCH, true)
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_DETECTION_ALLOWED_LANGUAGES,
+                arrayListOf("en-IN", "hi-IN")
+            )
+        }
         putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
         putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
