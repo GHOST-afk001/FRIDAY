@@ -230,9 +230,18 @@ class FridayHudActivity : ComponentActivity() {
                     FridayRuntime.update("GEMINI SAVE ERROR", "API key could not be persisted", false)
                     return@setPositiveButton
                 }
-                FridayRuntime.update("GEMINI READY", "Gemini API key saved and connected", true)
-                android.widget.Toast.makeText(this, "Gemini connected. FRIDAY hands-free is starting.", android.widget.Toast.LENGTH_SHORT).show()
-                startHandsFreeIfReady()
+                FridayRuntime.update("GEMINI CHECKING", "Testing Gemini connection…", true)
+                android.widget.Toast.makeText(this, "Gemini key saved. Testing connection…", android.widget.Toast.LENGTH_SHORT).show()
+                agent.verifyGemini { ok, detail ->
+                    if (ok) {
+                        FridayRuntime.update("GEMINI READY", "Gemini connection verified", true)
+                        android.widget.Toast.makeText(this, "Gemini connected. FRIDAY is ready.", android.widget.Toast.LENGTH_SHORT).show()
+                        startHandsFreeIfReady()
+                    } else {
+                        FridayRuntime.update("GEMINI ERROR", detail, false)
+                        android.widget.Toast.makeText(this, "Gemini saved, but connection failed: $detail", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
             }
             .setNegativeButton("CANCEL", null)
             .show()
