@@ -292,6 +292,8 @@ class FridayAgent(context: Context) {
     }
 
     private fun handleNotificationQuery(input: String): String? {
+        // Resync active status-bar notifications before answering.
+        FridayNotifications.refreshFromSystem()
         val lower = input.trim().lowercase(Locale.ROOT)
         val asks = lower.contains("notification") || lower.contains("message aaya") || lower.contains("msg aaya") ||
             lower.contains("kisne message") || lower.contains("who messaged")
