@@ -118,7 +118,7 @@ class GeminiProvider(context: Context) {
     }
 
     private fun postInteraction(apiKey: String, body: JSONObject): JSONObject {
-        val connection = (URL("https://generativelanguage.googleapis.com/v1/interactions").openConnection() as HttpURLConnection).apply {
+        val connection = (URL("https://generativelanguage.googleapis.com/v1beta/interactions").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 12000
             readTimeout = 45000
@@ -126,7 +126,6 @@ class GeminiProvider(context: Context) {
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("x-goog-api-key", apiKey)
             setRequestProperty("Cache-Control", "no-store")
-            setRequestProperty("Api-Revision", "2026-05-20")
         }
         activeConnection = connection
         return try {
@@ -134,7 +133,10 @@ class GeminiProvider(context: Context) {
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) error(formatHttpError(code, response))
+            if (code !in 200..299) {
+                if (code == 400 || code == 404) lastInteractionId = null
+                error(formatHttpError(code, response))
+            }
             JSONObject(response)
         } finally {
             if (activeConnection === connection) activeConnection = null
