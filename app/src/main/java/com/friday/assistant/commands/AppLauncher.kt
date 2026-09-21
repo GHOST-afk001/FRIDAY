@@ -43,22 +43,14 @@ class AppLauncher(private val context: Context) {
                 val uri = if (action.navigation) Uri.parse("google.navigation:q=${Uri.encode(action.query)}") else Uri.parse("geo:0,0?q=${Uri.encode(action.query)}")
                 start(Intent(Intent.ACTION_VIEW, uri))
             }
-            is FridayAction.DialNumber -> start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${action.number}")))
+            is FridayAction.DialNumber -> placeDirectCall(action.number)
             is FridayAction.DialContact -> {
-                val number = findUniqueContactNumber(action.name) ?: return false
-                val clean = number.filter { it.isDigit() || it == '+' }
-                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
-                    start(Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(clean)}")))
-                } else {
-                    pendingCallNumber = clean
-                    runCatching {
-                        context.startActivity(Intent(context, com.friday.assistant.FridayHudActivity::class.java).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                            putExtra("request_call_permission", true)
-                        })
-                    }
-                    false
+                val number = findUniqueContactNumber(action.name) ?: run {
+                    FridayRuntime.update("CALL FAILED", "Contact not found or multiple matching numbers: ${action.name}", false)
+                    return false
                 }
+                val clean = number.filter { it.isDigit() || it == '+' }
+                placeDirectCall(clean)
             }
             is FridayAction.SmsContact -> {
                 val number = findUniqueContactNumber(action.name) ?: return false
@@ -93,6 +85,36 @@ class AppLauncher(private val context: Context) {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (intent.resolveActivity(context.packageManager) == null) return false
         context.startActivity(intent); return true
+    }
+
+    private fun placeDirectCall(number: String): Boolean {
+        val clean = number.filter { it.isDigit() || it == '+' }
+        if (clean.isBlank()) return false
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+            pendingCallNumber = clean
+            runCatching {
+                context.startActivity(Intent(context, com.friday.assistant.FridayHudActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    putExtra("request_call_permission", true)
+                })
+            }
+            FridayRuntime.update("CALL PERMISSION", "CALL_PHONE permission is required for direct calling.", false)
+            return false
+        }
+        val callIntent = Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(clean)}"))
+        if (callIntent.resolveActivity(context.packageManager) == null) {
+            FridayRuntime.update("CALL FALLBACK", "No direct-call handler; opening dialer.", false)
+            return start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(clean)}")))
+        }
+        return runCatching {
+            callIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(callIntent)
+            FridayRuntime.update("CALL STARTED", "Direct call requested.", true)
+            true
+        }.getOrElse {
+            FridayRuntime.update("CALL FAILED", "Android rejected ACTION_CALL: ${it.message ?: it.javaClass.simpleName}", false)
+            false
+        }
     }
 
     private fun openPackageOrUrl(packageName: String, fallbackUrl: String?): Boolean = openInstalledApp(packageName, packageName) || (fallbackUrl?.let { start(Intent(Intent.ACTION_VIEW, Uri.parse(it))) } ?: false)
