@@ -117,15 +117,26 @@ class AppLauncher(private val context: Context) {
     }
 
     private fun openYouTubeSearch(query: String): Boolean {
-        val encoded = Uri.encode(query)
+        val encoded = Uri.encode(query.trim())
+        // ACTION_SEARCH can report success without actually applying the query on
+        // some YouTube builds. Prefer an explicit YouTube results URI first.
+        val deepLink = Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("vnd.youtube://results?search_query=$encoded")
+        ).apply { setPackage("com.google.android.youtube") }
+        if (start(deepLink)) return true
+
+        val web = Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("https://www.youtube.com/results?search_query=$encoded")
+        )
+        if (start(web)) return true
+
         val youtubeSearch = Intent(Intent.ACTION_SEARCH).apply {
             setPackage("com.google.android.youtube")
             putExtra("query", query)
         }
-        if (start(youtubeSearch)) return true
-        val deepLink = Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube://results?search_query=$encoded")).apply { setPackage("com.google.android.youtube") }
-        if (start(deepLink)) return true
-        return start(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=$encoded")))
+        return start(youtubeSearch)
     }
 
     private fun openSpotifySearch(query: String): Boolean {
