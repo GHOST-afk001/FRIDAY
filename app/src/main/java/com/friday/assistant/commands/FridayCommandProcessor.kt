@@ -71,7 +71,7 @@ class FridayCommandProcessor {
             val compact = target.filter { it.isDigit() || it == '+' }
             val isNumber = compact.length in 7..15 && target.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }
             val action = if (isNumber) FridayAction.DialNumber(compact) else FridayAction.DialContact(target)
-            return FridayResponse("${target.trim()} ke liye dialer kholne ke liye confirmation chahiye.", action, needsConfirmation = true)
+            return FridayResponse("${target.trim()} ko call kar rahi hoon.", action, needsConfirmation = false)
         }
         parseSms(normalized, raw)?.let { (name, message) -> return FridayResponse("${name.trim()} ko message bhejne ke liye confirmation chahiye.", FridayAction.SmsContact(name.trim(), message), needsConfirmation = true) }
         return FridayResponse("", handledLocally = false)
