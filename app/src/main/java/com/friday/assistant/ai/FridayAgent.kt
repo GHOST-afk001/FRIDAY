@@ -132,8 +132,9 @@ class FridayAgent(context: Context) {
                     requestResult = gemini.askWithTools(enrichedInput, history)
                 }
                 var reply = requestResult.getOrElse {
-                    FridayRuntime.update("BRAIN ERROR", it.message ?: "Gemini request failed; no device action was claimed", false)
-                    finishFailure(input, callback, myGeneration)
+                    val detail = it.message ?: "Gemini request failed"
+                    FridayRuntime.update("BRAIN ERROR", detail.take(240), false)
+                    finishFailure(input, callback, myGeneration, detail)
                     return@launch
                 }
 
@@ -238,9 +239,9 @@ class FridayAgent(context: Context) {
         }
     }
 
-    private suspend fun finishFailure(input: String, callback: (String, Boolean) -> Unit, generation: Long) {
+    private suspend fun finishFailure(input: String, callback: (String, Boolean) -> Unit, generation: Long, detail: String) {
         if (closed || requestGeneration.get() != generation) return
-        val answer = "Imroz Sir, Gemini connection fail hui. Main koi action complete hone ka false claim nahi karungi."
+        val answer = "Boss, Gemini task fail hua: ${detail.take(220)}"
         remember("user", input)
         remember("assistant", answer)
         withContext(Dispatchers.Main.immediate) {
