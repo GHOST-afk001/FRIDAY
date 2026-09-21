@@ -87,7 +87,7 @@ class FridayAlwaysOnService : Service() {
                     .trim()
 
                 val wakePhrases = listOf("hey friday", "friday", "hey baabu", "baabu", "babu")
-                    val wakeIndex = wakePhrases.map { normalized.indexOf(it) }
+                    val wakeIndex = wakePhrases.map { normalized.indexOf(it, 0, false) }
                     .map { normalized.indexOf(it) }
                     .filter { it >= 0 }
                     .minOrNull()
