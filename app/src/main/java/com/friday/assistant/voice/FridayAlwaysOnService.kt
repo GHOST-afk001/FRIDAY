@@ -63,12 +63,12 @@ class FridayAlwaysOnService : Service() {
         // Do not keep AudioRecord and SpeechRecognizer open at the same time.
         // The speech wake path is the compatibility fallback for phones where the
         // bundled native Hey Friday engine cannot obtain the microphone reliably.
-        FridayRuntime.update("WAKE LISTENING", "Hands-free active • say Hey Friday", true)
+        FridayRuntime.update("WAKE LISTENING", "Hands-free active • say Friday or Baabu", true)
 
         wakeVoice = VoiceManager(applicationContext, object : VoiceManager.Listener {
             override fun onListening() {
                 if (!destroyed && !commandActive) {
-                    FridayRuntime.update("WAKE LISTENING", "Mic active • say Hey Friday", true)
+                    FridayRuntime.update("WAKE LISTENING", "Mic active • say Friday or Baabu", true)
                 }
             }
 
@@ -86,7 +86,8 @@ class FridayAlwaysOnService : Service() {
                     .replace(Regex("\\s+"), " ")
                     .trim()
 
-                val wakeIndex = listOf("hey friday", "hey friday", "friday")
+                val wakePhrases = listOf("hey friday", "friday", "hey baabu", "baabu", "babu")
+                    val wakeIndex = wakePhrases.map { normalized.indexOf(it) }
                     .map { normalized.indexOf(it) }
                     .filter { it >= 0 }
                     .minOrNull()
@@ -99,7 +100,9 @@ class FridayAlwaysOnService : Service() {
                 }
 
                 val wakeText = normalized.substring(wakeIndex)
-                val command = wakeText.removePrefix("hey friday").removePrefix("friday").trim()
+                val command = wakeText
+                    .removePrefix("hey friday").removePrefix("friday")
+                    .removePrefix("hey baabu").removePrefix("baabu").removePrefix("babu").trim()
 
                 commandActive = true
                 FridayRuntime.update("WAKE ACCEPTED", "Hey Friday detected • listening for your command", true)
@@ -227,7 +230,7 @@ class FridayAlwaysOnService : Service() {
         if (Build.VERSION.SDK_INT < 26) return
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "FRIDAY Hands-Free", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Keeps FRIDAY ready for the Hey Friday wake phrase"
+                description = "Keeps FRIDAY ready for the Friday or Baabu wake phrase"
             }
         )
     }
