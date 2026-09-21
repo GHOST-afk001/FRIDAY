@@ -364,13 +364,13 @@ class FridayAccessibilityService : AccessibilityService() {
         fun queueCameraPhoto() {
             val service = instance ?: return
             cameraTask = "photo"
-            service.cameraStopAt = 0L
+            cameraStopAt = 0L
             service.mainHandler.postDelayed({ service.runCameraTask() }, 700L)
         }
         fun queueCameraVideo(durationMs: Long = 5000L) {
             val service = instance ?: return
             cameraTask = "video"
-            service.cameraStopAt = System.currentTimeMillis() + durationMs
+            cameraStopAt = System.currentTimeMillis() + durationMs
             service.mainHandler.postDelayed({ service.runCameraTask() }, 900L)
         }
         fun replyToWhatsApp(replyText: String): Boolean {
