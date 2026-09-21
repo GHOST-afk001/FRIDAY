@@ -60,6 +60,15 @@ class FridayCommandProcessor {
         if (normalized.contains("youtube") || normalized.contains("यूट्यूब") || normalized.contains("यूट्यूब")) return FridayResponse("YouTube khol rahi hoon.", FridayAction.YouTube)
         if (normalized.contains("calculator") || normalized.contains("कैलकुलेटर")) return FridayResponse("Calculator khol rahi hoon.", FridayAction.Calculator)
         if (normalized.contains("settings") || normalized.contains("सेटिंग")) return FridayResponse("Settings khol rahi hoon.", FridayAction.Settings)
+        if (Regex("(?i)(take|click|capture|खींच|ले लो|click karo).*?(photo|picture|pic|फोटो|तस्वीर)").containsMatchIn(normalized) ||
+            Regex("(?i)(photo|picture|pic|फोटो|तस्वीर).*?(take|click|capture|खींच)").containsMatchIn(normalized)) {
+            return FridayResponse("Camera kholkar photo click kar rahi hoon.", FridayAction.AccessibilityCommand("camera_photo"))
+        }
+        if (Regex("(?i)(short|5|five|10|ten).*?(second|sec).*?(video|record)").containsMatchIn(normalized) ||
+            Regex("(?i)(video|record).*?(short|5|five|10|ten).*?(second|sec)").containsMatchIn(normalized) ||
+            normalized.contains("short video") || normalized.contains("short video banao") || normalized.contains("video bana do")) {
+            return FridayResponse("Camera kholkar short video record kar rahi hoon.", FridayAction.AccessibilityCommand("camera_video|5000"))
+        }
         if (normalized.contains("camera") || normalized.contains("कैमरा")) return FridayResponse("Camera khol rahi hoon.", FridayAction.Camera)
         if (normalized.contains("chrome")) return FridayResponse("Chrome khol rahi hoon.", FridayAction.Chrome)
         if (normalized.contains("whatsapp")) return FridayResponse("WhatsApp khol rahi hoon.", FridayAction.WhatsApp)
