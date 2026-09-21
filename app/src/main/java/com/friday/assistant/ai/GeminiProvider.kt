@@ -146,14 +146,22 @@ class GeminiProvider(context: Context) {
 
     private fun parseInteraction(root: JSONObject): GeminiReply {
         val steps = root.optJSONArray("steps") ?: JSONArray()
-        var text: String? = null
+        var text: String? = root.optString("output_text").trim().takeIf { it.isNotBlank() }
         var call: GeminiToolCall? = null
 
-        for (i in 0 until steps.length()) {
-            val step = steps.optJSONObject(i) ?: continue
+        // Interactions API uses steps. Keep a legacy outputs fallback too so a
+        // schema change cannot silently make the AI appear dead.
+        val sourceSteps = if (steps.length() > 0) steps else (root.optJSONArray("outputs") ?: JSONArray())
+        for (i in 0 until sourceSteps.length()) {
+            val step = sourceSteps.optJSONObject(i) ?: continue
             when (step.optString("type")) {
                 "function_call" -> {
-                    val args = step.optJSONObject("arguments") ?: JSONObject()
+                    val rawArgs = step.opt("arguments")
+                    val args = when (rawArgs) {
+                        is JSONObject -> rawArgs
+                        is String -> runCatching { JSONObject(rawArgs) }.getOrDefault(JSONObject())
+                        else -> JSONObject()
+                    }
                     call = GeminiToolCall(
                         step.optString("id", "android_command_$i"),
                         step.optString("name"),
