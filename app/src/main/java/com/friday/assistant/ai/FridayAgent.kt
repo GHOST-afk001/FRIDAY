@@ -219,7 +219,12 @@ class FridayAgent(context: Context) {
     private fun executeLocal(result: FridayResponse, input: String, callback: (String, Boolean) -> Unit) {
         remember("user", input)
         val action = result.action
-        if (action != null && !result.needsConfirmation) {
+        // A spoken/typed command is already an explicit user instruction. Calls are
+        // executed here after the normal contact/permission checks; emergency actions
+        // remain confirmation-gated by the parser.
+        val explicitCall = action is com.friday.assistant.commands.FridayAction.DialContact ||
+            action is com.friday.assistant.commands.FridayAction.DialNumber
+        if (action != null && (!result.needsConfirmation || explicitCall)) {
             FridayRuntime.update("EXECUTING", "Running the requested Android action", true)
             val launched = runCatching { launcher.launch(action) }.getOrDefault(false)
             val answer = if (launched) result.text else "I couldn't complete that action on this phone, Boss."
