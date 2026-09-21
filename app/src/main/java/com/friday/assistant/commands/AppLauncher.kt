@@ -71,6 +71,8 @@ class AppLauncher(private val context: Context) {
             is FridayAction.AccessibilityCommand -> {
                 val command = action.command.trim()
                 when {
+                    command == "camera_photo" -> openCameraPhotoTask()
+                    command.startsWith("camera_video") -> openCameraVideoTask(command)
                     command.startsWith("whatsapp_ui|") -> openWhatsAppUiTask(command)
                     command.startsWith("whatsapp_message|") -> openWhatsAppMessage(command)
                     else -> {
@@ -134,6 +136,27 @@ class AppLauncher(private val context: Context) {
             if (start(deepLink)) return true
         }
         return start(Intent(Intent.ACTION_VIEW, Uri.parse("https://open.spotify.com/search/$encoded")))
+    }
+
+    private fun openCameraPhotoTask(): Boolean {
+        if (!FridayAutomation.isConnected()) {
+            FridayRuntime.update("AUTOMATION BLOCKED", "Enable FRIDAY Accessibility access before camera automation.", false)
+            return false
+        }
+        if (!start(Intent(MediaStore.ACTION_IMAGE_CAPTURE))) return false
+        com.friday.assistant.automation.FridayAccessibilityService.queueCameraPhoto()
+        return true
+    }
+
+    private fun openCameraVideoTask(command: String): Boolean {
+        if (!FridayAutomation.isConnected()) {
+            FridayRuntime.update("AUTOMATION BLOCKED", "Enable FRIDAY Accessibility access before camera automation.", false)
+            return false
+        }
+        val duration = command.substringAfter("|", "5000").toLongOrNull()?.coerceIn(1000L, 15000L) ?: 5000L
+        if (!start(Intent(MediaStore.INTENT_ACTION_VIDEO_CAMERA))) return false
+        com.friday.assistant.automation.FridayAccessibilityService.queueCameraVideo(duration)
+        return true
     }
 
     private fun openWhatsAppUiTask(command: String): Boolean {
