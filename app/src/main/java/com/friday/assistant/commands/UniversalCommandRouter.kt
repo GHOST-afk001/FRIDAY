@@ -31,6 +31,21 @@ object UniversalCommandRouter {
             if (label.isNotBlank() && label.length <= 50) return FridayResponse("${label.replaceFirstChar { it.uppercase() }} khol rahi hoon.", FridayAction.OpenApp(label, label))
         }
 
+        val appThenSearch = Regex("^(?:open|launch|start|khol(?:o|na)?|kholo)\\s+(.+?)\\s+(?:and|aur|then|phir|fir)\\s+(?:search|find|khojo|dhundo|dhoondo)\\s+(.+)$", RegexOption.IGNORE_CASE).find(c)
+        if (appThenSearch != null) {
+            val app = cleanAppLabel(appThenSearch.groupValues[1])
+            val query = appThenSearch.groupValues[2].trim()
+            if (app.isNotBlank() && query.isNotBlank()) {
+                return FridayResponse(
+                    "$app par $query search kar rahi hoon.",
+                    FridayAction.Sequence(listOf(
+                        FridayAction.OpenApp(app, app),
+                        FridayAction.AccessibilityCommand("wait_click_type|Search|$query")
+                    ))
+                )
+            }
+        }
+
         val genericSearch = Regex("^(?:search|find|google|look up|lookup)\\s+(.+?)(?:\\s+(?:on|in)\\s+(?:google|the web|web))?$", RegexOption.IGNORE_CASE).find(c)
         if (genericSearch != null) {
             val query = genericSearch.groupValues[1].trim()

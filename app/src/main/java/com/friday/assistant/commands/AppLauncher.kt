@@ -43,10 +43,14 @@ class AppLauncher(private val context: Context) {
                 val uri = if (action.navigation) Uri.parse("google.navigation:q=${Uri.encode(action.query)}") else Uri.parse("geo:0,0?q=${Uri.encode(action.query)}")
                 start(Intent(Intent.ACTION_VIEW, uri))
             }
-            is FridayAction.DialNumber -> start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${action.number}")))
+            is FridayAction.DialNumber -> placeDirectCall(action.number)
             is FridayAction.DialContact -> {
-                val number = findUniqueContactNumber(action.name) ?: return false
-                start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(number)}")))
+                val number = findUniqueContactNumber(action.name) ?: run {
+                    FridayRuntime.update("CALL FAILED", "Contact not found or multiple matching numbers: ${action.name}", false)
+                    return false
+                }
+                val clean = number.filter { it.isDigit() || it == '+' }
+                placeDirectCall(clean)
             }
             is FridayAction.SmsContact -> {
                 val number = findUniqueContactNumber(action.name) ?: return false
@@ -58,12 +62,17 @@ class AppLauncher(private val context: Context) {
             }
             is FridayAction.AccessibilityCommand -> {
                 val command = action.command.trim()
-                if (command.startsWith("whatsapp_message|")) openWhatsAppMessage(command)
-                else {
-                    val result = FridayAutomation.tryExecute(command)
-                    if (result != null) true else {
-                        FridayRuntime.update("AUTOMATION BLOCKED", "Enable FRIDAY Accessibility access in Android settings.", false)
-                        false
+                when {
+                    command == "camera_photo" -> openCameraPhotoTask()
+                    command.startsWith("camera_video") -> openCameraVideoTask(command)
+                    command.startsWith("whatsapp_ui|") -> openWhatsAppUiTask(command)
+                    command.startsWith("whatsapp_message|") -> openWhatsAppMessage(command)
+                    else -> {
+                        val result = FridayAutomation.tryExecute(command)
+                        if (result != null) true else {
+                            FridayRuntime.update("AUTOMATION BLOCKED", "Enable FRIDAY Accessibility access in Android settings.", false)
+                            false
+                        }
                     }
                 }
             }
@@ -76,6 +85,36 @@ class AppLauncher(private val context: Context) {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (intent.resolveActivity(context.packageManager) == null) return false
         context.startActivity(intent); return true
+    }
+
+    private fun placeDirectCall(number: String): Boolean {
+        val clean = number.filter { it.isDigit() || it == '+' }
+        if (clean.isBlank()) return false
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+            pendingCallNumber = clean
+            runCatching {
+                context.startActivity(Intent(context, com.friday.assistant.FridayHudActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    putExtra("request_call_permission", true)
+                })
+            }
+            FridayRuntime.update("CALL PERMISSION", "CALL_PHONE permission is required for direct calling.", false)
+            return false
+        }
+        val callIntent = Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(clean)}"))
+        if (callIntent.resolveActivity(context.packageManager) == null) {
+            FridayRuntime.update("CALL FALLBACK", "No direct-call handler; opening dialer.", false)
+            return start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(clean)}")))
+        }
+        return runCatching {
+            callIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(callIntent)
+            FridayRuntime.update("CALL STARTED", "Direct call requested.", true)
+            true
+        }.getOrElse {
+            FridayRuntime.update("CALL FAILED", "Android rejected ACTION_CALL: ${it.message ?: it.javaClass.simpleName}", false)
+            false
+        }
     }
 
     private fun openPackageOrUrl(packageName: String, fallbackUrl: String?): Boolean = openInstalledApp(packageName, packageName) || (fallbackUrl?.let { start(Intent(Intent.ACTION_VIEW, Uri.parse(it))) } ?: false)
@@ -100,13 +139,26 @@ class AppLauncher(private val context: Context) {
     }
 
     private fun openYouTubeSearch(query: String): Boolean {
-        val encoded = Uri.encode(query)
-        val youtube = context.packageManager.getLaunchIntentForPackage("com.google.android.youtube")
-        if (youtube != null) {
-            val deepLink = Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube://results?search_query=$encoded")).apply { setPackage("com.google.android.youtube") }
-            if (start(deepLink)) return true
+        val encoded = Uri.encode(query.trim())
+        // ACTION_SEARCH can report success without actually applying the query on
+        // some YouTube builds. Prefer an explicit YouTube results URI first.
+        val deepLink = Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("vnd.youtube://results?search_query=$encoded")
+        ).apply { setPackage("com.google.android.youtube") }
+        if (start(deepLink)) return true
+
+        val web = Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("https://www.youtube.com/results?search_query=$encoded")
+        )
+        if (start(web)) return true
+
+        val youtubeSearch = Intent(Intent.ACTION_SEARCH).apply {
+            setPackage("com.google.android.youtube")
+            putExtra("query", query)
         }
-        return start(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=$encoded")))
+        return start(youtubeSearch)
     }
 
     private fun openSpotifySearch(query: String): Boolean {
@@ -119,20 +171,81 @@ class AppLauncher(private val context: Context) {
         return start(Intent(Intent.ACTION_VIEW, Uri.parse("https://open.spotify.com/search/$encoded")))
     }
 
+    private fun openCameraPhotoTask(): Boolean {
+        if (!FridayAutomation.isConnected()) {
+            FridayRuntime.update("AUTOMATION BLOCKED", "Enable FRIDAY Accessibility access before camera automation.", false)
+            return false
+        }
+        if (!start(Intent(MediaStore.ACTION_IMAGE_CAPTURE))) return false
+        com.friday.assistant.automation.FridayAccessibilityService.queueCameraPhoto()
+        return true
+    }
+
+    private fun openCameraVideoTask(command: String): Boolean {
+        if (!FridayAutomation.isConnected()) {
+            FridayRuntime.update("AUTOMATION BLOCKED", "Enable FRIDAY Accessibility access before camera automation.", false)
+            return false
+        }
+        val duration = command.substringAfter("|", "5000").toLongOrNull()?.coerceIn(1000L, 15000L) ?: 5000L
+        if (!start(Intent(MediaStore.INTENT_ACTION_VIDEO_CAMERA))) return false
+        com.friday.assistant.automation.FridayAccessibilityService.queueCameraVideo(duration)
+        return true
+    }
+
+    private fun openWhatsAppUiTask(command: String): Boolean {
+        val parts = command.split('|', limit = 3)
+        if (parts.size != 3) return false
+        val name = parts[1].trim()
+        val message = parts[2].trim()
+        if (name.isBlank() || message.isBlank()) return false
+        if (!FridayAutomation.isConnected()) {
+            FridayRuntime.update("AUTOMATION BLOCKED", "Enable FRIDAY Accessibility access before WhatsApp automation.", false)
+            return false
+        }
+        val number = findUniqueContactNumber(name)
+        if (number != null) {
+            var phone = number.filter { it.isDigit() }
+            if (phone.length == 10) phone = "91$phone"
+            val chat = Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$phone")).apply { setPackage("com.whatsapp") }
+            if (!start(chat)) return false
+            com.friday.assistant.automation.FridayAccessibilityService.queueWhatsAppDirectTask(message)
+            FridayRuntime.update("WHATSAPP AUTOMATION", "Opened $name chat and preparing the message", true)
+            return true
+        }
+        val opened = openInstalledApp("com.whatsapp", "WhatsApp")
+        if (!opened) return false
+        com.friday.assistant.automation.FridayAccessibilityService.queueWhatsAppUiTask(name, message)
+        FridayRuntime.update("WHATSAPP AUTOMATION", "Finding $name and preparing the message", true)
+        return true
+    }
+
     private fun openWhatsAppMessage(command: String): Boolean {
         val parts = command.split('|', limit = 3)
         if (parts.size != 3) return false
         val name = parts[1].trim(); val message = parts[2].trim()
         if (name.isBlank() || message.isBlank()) return false
         val number = findUniqueContactNumber(name) ?: return false
-        val phone = number.filter { it.isDigit() }
+        var phone = number.filter { it.isDigit() }
+        if (phone.length == 10) phone = "91$phone"
         if (phone.isBlank()) return false
         val uri = Uri.parse("https://wa.me/$phone?text=${Uri.encode(message)}")
         if (!FridayAutomation.isConnected()) return false
         val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.whatsapp") }
         val opened = start(intent) || start(Intent(Intent.ACTION_VIEW, uri))
         if (!opened) return false
-        Handler(Looper.getMainLooper()).postDelayed({ FridayAutomation.clickSend() }, 1800L)
+        // Queue the message so Accessibility events can retry after WhatsApp has
+        // actually rendered the chat. This is more reliable than a single timed click.
+        com.friday.assistant.automation.FridayAccessibilityService.queueWhatsAppMessage(message)
+        val handler = Handler(Looper.getMainLooper())
+        val sendDeadline = System.currentTimeMillis() + 12000L
+        val trySend = object : Runnable {
+            override fun run() {
+                if (!FridayAutomation.clickSend() && System.currentTimeMillis() < sendDeadline) {
+                    handler.postDelayed(this, 500L)
+                }
+            }
+        }
+        handler.postDelayed(trySend, 1200L)
         return true
     }
 
@@ -149,10 +262,44 @@ class AppLauncher(private val context: Context) {
     }
 
     private fun setTorch(enabled: Boolean): Boolean {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return false
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            pendingTorchRequest = enabled
+            // A background service cannot show a runtime permission dialog itself. Bring the
+            // FRIDAY HUD forward so Android can present the normal camera permission prompt.
+            runCatching {
+                val intent = Intent(context, com.friday.assistant.FridayHudActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    putExtra(com.friday.assistant.FridayHudActivity.EXTRA_REQUEST_CAMERA_PERMISSION, true)
+                }
+                context.startActivity(intent)
+                FridayRuntime.update("CAMERA PERMISSION", "Allow camera access once to control the flashlight.", false)
+            }
+            return false
+        }
         val camera = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        val id = camera.cameraIdList.firstOrNull { camera.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true } ?: return false
-        camera.setTorchMode(id, enabled); return true
+        val id = camera.cameraIdList.firstOrNull {
+            camera.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+        } ?: return false
+        camera.setTorchMode(id, enabled)
+        return true
+    }
+
+    companion object {
+        @Volatile private var pendingTorchRequest: Boolean? = null
+        @Volatile private var pendingCallNumber: String? = null
+
+        fun resumePendingTorch(context: Context): Boolean {
+            val request = pendingTorchRequest ?: return false
+            pendingTorchRequest = null
+            return AppLauncher(context.applicationContext).launch(if (request) FridayAction.FlashlightOn else FridayAction.FlashlightOff)
+        }
+
+        fun resumePendingCall(context: Context): Boolean {
+            val number = pendingCallNumber ?: return false
+            pendingCallNumber = null
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) return false
+            return AppLauncher(context.applicationContext).start(Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(number)}")))
+        }
     }
 
     private fun findUniqueContactNumber(name: String): String? {

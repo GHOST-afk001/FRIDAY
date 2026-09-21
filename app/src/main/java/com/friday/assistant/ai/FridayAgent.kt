@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -33,15 +34,33 @@ class FridayAgent(context: Context) {
     @Volatile private var closed = false
     @Volatile private var activeRequest: Job? = null
 
-    fun configureApiKey(key: String) { if (!closed) gemini.setApiKey(key) }
+    fun configureApiKey(key: String): Boolean = !closed && gemini.setApiKey(key)
     fun hasApiKey() = !closed && gemini.isConfigured()
     fun clearApiKey() { if (!closed) gemini.clearApiKey() }
+
+    fun verifyGemini(callback: (Boolean, String) -> Unit) {
+        if (closed) return
+        brainScope.launch {
+            val result = gemini.testConnection()
+            val message = result.getOrElse { it.message ?: "Gemini connection failed" }
+            withContext(Dispatchers.Main.immediate) {
+                if (!closed) callback(result.isSuccess, message)
+            }
+        }
+    }
 
     fun handle(input: String, callback: (String, Boolean) -> Unit) {
         if (closed) return
         FridayRuntime.update("UNDERSTANDING", "Checking local Android commands", true)
 
         handleRememberRequest(input)?.let { answer ->
+            remember("user", input)
+            remember("assistant", answer)
+            callback(answer, true)
+            return
+        }
+
+        handleFavoriteSong(input)?.let { answer ->
             remember("user", input)
             remember("assistant", answer)
             callback(answer, true)
@@ -105,9 +124,17 @@ class FridayAgent(context: Context) {
                     append("\nUser message: ").append(input)
                 }
 
-                var reply = gemini.askWithTools(enrichedInput, history).getOrElse {
-                    FridayRuntime.update("BRAIN ERROR", "Gemini request failed; no device action was claimed", false)
-                    finishFailure(input, callback, myGeneration)
+                var requestResult = gemini.askWithTools(enrichedInput, history)
+                var retry = 0
+                while (requestResult.isFailure && retry < 2 && isActive && !closed) {
+                    retry++
+                    delay(700L * retry)
+                    requestResult = gemini.askWithTools(enrichedInput, history)
+                }
+                var reply = requestResult.getOrElse {
+                    val detail = it.message ?: "Gemini request failed"
+                    FridayRuntime.update("BRAIN ERROR", detail.take(240), false)
+                    finishFailure(input, callback, myGeneration, detail)
                     return@launch
                 }
 
@@ -193,7 +220,12 @@ class FridayAgent(context: Context) {
     private fun executeLocal(result: FridayResponse, input: String, callback: (String, Boolean) -> Unit) {
         remember("user", input)
         val action = result.action
-        if (action != null && !result.needsConfirmation) {
+        // A spoken/typed command is already an explicit user instruction. Calls are
+        // executed here after the normal contact/permission checks; emergency actions
+        // remain confirmation-gated by the parser.
+        val explicitCall = action is com.friday.assistant.commands.FridayAction.DialContact ||
+            action is com.friday.assistant.commands.FridayAction.DialNumber
+        if (action != null && (!result.needsConfirmation || explicitCall)) {
             FridayRuntime.update("EXECUTING", "Running the requested Android action", true)
             val launched = runCatching { launcher.launch(action) }.getOrDefault(false)
             val answer = if (launched) result.text else "I couldn't complete that action on this phone, Boss."
@@ -207,9 +239,9 @@ class FridayAgent(context: Context) {
         }
     }
 
-    private suspend fun finishFailure(input: String, callback: (String, Boolean) -> Unit, generation: Long) {
+    private suspend fun finishFailure(input: String, callback: (String, Boolean) -> Unit, generation: Long, detail: String) {
         if (closed || requestGeneration.get() != generation) return
-        val answer = "Imroz Sir, Gemini connection fail hui. Main koi action complete hone ka false claim nahi karungi."
+        val answer = "Boss, Gemini task fail hua: ${detail.take(220)}"
         remember("user", input)
         remember("assistant", answer)
         withContext(Dispatchers.Main.immediate) {
@@ -260,6 +292,8 @@ class FridayAgent(context: Context) {
     }
 
     private fun handleNotificationQuery(input: String): String? {
+        // Resync active status-bar notifications before answering.
+        FridayNotifications.refreshFromSystem()
         val lower = input.trim().lowercase(Locale.ROOT)
         val asks = lower.contains("notification") || lower.contains("message aaya") || lower.contains("msg aaya") ||
             lower.contains("kisne message") || lower.contains("who messaged")
@@ -268,6 +302,28 @@ class FridayAgent(context: Context) {
             .find(input)?.groupValues?.get(1)?.trim()
         return FridayNotifications.describe(query).let { result ->
             if (result == "There are no recent notifications.") "Boss, abhi koi recent notification nahi hai." else result
+        }
+    }
+
+    private fun handleFavoriteSong(input: String): String? {
+        val value = input.trim()
+        val save = Regex("^(?:my|mera|meri)\\s+(?:favorite|favourite)\\s+(?:song|gaana|gana)\\s+(?:is|hai)\\s+(.+)$", RegexOption.IGNORE_CASE).find(value)
+        if (save != null) {
+            val song = save.groupValues[1].trim().removeSuffix(".")
+            if (song.isBlank()) return null
+            return if (memory.rememberFact("favorite song: $song")) {
+                "Yaad rakh liya Boss. Aapka favorite song $song hai."
+            } else {
+                "Boss, main is preference ko save nahi kar paayi."
+            }
+        }
+        val asks = Regex("^(?:what(?:'s| is)\\s+my|mera)\\s+(?:favorite|favourite)\\s+(?:song|gaana|gana)\\??$", RegexOption.IGNORE_CASE).matches(value)
+        if (!asks) return null
+        val fact = memory.facts().lastOrNull { it.lowercase(Locale.ROOT).startsWith("favorite song:") }
+        return if (fact != null) {
+            "Boss, aapka favorite song ${fact.substringAfter(":").trim()} hai."
+        } else {
+            "Boss, aapne abhi tak mujhe favorite song nahi bataya. Aap bata denge toh main yaad rakhungi."
         }
     }
 

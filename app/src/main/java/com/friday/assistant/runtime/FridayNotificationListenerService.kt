@@ -55,6 +55,9 @@ object FridayNotifications {
 
     fun latest(): FridayNotification? = items.firstOrNull()
 
+    /** Ask the live notification listener to resync before answering a query. */
+    fun refreshFromSystem(): Boolean = FridayNotificationListenerService.refreshActiveNotifications()
+
     fun find(query: String): FridayNotification? {
         val q = query.trim().lowercase(Locale.ROOT)
         if (q.isBlank()) return latest()
@@ -88,12 +91,25 @@ object FridayNotifications {
 }
 
 class FridayNotificationListenerService : NotificationListenerService() {
+    companion object {
+        @Volatile private var instance: FridayNotificationListenerService? = null
+
+        fun refreshActiveNotifications(): Boolean {
+            val service = instance ?: return false
+            return runCatching {
+                service.getActiveNotifications().orEmpty().forEach { service.add(it, announce = false) }
+                service.publish()
+                true
+            }.getOrDefault(false)
+        }
+    }
     private val cache = LinkedHashMap<String, FridayNotification>(32, 0.75f, true)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var tts: TextToSpeech? = null
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         AppContextHolder.context = applicationContext
         tts = runCatching { TextToSpeech(this) {} }.getOrNull()
     }
@@ -130,6 +146,7 @@ class FridayNotificationListenerService : NotificationListenerService() {
         runCatching { tts?.shutdown() }
         tts = null
         AppContextHolder.context = null
+        instance = null
         super.onDestroy()
     }
 

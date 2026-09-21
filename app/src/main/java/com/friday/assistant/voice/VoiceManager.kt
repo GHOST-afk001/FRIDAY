@@ -131,9 +131,14 @@ class VoiceManager(
             if (owner !== recognizer || destroyed || currentGeneration != generation) return
             FridayStateFlow.resetAmplitude()
 
-            if (!retried && usingOnDevice) {
+            // Samsung/Google speech services can reject a background recognition request
+            // even though microphone permission is granted. Retry once with the Android
+            // on-device recognizer before reporting an error.
+            if (!retried && Build.VERSION.SDK_INT >= 31 &&
+                runCatching { SpeechRecognizer.isOnDeviceRecognitionAvailable(appContext) }.getOrDefault(false)
+            ) {
                 retried = true
-                replaceWithSystem(currentGeneration)
+                replaceWithOnDevice(currentGeneration)
                 return
             }
 
@@ -159,7 +164,7 @@ class VoiceManager(
         override fun onPartialResults(partialResults: Bundle?) = Unit
     }
 
-    private fun replaceWithSystem(currentGeneration: Long) {
+    private fun replaceWithOnDevice(currentGeneration: Long) {
         runMain {
             if (destroyed || currentGeneration != generation) return@runMain
 
@@ -167,13 +172,17 @@ class VoiceManager(
             runCatching { recognizer?.destroy() }
 
             recognizer = runCatching {
-                SpeechRecognizer.createSpeechRecognizer(appContext)
+                if (Build.VERSION.SDK_INT >= 31 &&
+                    SpeechRecognizer.isOnDeviceRecognitionAvailable(appContext)
+                ) {
+                    SpeechRecognizer.createOnDeviceSpeechRecognizer(appContext)
+                } else null
             }.getOrNull()
-            usingOnDevice = false
+            usingOnDevice = recognizer != null
 
             val current = recognizer
             if (current == null) {
-                listener.onError("No system speech service is available.")
+                listener.onError("No usable Android speech recognition service is available.")
                 return@runMain
             }
 
@@ -181,7 +190,7 @@ class VoiceManager(
                 current.setRecognitionListener(listenerFor(current, currentGeneration))
                 current.startListening(intent())
             }.onFailure {
-                listener.onError("System speech service could not be started.")
+                listener.onError("On-device speech recognition could not be started.")
             }
         }
     }
@@ -191,8 +200,18 @@ class VoiceManager(
             RecognizerIntent.EXTRA_LANGUAGE_MODEL,
             RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
         )
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, speechLocale())
+        // Hinglish first: Indian English is the primary recognition locale, with
+        // Hindi enabled as the secondary language on Android 14+ language-switching APIs.
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-IN")
+        if (Build.VERSION.SDK_INT >= 34) {
+            putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_DETECTION, true)
+            putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_SWITCH, true)
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_DETECTION_ALLOWED_LANGUAGES,
+                arrayListOf("en-IN", "hi-IN")
+            )
+        }
         putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
         putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)

@@ -130,25 +130,31 @@ class FridayCommandProcessorTest {
         assertEquals("मैं 10 minute late hoon", sms.message)
     }
 
-    @Test fun accessibilityHomeCommandIsLocalAndGated() {
+    @Test fun accessibilityHomeCommandIsLocalAndExecutable() {
         val result = processor.process("Friday go home")
         assertTrue(result.handledLocally)
-        assertTrue(result.needsConfirmation)
+        assertFalse(result.needsConfirmation)
         assertEquals(FridayAction.AccessibilityCommand("home"), result.action)
     }
 
-    @Test fun accessibilityClickCommandIsGated() {
+    @Test fun accessibilityClickCommandIsExecutable() {
         val result = processor.process("click Send")
         assertTrue(result.handledLocally)
-        assertTrue(result.needsConfirmation)
+        assertFalse(result.needsConfirmation)
         assertEquals(FridayAction.AccessibilityCommand("click:send"), result.action)
     }
 
-    @Test fun accessibilityTapCommandIsGated() {
+    @Test fun accessibilityTapCommandIsExecutable() {
         val result = processor.process("tap 100 200")
         assertTrue(result.handledLocally)
-        assertTrue(result.needsConfirmation)
+        assertFalse(result.needsConfirmation)
         assertEquals(FridayAction.AccessibilityCommand("tap 100 200"), result.action)
+    }
+
+    @Test fun directWebSearchIsLocal() {
+        val result = processor.process("search BMW M3 price")
+        assertTrue(result.handledLocally)
+        assertEquals(FridayAction.OpenApp("__web_search__:bmw m3 price", "Web search"), result.action)
     }
 
     @Test fun alarmAndSmsBecomeOneOrderedPlan() {

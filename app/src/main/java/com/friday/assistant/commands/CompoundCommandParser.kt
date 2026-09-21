@@ -14,8 +14,8 @@ internal object CompoundCommandParser {
             val left = input.substring(0, match.range.first).trim()
             val right = input.substring(match.range.last + 1).trim()
             if (left.isBlank() || right.isBlank()) continue
-            val first = processor.processWithoutCompound(left)
-            val second = processor.processWithoutCompound(right)
+            val first = processor.processWithoutCompound(left).let { if (it.handledLocally) it else UniversalCommandRouter.route(left) ?: it }
+            val second = processor.processWithoutCompound(right).let { if (it.handledLocally) it else UniversalCommandRouter.route(right) ?: it }
             if (!first.handledLocally || !second.handledLocally) continue
             val actions = listOfNotNull(first.action, second.action)
             if (actions.size != 2) continue
