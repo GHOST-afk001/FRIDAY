@@ -361,7 +361,19 @@ class FridayAccessibilityService : AccessibilityService() {
             service.whatsappAttempts = 0
             service.mainHandler.post { service.runWhatsAppTask() }
         }
-        fun queueCameraPhoto() {\n            val service = instance ?: return\n            cameraTask = "photo"\n            service.cameraStopAt = 0L\n            service.mainHandler.postDelayed({ service.runCameraTask() }, 700L)\n        }\n        fun queueCameraVideo(durationMs: Long = 5000L) {\n            val service = instance ?: return\n            cameraTask = "video"\n            service.cameraStopAt = System.currentTimeMillis() + durationMs\n            service.mainHandler.postDelayed({ service.runCameraTask() }, 900L)\n        }\n        fun replyToWhatsApp(replyText: String): Boolean {
+        fun queueCameraPhoto() {
+            val service = instance ?: return
+            cameraTask = "photo"
+            service.cameraStopAt = 0L
+            service.mainHandler.postDelayed({ service.runCameraTask() }, 700L)
+        }
+        fun queueCameraVideo(durationMs: Long = 5000L) {
+            val service = instance ?: return
+            cameraTask = "video"
+            service.cameraStopAt = System.currentTimeMillis() + durationMs
+            service.mainHandler.postDelayed({ service.runCameraTask() }, 900L)
+        }
+        fun replyToWhatsApp(replyText: String): Boolean {
             val service = instance ?: return false
             return if (service.replyToWhatsApp(replyText)) true else {
                 pendingWhatsAppReply = replyText
