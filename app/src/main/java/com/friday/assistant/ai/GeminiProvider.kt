@@ -97,7 +97,10 @@ class GeminiProvider(context: Context) {
             .put("input", input)
             .put("system_instruction", SYSTEM_PROMPT)
             .put("tools", tools)
-            .put("store", false)
+            // Tool continuations use previous_interaction_id. Stateful mode is required
+            // for that API path; stateless mode would require replaying every returned
+            // tool/thought step including Gemini 3 signatures.
+            .put("store", true)
             .put("generation_config", JSONObject().put("max_output_tokens", 1200))
     }
 
