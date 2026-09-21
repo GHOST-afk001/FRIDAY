@@ -1,6 +1,9 @@
 package com.friday.assistant.automation
 
 import android.accessibilityservice.AccessibilityService
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.os.Handler
@@ -16,6 +19,7 @@ class FridayAccessibilityService : AccessibilityService() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var whatsappTask: WhatsAppTask? = null
     private var whatsappPhase = 0
+    private var whatsappAttempts = 0
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -35,7 +39,15 @@ class FridayAccessibilityService : AccessibilityService() {
 
     private fun runWhatsAppTask(): Boolean {
         val task = whatsappTask ?: return true
-        val root = rootInActiveWindow ?: return false
+        if (whatsappAttempts++ > 30) {
+            whatsappTask = null
+            whatsappPhase = 0
+            whatsappAttempts = 0
+            FridayRuntime.update("ACTION FAILED", "WhatsApp automation timed out", false)
+            return false
+        }
+        val root = rootInActiveWindow ?: return retryWhatsAppTask(350L)
+        if (root.packageName?.toString() != WHATSAPP_PACKAGE) return retryWhatsAppTask(500L)
         return try {
             when (whatsappPhase) {
                 0 -> {
@@ -44,8 +56,8 @@ class FridayAccessibilityService : AccessibilityService() {
                         ?: findNodeByDescription(root, "Search")
                         ?: findNode(root, "Search")
                         ?: findNode(root, "खोजें")
-                    if (search == null) return false
-                    if (!performClick(search)) return false
+                    if (search == null) return retryWhatsAppTask(350L)
+                    if (!performClick(search)) return retryWhatsAppTask(350L)
                     whatsappPhase = 1
                     mainHandler.postDelayed({ runWhatsAppTask() }, 650L)
                     true
@@ -54,11 +66,8 @@ class FridayAccessibilityService : AccessibilityService() {
                     val field = findByViewId(root, "$WHATSAPP_PACKAGE:id/search_input")
                         ?: findByViewId(root, "$WHATSAPP_PACKAGE:id/search_src_text")
                         ?: findNodeRecursive(root) { n -> n.isVisibleToUser && n.isEditable }
-                    if (field == null) return false
-                    val args = android.os.Bundle().apply {
-                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, task.contact)
-                    }
-                    if (!field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
+                    if (field == null) return retryWhatsAppTask(350L)
+                    if (!setNodeText(field, task.contact)) return retryWhatsAppTask(350L)
                     whatsappPhase = 2
                     mainHandler.postDelayed({ runWhatsAppTask() }, 900L)
                     true
@@ -67,22 +76,20 @@ class FridayAccessibilityService : AccessibilityService() {
                     val contact = findNode(root, task.contact) ?: findNodeRecursive(root) {
                         n -> n.isVisibleToUser && n.text?.toString()?.contains(task.contact, ignoreCase = true) == true
                     }
-                    if (contact == null) return false
-                    if (!performClick(contact)) return false
+                    if (contact == null) return retryWhatsAppTask(450L)
+                    if (!performClick(contact)) return retryWhatsAppTask(450L)
                     whatsappPhase = 3
                     mainHandler.postDelayed({ runWhatsAppTask() }, 900L)
                     true
                 }
                 3 -> {
                     val entry = findByViewId(root, "$WHATSAPP_PACKAGE:id/entry")
+                        ?: findByViewId(root, "$WHATSAPP_PACKAGE:id/message_entry")
                         ?: findNodeRecursive(root) { n -> n.isVisibleToUser && n.isEditable }
-                        ?: return false
-                    val args = android.os.Bundle().apply {
-                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, task.message)
-                    }
-                    if (!entry.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
+                        ?: return retryWhatsAppTask(350L)
+                    if (!setNodeText(entry, task.message)) return retryWhatsAppTask(350L)
                     whatsappPhase = 4
-                    mainHandler.postDelayed({ runWhatsAppTask() }, 500L)
+                    mainHandler.postDelayed({ runWhatsAppTask() }, 450L)
                     true
                 }
                 else -> {
@@ -92,11 +99,17 @@ class FridayAccessibilityService : AccessibilityService() {
                         ?: findNode(root, "Send")
                         ?: findNode(root, "भेजें")
                         ?: findNode(root, "Bhej")
-                        ?: return false
+                        ?: findNodeRecursive(root) { n ->
+                            n.isVisibleToUser && n.isClickable &&
+                                (n.contentDescription?.toString()?.contains("send", ignoreCase = true) == true ||
+                                 n.text?.toString()?.contains("send", ignoreCase = true) == true)
+                        }
+                        ?: return retryWhatsAppTask(400L)
                     val sent = performClick(send)
                     if (sent) {
                         whatsappTask = null
                         whatsappPhase = 0
+                        whatsappAttempts = 0
                         FridayRuntime.update("VERIFIED", "WhatsApp message sent", true)
                     }
                     sent
@@ -141,6 +154,22 @@ class FridayAccessibilityService : AccessibilityService() {
         } catch (_: Throwable) {
             false
         }
+    }
+
+    private fun retryWhatsAppTask(delayMs: Long): Boolean {
+        mainHandler.postDelayed({ if (whatsappTask != null) runWhatsAppTask() }, delayMs)
+        return true
+    }
+
+    private fun setNodeText(node: AccessibilityNodeInfo, text: String): Boolean {
+        runCatching { node.performAction(AccessibilityNodeInfo.ACTION_FOCUS) }
+        val args = android.os.Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        }
+        if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return true
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("FRIDAY", text))
+        return node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
     }
 
     private fun findByViewId(root: AccessibilityNodeInfo, viewId: String): AccessibilityNodeInfo? {
@@ -277,6 +306,7 @@ class FridayAccessibilityService : AccessibilityService() {
             if (contact.isBlank() || message.isBlank()) return
             service.whatsappTask = WhatsAppTask(contact.trim(), message.trim())
             service.whatsappPhase = 0
+            service.whatsappAttempts = 0
             service.mainHandler.post { service.runWhatsAppTask() }
         }
         fun queueWhatsAppDirectTask(message: String) {
@@ -284,6 +314,7 @@ class FridayAccessibilityService : AccessibilityService() {
             if (message.isBlank()) return
             service.whatsappTask = WhatsAppTask("", message.trim())
             service.whatsappPhase = 3
+            service.whatsappAttempts = 0
             service.mainHandler.post { service.runWhatsAppTask() }
         }
         fun replyToWhatsApp(replyText: String): Boolean {
