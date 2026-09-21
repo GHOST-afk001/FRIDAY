@@ -280,11 +280,55 @@ class FridayAccessibilityService : AccessibilityService() {
         return null
     }
 
+    private fun runCameraTask() {
+        val task = cameraTask ?: return
+        val root = rootInActiveWindow ?: run {
+            mainHandler.postDelayed({ runCameraTask() }, 400L)
+            return
+        }
+        val pkg = root.packageName?.toString().orEmpty()
+        if (pkg.contains("camera", true).not() && pkg != "com.sec.android.app.camera" && pkg != "com.google.android.GoogleCamera") {
+            mainHandler.postDelayed({ runCameraTask() }, 500L)
+            return
+        }
+        val shutter = findNodeRecursive(root) { n ->
+            n.isVisibleToUser && n.isClickable &&
+                ((n.contentDescription?.toString()?.contains("shutter", true) == true) ||
+                 (n.contentDescription?.toString()?.contains("take photo", true) == true) ||
+                 (n.contentDescription?.toString()?.contains("record video", true) == true) ||
+                 (n.contentDescription?.toString()?.contains("capture", true) == true))
+        }
+        if (task == "photo") {
+            if (shutter != null && performClick(shutter)) {
+                cameraTask = null
+                FridayRuntime.update("VERIFIED", "Photo capture command sent", true)
+            } else mainHandler.postDelayed({ runCameraTask() }, 500L)
+        } else {
+            val now = System.currentTimeMillis()
+            if (cameraStopAt == 0L || now < cameraStopAt) {
+                if (shutter != null) performClick(shutter)
+                mainHandler.postDelayed({ runCameraTask() }, 500L)
+            } else {
+                val stop = findNodeRecursive(root) { n ->
+                    n.isVisibleToUser && n.isClickable &&
+                        ((n.contentDescription?.toString()?.contains("stop", true) == true) ||
+                         (n.text?.toString()?.contains("stop", true) == true))
+                }
+                if (stop != null && performClick(stop)) {
+                    cameraTask = null
+                    FridayRuntime.update("VERIFIED", "Short video capture stopped", true)
+                } else mainHandler.postDelayed({ runCameraTask() }, 400L)
+            }
+        }
+    }
+
     companion object {
         private const val WHATSAPP_PACKAGE = "com.whatsapp"
         @Volatile private var pendingWhatsAppReply: String? = null
         @Volatile private var instance: FridayAccessibilityService? = null
         private data class WhatsAppTask(val contact: String, val message: String)
+        @Volatile private var cameraTask: String? = null
+        private var cameraStopAt: Long = 0L
 
         fun isConnected(): Boolean = instance != null
         fun clickText(text: String): Boolean = instance?.clickText(text) == true
@@ -317,7 +361,7 @@ class FridayAccessibilityService : AccessibilityService() {
             service.whatsappAttempts = 0
             service.mainHandler.post { service.runWhatsAppTask() }
         }
-        fun replyToWhatsApp(replyText: String): Boolean {
+        fun queueCameraPhoto() {\n            val service = instance ?: return\n            cameraTask = "photo"\n            service.cameraStopAt = 0L\n            service.mainHandler.postDelayed({ service.runCameraTask() }, 700L)\n        }\n        fun queueCameraVideo(durationMs: Long = 5000L) {\n            val service = instance ?: return\n            cameraTask = "video"\n            service.cameraStopAt = System.currentTimeMillis() + durationMs\n            service.mainHandler.postDelayed({ service.runCameraTask() }, 900L)\n        }\n        fun replyToWhatsApp(replyText: String): Boolean {
             val service = instance ?: return false
             return if (service.replyToWhatsApp(replyText)) true else {
                 pendingWhatsAppReply = replyText
