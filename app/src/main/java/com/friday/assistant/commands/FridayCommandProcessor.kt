@@ -73,6 +73,16 @@ class FridayCommandProcessor {
         if (normalized.contains("chrome")) return FridayResponse("Chrome khol rahi hoon.", FridayAction.Chrome)
         if (normalized.contains("whatsapp")) return FridayResponse("WhatsApp khol rahi hoon.", FridayAction.WhatsApp)
         if (normalized.contains("instagram")) return FridayResponse("Instagram khol rahi hoon.", FridayAction.Instagram)
+
+        // Generic installed-app fallback: lets Gemini request an app by its
+        // launcher label (for example "Meld Music") without hard-coding a package.
+        Regex("^(?:open|launch|start|khol(?:o|kar|ke)?|kholo)\\s+(.+?)(?:\\s+(?:app|application))?$", RegexOption.IGNORE_CASE)
+            .find(normalized)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }?.let { appLabel ->
+                val blocked = setOf("youtube", "chrome", "whatsapp", "instagram", "camera", "settings", "calculator", "messages", "spotify")
+                if (appLabel.lowercase(Locale.ROOT) !in blocked) {
+                    return FridayResponse("$appLabel khol rahi hoon.", FridayAction.OpenApp(appLabel, appLabel))
+                }
+            }
         if (isMessagesAppCommand(normalized)) return FridayResponse("Messages khol rahi hoon.", FridayAction.Messages)
 
         parseMap(normalized)?.let { return FridayResponse(if (it.second) "Maps mein route khol rahi hoon." else "Maps mein location dikha rahi hoon.", FridayAction.MapQuery(it.first, it.second)) }
