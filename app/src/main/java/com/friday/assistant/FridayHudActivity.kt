@@ -45,6 +45,7 @@ class FridayHudActivity : ComponentActivity() {
     private var coreSubLabel: TextView? = null
     private var voiceStatusLabel: TextView? = null
     private var geminiStatusLabel: TextView? = null
+    private var groqStatusLabel: TextView? = null
     private var wakeStatusLabel: TextView? = null
     private var systemStatusLabel: TextView? = null
     private var orbLabel: TextView? = null
@@ -141,10 +142,12 @@ class FridayHudActivity : ComponentActivity() {
         bottom.addView(label("HUD STATUS", 11f, red, true))
         voiceStatusLabel = label("VOICE • OFFLINE", 12f, orange, false)
         geminiStatusLabel = label("GEMINI • OFFLINE", 12f, orange, false)
+        groqStatusLabel = label("GROQ • OFFLINE", 12f, orange, false)
         wakeStatusLabel = label("WAKE • STANDBY", 11f, pale, false)
         systemStatusLabel = label("SYSTEM • NOMINAL", 11f, pale, false)
         bottom.addView(voiceStatusLabel)
         bottom.addView(geminiStatusLabel)
+        bottom.addView(groqStatusLabel)
         bottom.addView(wakeStatusLabel)
         bottom.addView(systemStatusLabel)
 
@@ -153,6 +156,12 @@ class FridayHudActivity : ComponentActivity() {
             setOnClickListener { showGeminiKeyDialog() }
         }
         bottom.addView(keyButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(8) })
+
+        val groqButton = android.widget.Button(this).apply {
+            text = "GROQ FALLBACK / BRAIN SETTINGS"
+            setOnClickListener { showGroqKeyDialog() }
+        }
+        bottom.addView(groqButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
 
         val assistantButton = android.widget.Button(this).apply {
             text = "SELECT FRIDAY AS ANDROID ASSISTANT"
@@ -192,6 +201,7 @@ class FridayHudActivity : ComponentActivity() {
     private fun renderRuntime(status: RuntimeStatus) {
         runOnUiThread {
             val configured = agent.hasApiKey()
+            val groqConfigured = agent.hasGroqApiKey()
             val active = status.stage in setOf("LISTENING", "HEARD", "UNDERSTANDING", "AI THINKING", "ANDROID TOOL", "EXECUTING", "SPEAKING")
             val healthy = status.healthy
 
@@ -224,6 +234,7 @@ class FridayHudActivity : ComponentActivity() {
 
             voiceStatusLabel?.text = "VOICE • " + if (active || status.stage == "ASSISTANT READY" || status.stage == "ASSISTANT SERVICE") "ONLINE" else "STANDBY"
             geminiStatusLabel?.text = "GEMINI • " + if (configured) "ONLINE" else "OFFLINE"
+            groqStatusLabel?.text = "GROQ • " + if (groqConfigured) "ARMED • FALLBACK" else "OFFLINE"
             wakeStatusLabel?.text = "WAKE • " + when {
                 status.stage == "LISTENING" || status.stage == "ASSISTANT READY" -> "READY"
                 status.stage == "WAKE ACCEPTED" || active -> "ACTIVE"
@@ -279,6 +290,48 @@ class FridayHudActivity : ComponentActivity() {
             .show()
     }
 
+    private fun showGroqKeyDialog() {
+        val input = android.widget.EditText(this).apply {
+            hint = "Paste Groq API key"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(4), dp(24), 0)
+            addView(input, LinearLayout.LayoutParams(-1, dp(52)))
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("FRIDAY Groq Fallback Brain")
+            .setMessage(if (agent.hasGroqApiKey()) "Groq is armed as FRIDAY's fallback brain. Paste a new key to replace it." else "Add your Groq API key. Gemini remains primary; Groq is used automatically if Gemini fails.")
+            .setView(box)
+            .setPositiveButton("SAVE & TEST") { _, _ ->
+                val key = input.text?.toString()?.trim().orEmpty()
+                if (key.isBlank()) {
+                    android.widget.Toast.makeText(this, "Please enter a Groq API key.", android.widget.Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val saved = agent.configureGroqApiKey(key)
+                if (!saved) {
+                    android.widget.Toast.makeText(this, "Groq key save failed. Please try again.", android.widget.Toast.LENGTH_LONG).show()
+                    FridayRuntime.update("GROQ SAVE ERROR", "API key could not be persisted", false)
+                    return@setPositiveButton
+                }
+                FridayRuntime.update("GROQ CHECKING", "Testing Groq fallback connection…", true)
+                agent.verifyGroq { ok, detail ->
+                    if (ok) {
+                        FridayRuntime.update("GROQ READY", "Groq fallback connection verified", true)
+                        android.widget.Toast.makeText(this, "Groq fallback connected.", android.widget.Toast.LENGTH_SHORT).show()
+                    } else {
+                        FridayRuntime.update("GROQ ERROR", detail, false)
+                        android.widget.Toast.makeText(this, "Groq saved, but connection failed: $detail", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            .setNegativeButton("CANCEL", null)
+            .show()
+    }
+
     private fun runDiagnostics() {
         val mic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         val camera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
@@ -303,6 +356,7 @@ class FridayHudActivity : ComponentActivity() {
         val batteryOptimized = power?.isIgnoringBatteryOptimizations(packageName) == false
         val report = buildString {
             appendLine("Gemini: ${if (agent.hasApiKey()) "READY" else "MISSING"}")
+            appendLine("Groq fallback: ${if (agent.hasGroqApiKey()) "ARMED" else "MISSING"}")
             appendLine("Microphone: ${if (mic) "OK" else "MISSING"}")
             appendLine("Camera/flashlight permission: ${if (camera) "OK" else "MISSING"}")
             appendLine("Contacts/WhatsApp lookup: ${if (contacts) "OK" else "MISSING"}")
@@ -332,6 +386,7 @@ class FridayHudActivity : ComponentActivity() {
         checks += if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) "✓ Microphone" else "✗ Microphone permission"
         checks += if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) "✓ Camera / flashlight" else "✗ Camera / flashlight permission"
         checks += if (agent.hasApiKey()) "✓ Gemini API key saved" else "✗ Gemini API key missing"
+        checks += if (agent.hasGroqApiKey()) "✓ Groq fallback API key saved" else "○ Groq fallback not configured"
         if (android.os.Build.VERSION.SDK_INT >= 29) {
             val roles = getSystemService(android.app.role.RoleManager::class.java)
             checks += if (roles?.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT) == true) "✓ FRIDAY is Assistant" else "✗ FRIDAY is not selected Assistant"
