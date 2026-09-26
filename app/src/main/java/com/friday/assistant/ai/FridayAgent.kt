@@ -146,9 +146,9 @@ class FridayAgent(context: Context) {
                 }
 
                 var retry = 0
-                while (requestResult.isFailure && retry < 2 && isActive && !closed) {
+                while (requestResult.isFailure && retry < 1 && isActive && !closed) {
                     retry++
-                    delay(700L * retry)
+                    delay(350L * retry)
                     requestResult = if (usingGroq) groq.askWithTools(enrichedInput, history) else gemini.askWithTools(enrichedInput, history)
                 }
 
