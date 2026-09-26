@@ -59,9 +59,9 @@ class FridayCommandProcessor {
             val compact = target.filter { it.isDigit() || it == '+' }
             val isNumber = compact.length in 7..15 && target.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }
             val action = if (isNumber) FridayAction.DialNumber(compact) else FridayAction.DialContact(target)
-            return FridayResponse("${target.trim()} ke liye dialer kholne ke liye confirmation chahiye.", action, needsConfirmation = true)
+            return FridayResponse("${target.trim()} ko call kar rahi hoon.", action, needsConfirmation = false)
         }
-        parseSms(normalized, raw)?.let { (name, message) -> return FridayResponse("${name.trim()} ko message bhejne ke liye confirmation chahiye.", FridayAction.SmsContact(name.trim(), message), needsConfirmation = true) }
+        parseSms(normalized, raw)?.let { (name, message) -> return FridayResponse("${name.trim()} ko message bhej rahi hoon.", FridayAction.SmsContact(name.trim(), message), needsConfirmation = false) }
         return FridayResponse("", handledLocally = false)
     }
 
@@ -76,7 +76,7 @@ class FridayCommandProcessor {
             normalized.startsWith("tap ") && normalized.length > 4 -> "tap ${normalized.substringAfter("tap ").trim()}"
             else -> return null
         }
-        return FridayResponse("I need confirmation before controlling another app's visible UI.", FridayAction.AccessibilityCommand(command), needsConfirmation = true)
+        return FridayResponse("Done Boss.", FridayAction.AccessibilityCommand(command), needsConfirmation = false)
     }
 
     private fun isGreeting(c: String) = c == "hello" || c == "hello friday" || c == "hi friday" || c == "namaste" || c == "नमस्ते"
