@@ -8,12 +8,16 @@ import android.os.Looper
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.speech.tts.TextToSpeech
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Receives notification events after the user explicitly grants Notification Access.
- * Only a bounded in-memory list is kept for the HUD; nothing is written to disk.
+ * Keeps a small local history so FRIDAY can answer recent and past-notification queries.
+ * Reply actions are intentionally not persisted because Android notification RemoteInputs
+ * are process-bound and may no longer be valid after the notification is removed.
  */
 data class FridayNotification(
     val key: String,
@@ -33,6 +37,50 @@ object FridayNotifications {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val listeners = CopyOnWriteArrayList<(List<FridayNotification>) -> Unit>()
+    private var history: List<FridayNotification> = emptyList()
+
+    internal fun loadHistory(context: android.content.Context) {
+        history = runCatching {
+            val raw = context.getSharedPreferences("friday_notifications", android.content.Context.MODE_PRIVATE)
+                .getString("history", "[]") ?: "[]"
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { i ->
+                val o = array.optJSONObject(i) ?: return@mapNotNull null
+                FridayNotification(
+                    key = o.optString("key"),
+                    app = o.optString("app"),
+                    packageName = o.optString("packageName"),
+                    title = o.optString("title"),
+                    text = o.optString("text"),
+                    time = o.optLong("time")
+                )
+            }.filter { it.app.isNotBlank() || it.title.isNotBlank() || it.text.isNotBlank() }
+                .sortedByDescending { it.time }
+                .take(100)
+        }.getOrDefault(emptyList())
+        replace(emptyList())
+    }
+
+    internal fun record(item: FridayNotification, context: android.content.Context) {
+        history = (listOf(item) + history.filterNot { it.key == item.key && it.time == item.time })
+            .distinctBy { "${it.key}:${it.time}" }
+            .sortedByDescending { it.time }
+            .take(100)
+        runCatching {
+            val array = JSONArray()
+            history.forEach { n ->
+                array.put(JSONObject()
+                    .put("key", n.key)
+                    .put("app", n.app)
+                    .put("packageName", n.packageName)
+                    .put("title", n.title)
+                    .put("text", n.text)
+                    .put("time", n.time))
+            }
+            context.getSharedPreferences("friday_notifications", android.content.Context.MODE_PRIVATE)
+                .edit().putString("history", array.toString()).apply()
+        }
+    }
 
     fun addListener(listener: (List<FridayNotification>) -> Unit): AutoCloseable {
         listeners += listener
@@ -54,6 +102,8 @@ object FridayNotifications {
         addListener(listener)
 
     fun latest(): FridayNotification? = items.firstOrNull()
+
+    fun history(): List<FridayNotification> = history
 
     /** Ask the live notification listener to resync before answering a query. */
     fun refreshFromSystem(): Boolean = FridayNotificationListenerService.refreshActiveNotifications()
@@ -80,7 +130,10 @@ object FridayNotifications {
     }
 
     internal fun replace(next: List<FridayNotification>) {
-        val snapshot = next.take(24)
+        val snapshot = (next + history)
+            .distinctBy { "${it.key}:${it.time}" }
+            .sortedByDescending { it.time }
+            .take(40)
         items = snapshot
         mainHandler.post {
             listeners.forEach { listener ->
@@ -111,6 +164,7 @@ class FridayNotificationListenerService : NotificationListenerService() {
         super.onCreate()
         instance = this
         AppContextHolder.context = applicationContext
+        FridayNotifications.loadHistory(applicationContext)
         tts = runCatching { TextToSpeech(this) {} }.getOrNull()
     }
 
@@ -170,7 +224,7 @@ class FridayNotificationListenerService : NotificationListenerService() {
         val replyAction = replyActions.firstOrNull()
 
         val isNew = !cache.containsKey(sbn.key)
-        cache[sbn.key] = FridayNotification(
+        val item = FridayNotification(
             key = sbn.key,
             app = app,
             packageName = sbn.packageName,
@@ -180,6 +234,8 @@ class FridayNotificationListenerService : NotificationListenerService() {
             replyAction = replyAction,
             replyActions = replyActions
         )
+        cache[sbn.key] = item
+        FridayNotifications.record(item, applicationContext)
 
         while (cache.size > 24) {
             cache.remove(cache.entries.first().key)
