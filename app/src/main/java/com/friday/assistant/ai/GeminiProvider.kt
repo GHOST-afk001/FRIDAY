@@ -41,6 +41,10 @@ class GeminiProvider(context: Context) {
 
     fun askWithTools(prompt: String, history: List<Pair<String, String>> = emptyList()): Result<GeminiReply> =
         runCatching {
+            // Each user request starts a fresh interaction. previous_interaction_id is
+            // reserved for the immediate tool continuation of this request; reusing an
+            // old interaction here caused stale context, extra latency, and failed searches.
+            lastInteractionId = null
             val apiKey = keyStore.read()?.takeIf { it.isNotBlank() }
                 ?: error("Gemini API key is not configured.")
             val input = buildInput(history, prompt)
@@ -104,7 +108,9 @@ class GeminiProvider(context: Context) {
             // for that API path; stateless mode would require replaying every returned
             // tool/thought step including Gemini 3 signatures.
             .put("store", true)
-            .put("generation_config", JSONObject().put("max_output_tokens", 1200))
+            .put("generation_config", JSONObject()
+                .put("max_output_tokens", 1200)
+                .put("thinking_level", "low"))
     }
 
     private fun buildInput(history: List<Pair<String, String>>, prompt: String): String {
@@ -120,8 +126,8 @@ class GeminiProvider(context: Context) {
     private fun postInteraction(apiKey: String, body: JSONObject): JSONObject {
         val connection = (URL("https://generativelanguage.googleapis.com/v1beta/interactions").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 12000
-            readTimeout = 45000
+            connectTimeout = 8000
+            readTimeout = 25000
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("x-goog-api-key", apiKey)
