@@ -35,6 +35,7 @@ class FridayAccessibilityService : AccessibilityService() {
         return try {
             val root = rootInActiveWindow ?: return false
             val entry = findByViewId(root, "$WHATSAPP_PACKAGE:id/entry")
+                ?: findEditableNode(root)
                 ?: return false
             val args = android.os.Bundle().apply {
                 putCharSequence(
@@ -42,13 +43,27 @@ class FridayAccessibilityService : AccessibilityService() {
                     replyText
                 )
             }
-            if (!entry.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
-            val send = findByViewId(root, "$WHATSAPP_PACKAGE:id/send") ?: return false
-            send.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            val setOk = entry.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args) ||
+                (entry.isFocused && entry.performAction(AccessibilityNodeInfo.ACTION_FOCUS) &&
+                    entry.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args))
+            if (!setOk) return false
+
+            val send = findByViewId(root, "$WHATSAPP_PACKAGE:id/send")
+                ?: findNode(root, "Send")
+                ?: findNode(root, "भेजें")
+                ?: findNodeByDescription(root, "Send")
+                ?: findNodeByDescription(root, "Send message")
+                ?: return false
+            performClick(send)
         } catch (_: Throwable) {
             false
         }
     }
+
+    private fun findEditableNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? =
+        findNodeRecursive(root) { node ->
+            node.isVisibleToUser && node.isEditable && node.isEnabled
+        }
 
     private fun findByViewId(root: AccessibilityNodeInfo, viewId: String): AccessibilityNodeInfo? {
         return try {
