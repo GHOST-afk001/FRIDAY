@@ -25,12 +25,12 @@ class ActionPolicyValidator {
             if (normalized.count { it.isDigit() } !in 7..15) {
                 Outcome.Rejected("The phone number does not look valid.")
             } else {
-                Outcome.RequiresConfirmation(action.copy(number = normalized), "I need your confirmation before opening the dialer.")
+                Outcome.Approved(action.copy(number = normalized))
             }
         }
         is FridayAction.DialContact -> {
             if (action.name.trim().isBlank()) Outcome.Rejected("I need a contact name before calling.")
-            else Outcome.RequiresConfirmation(action, "I need your confirmation before opening the dialer.")
+            else Outcome.Approved(action)
         }
         is FridayAction.SmsContact -> {
             val name = action.name.trim()
