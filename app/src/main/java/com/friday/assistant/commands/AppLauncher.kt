@@ -17,6 +17,7 @@ import android.os.Looper
 import androidx.core.content.ContextCompat
 import com.friday.assistant.automation.FridayAutomation
 import com.friday.assistant.runtime.FridayRuntime
+import java.util.Locale
 
 class AppLauncher(private val context: Context) {
     fun launch(action: FridayAction): Boolean = try {
