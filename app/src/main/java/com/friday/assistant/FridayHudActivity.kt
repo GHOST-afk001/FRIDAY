@@ -77,127 +77,106 @@ class FridayHudActivity : ComponentActivity() {
         }
 
         val header = panelLayout()
-        header.addView(label("ULTIMATE", 27f, pale, true))
-        header.addView(label("FRIDAY • J.A.R.V.I.S / ULTRON CORE AI", 12f, orange, false))
-        header.addView(label("FRIDAY", 34f, red, true))
+        header.addView(label("FRIDAY", 30f, pale, true))
+        header.addView(label("Your personal AI assistant", 13f, orange, false))
         root.addView(header, matchWrap())
-
-        root.addView(space(14))
+        root.addView(space(12))
 
         val statusRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-
         val mode = panelLayout()
-        mode.addView(label("MODE", 11f, red, true))
-        modeLabel = label("STANDBY", 18f, orange, true)
+        mode.addView(label("MODE", 10f, red, true))
+        modeLabel = label("STANDBY", 16f, orange, true)
         mode.addView(modeLabel)
-        statusRow.addView(mode, LinearLayout.LayoutParams(0, dp(74), 1f))
-
-        statusRow.addView(space(10))
-
+        statusRow.addView(mode, LinearLayout.LayoutParams(0, dp(68), 1f))
+        statusRow.addView(space(8))
         val health = panelLayout()
-        health.addView(label("SYSTEM HEALTH", 11f, red, true))
-        healthLabel = label("ONLINE", 18f, orange, true)
+        health.addView(label("STATUS", 10f, red, true))
+        healthLabel = label("SETUP", 16f, orange, true)
         health.addView(healthLabel)
-        statusRow.addView(health, LinearLayout.LayoutParams(0, dp(74), 1f))
-
+        statusRow.addView(health, LinearLayout.LayoutParams(0, dp(68), 1f))
         root.addView(statusRow)
-        root.addView(space(18))
+        root.addView(space(12))
 
-        val core = panelLayout().apply {
-            gravity = Gravity.CENTER
-        }
-
-        orbLabel = label("◉", 54f, orange, true).apply {
+        val core = panelLayout().apply { gravity = Gravity.CENTER }
+        orbLabel = label("◉", 62f, orange, true).apply {
             isClickable = true
             isFocusable = true
             setOnClickListener { startVoiceCommand() }
-            setOnLongClickListener {
-                openAccessibility()
-                true
-            }
             contentDescription = "FRIDAY voice command. Tap to speak."
         }
         core.addView(orbLabel)
-        core.addView(label("GEMINI CORE", 18f, pale, true))
-        coreSubLabel = label("CHECKING BRAIN", 11f, orange, false)
+        core.addView(label("Ready when you are, Boss", 16f, pale, true))
+        coreSubLabel = label("Checking brain…", 11f, orange, false)
         core.addView(coreSubLabel)
-
         coreBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
             progress = 0
             progressTintList = android.content.res.ColorStateList.valueOf(orange)
-            layoutParams = LinearLayout.LayoutParams(dp(190), dp(5)).apply {
-                topMargin = dp(14)
-            }
+            layoutParams = LinearLayout.LayoutParams(dp(190), dp(5)).apply { topMargin = dp(12) }
         }
         core.addView(coreBar)
+        root.addView(core, LinearLayout.LayoutParams(-1, dp(245)))
+        root.addView(space(12))
 
-        root.addView(core, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(space(18))
-
-        val bottom = panelLayout()
-        bottom.addView(label("HUD STATUS", 11f, red, true))
-        voiceStatusLabel = label("VOICE • OFFLINE", 12f, orange, false)
-        geminiStatusLabel = label("GEMINI • OFFLINE", 12f, orange, false)
-        groqStatusLabel = label("GROQ • OFFLINE", 12f, orange, false)
+        val status = panelLayout()
+        status.addView(label("FRIDAY STATUS", 10f, red, true))
+        voiceStatusLabel = label("VOICE • STANDBY", 11f, orange, false)
+        geminiStatusLabel = label("GEMINI • OFFLINE", 11f, orange, false)
+        groqStatusLabel = label("GROQ • OFFLINE", 11f, orange, false)
         wakeStatusLabel = label("WAKE • STANDBY", 11f, pale, false)
         systemStatusLabel = label("SYSTEM • NOMINAL", 11f, pale, false)
-        bottom.addView(voiceStatusLabel)
-        bottom.addView(geminiStatusLabel)
-        bottom.addView(groqStatusLabel)
-        bottom.addView(wakeStatusLabel)
-        bottom.addView(systemStatusLabel)
+        status.addView(voiceStatusLabel)
+        status.addView(geminiStatusLabel)
+        status.addView(groqStatusLabel)
+        status.addView(wakeStatusLabel)
+        status.addView(systemStatusLabel)
 
-        val keyButton = android.widget.Button(this).apply {
-            text = "GEMINI API KEY / BRAIN SETTINGS"
-            setOnClickListener { showGeminiKeyDialog() }
+        val settingsButton = android.widget.Button(this).apply {
+            text = "⚙  SETTINGS"
+            setOnClickListener { showSettings() }
         }
-        bottom.addView(keyButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(8) })
-
-        val groqButton = android.widget.Button(this).apply {
-            text = "GROQ FALLBACK / BRAIN SETTINGS"
-            setOnClickListener { showGroqKeyDialog() }
-        }
-        bottom.addView(groqButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
-
-        val assistantButton = android.widget.Button(this).apply {
-            text = "SELECT FRIDAY AS ANDROID ASSISTANT"
-            setOnClickListener { requestAssistantRole() }
-        }
-        bottom.addView(assistantButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
-
-        val accessibilityButton = android.widget.Button(this).apply {
-            text = "ENABLE ACCESSIBILITY AUTOMATION"
-            setOnClickListener { openAccessibility() }
-        }
-        bottom.addView(accessibilityButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
-
-        val diagnosticButton = android.widget.Button(this).apply {
-            text = "RUN DEVICE CONTROL DIAGNOSTIC"
-            setOnClickListener { runDeviceDiagnostic() }
-        }
-        bottom.addView(diagnosticButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
-
-        val permissionsButton = android.widget.Button(this).apply {
-            text = "GRANT FRIDAY DEVICE PERMISSIONS"
-            setOnClickListener { requestDevicePermissions() }
-        }
-        bottom.addView(permissionsButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
-
-        val diagnosticsButton = android.widget.Button(this).apply {
-            text = "RUN DEVICE CONTROL DIAGNOSTICS"
-            setOnClickListener { runDiagnostics() }
-        }
-        bottom.addView(diagnosticsButton, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
-
-        root.addView(bottom, matchWrap())
-
+        status.addView(settingsButton, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(10) })
+        root.addView(status, matchWrap())
         return root
     }
 
+    private fun showSettings() {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(4), dp(20), dp(4))
+        }
+        fun addSetting(title: String, action: () -> Unit) {
+            content.addView(android.widget.Button(this).apply {
+                text = title
+                setOnClickListener { action(); if (title != "DEVICE DIAGNOSTICS") dialog.dismiss() }
+            }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(6) })
+        }
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("FRIDAY Settings")
+            .setMessage("Brain, voice, permissions and Android control — all in one place.")
+            .setView(content)
+            .setNegativeButton("CLOSE", null)
+            .create()
+        addSetting("GEMINI • PRIMARY BRAIN") { showGeminiKeyDialog() }
+        addSetting("GROQ • FALLBACK BRAIN") { showGroqKeyDialog() }
+        addSetting("VOICE & SPEECH") { showVoiceSettings() }
+        addSetting("DEVICE PERMISSIONS") { requestDevicePermissions() }
+        addSetting("ACCESSIBILITY AUTOMATION") { openAccessibility() }
+        addSetting("ANDROID ASSISTANT") { requestAssistantRole() }
+        addSetting("DEVICE DIAGNOSTICS") { runDeviceDiagnostic() }
+        dialog.show()
+    }
+
+    private fun showVoiceSettings() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("FRIDAY Voice")
+            .setMessage("FRIDAY uses Indian-English/Hinglish recognition and a softer female-leaning Android TTS profile. For studio-quality human voice, we can add a dedicated TTS API next without changing the assistant brain.")
+            .setPositiveButton("OK", null)
+            .show()
+    }
     private fun renderRuntime(status: RuntimeStatus) {
         runOnUiThread {
             val configured = agent.hasApiKey()
