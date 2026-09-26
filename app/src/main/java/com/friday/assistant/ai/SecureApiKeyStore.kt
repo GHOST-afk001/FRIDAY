@@ -13,11 +13,12 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 
 /** Android Keystore-backed store with an app-private recovery copy for OEM Keystore failures. */
-class SecureApiKeyStore(context: Context) {
+class SecureApiKeyStore(context: Context, providerId: String = "gemini") {
+    private val provider = providerId.trim().lowercase().ifBlank { "gemini" }
     private val appContext = context.applicationContext
-    private val prefs = appContext.getSharedPreferences("friday_secure", Context.MODE_PRIVATE)
-    private val fallbackFile = File(appContext.filesDir, ".friday_gemini_key")
-    private val alias = "friday_gemini_key"
+    private val prefs = appContext.getSharedPreferences("friday_secure_$provider", Context.MODE_PRIVATE)
+    private val fallbackFile = File(appContext.filesDir, ".friday_${provider}_key")
+    private val alias = "friday_${provider}_key"
 
     fun save(value: String): Boolean {
         val clean = value.trim()
