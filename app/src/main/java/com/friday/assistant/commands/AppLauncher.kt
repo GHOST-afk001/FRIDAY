@@ -43,10 +43,10 @@ class AppLauncher(private val context: Context) {
                 val uri = if (action.navigation) Uri.parse("google.navigation:q=${Uri.encode(action.query)}") else Uri.parse("geo:0,0?q=${Uri.encode(action.query)}")
                 start(Intent(Intent.ACTION_VIEW, uri))
             }
-            is FridayAction.DialNumber -> start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${action.number}")))
+            is FridayAction.DialNumber -> callNumber(action.number)
             is FridayAction.DialContact -> {
                 val number = findUniqueContactNumber(action.name) ?: return false
-                start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(number)}")))
+                callNumber(number)
             }
             is FridayAction.SmsContact -> {
                 val number = findUniqueContactNumber(action.name) ?: return false
@@ -132,8 +132,19 @@ class AppLauncher(private val context: Context) {
         val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.whatsapp") }
         val opened = start(intent) || start(Intent(Intent.ACTION_VIEW, uri))
         if (!opened) return false
-        Handler(Looper.getMainLooper()).postDelayed({ FridayAutomation.clickSend() }, 1800L)
+        Handler(Looper.getMainLooper()).postDelayed({ FridayAutomation.replyToWhatsApp(message) }, 1400L)
+        Handler(Looper.getMainLooper()).postDelayed({ FridayAutomation.replyToWhatsApp(message) }, 2400L)
+        Handler(Looper.getMainLooper()).postDelayed({ FridayAutomation.replyToWhatsApp(message) }, 3600L)
         return true
+    }
+
+    private fun callNumber(number: String): Boolean {
+        val clean = number.filter { it.isDigit() || it == '+' }
+        if (clean.isBlank()) return false
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+            return start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(clean)}")))
+        }
+        return start(Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(clean)}")))
     }
 
     private fun openCalculator(): Boolean {
