@@ -34,8 +34,11 @@ class FridayAccessibilityService : AccessibilityService() {
         if (replyText.isBlank()) return false
         return try {
             val root = rootInActiveWindow ?: return false
-            val entry = findByViewId(root, "$WHATSAPP_PACKAGE:id/entry")
-                ?: return false
+            if (root.packageName?.toString() != WHATSAPP_PACKAGE) return false
+
+            // WhatsApp changes resource IDs between releases. Prefer an editable visible node,
+            // then fall back to the known entry ID.
+            val entry = findEditableNode(root) ?: findByViewId(root, "$WHATSAPP_PACKAGE:id/entry") ?: return false
             val args = android.os.Bundle().apply {
                 putCharSequence(
                     AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
@@ -43,12 +46,30 @@ class FridayAccessibilityService : AccessibilityService() {
                 )
             }
             if (!entry.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
-            val send = findByViewId(root, "$WHATSAPP_PACKAGE:id/send") ?: return false
-            send.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+
+            // Send button IDs/content descriptions also vary. Try resource ID first, then
+            // localized content descriptions/text.
+            val send = findByViewId(root, "$WHATSAPP_PACKAGE:id/send")
+                ?: findNodeByDescription(root, "Send")
+                ?: findNodeByDescription(root, "Send message")
+                ?: findNodeByDescription(root, "भेजें")
+                ?: findNode(root, "Send")
+                ?: findNode(root, "भेजें")
+                ?: return false
+            performClick(send)
         } catch (_: Throwable) {
             false
         }
     }
+
+    private fun findEditableNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? =
+        findNodeRecursive(root) { node ->
+            node.isVisibleToUser &&
+                node.isEditable &&
+                node.isEnabled &&
+                (node.className?.toString()?.contains("EditText", ignoreCase = true) == true ||
+                    node.isFocusable)
+        }
 
     private fun findByViewId(root: AccessibilityNodeInfo, viewId: String): AccessibilityNodeInfo? {
         return try {
