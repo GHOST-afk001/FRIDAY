@@ -146,11 +146,11 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
 
     private fun sanitizeForSpeech(text: String): String {
         return text
-            .replace(Regex("https?://\\\\S+"), "")
+            .replace(Regex("https?://\\S+"), "")
             .replace(Regex("[ *_#>]+"), " ")
-            .replace(Regex("(?i)\\\\b(comma|full stop|fullstop|period|colon|semicolon)\\\\b"), " ")
-            .replace(Regex("[\\\\[\\\\]{}<>|]"), " ")
-            .replace(Regex("\\\\s+"), " ")
+            .replace(Regex("(?i)\\b(comma|full stop|fullstop|period|colon|semicolon)\\b"), " ")
+            .replace(Regex("[\\[\\]{}<>|]"), " ")
+            .replace(Regex("\\s+"), " ")
             .trim()
     }
     private fun splitByScript(text: String): List<String> {
