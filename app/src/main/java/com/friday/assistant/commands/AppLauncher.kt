@@ -304,19 +304,56 @@ class AppLauncher(private val context: Context) {
 
     private fun findUniqueContactNumber(name: String): String? {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return null
-        val requested = name.trim(); if (requested.isBlank()) return null
-        val projection = arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER)
-        val exactSelection = "LOWER(${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME}) = ?"
-        val exact = context.contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, projection, exactSelection, arrayOf(requested.lowercase()), null)?.use { cursor ->
-            val numbers = mutableListOf<String>(); val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-            while (cursor.moveToNext() && numberIndex >= 0) numbers += cursor.getString(numberIndex)
-            numbers.distinct().singleOrNull()
-        }
-        if (exact != null) return exact
-        val partialSelection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
-        return context.contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, projection, partialSelection, arrayOf("%$requested%"), null)?.use { cursor ->
-            val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER); if (numberIndex < 0) return@use null
-            val numbers = mutableSetOf<String>(); while (cursor.moveToNext()) numbers += cursor.getString(numberIndex); numbers.singleOrNull()
-        }
+        val requested = name.trim()
+        if (requested.isBlank()) return null
+
+        val projection = arrayOf(
+            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+            ContactsContract.CommonDataKinds.Phone.NUMBER,
+            ContactsContract.CommonDataKinds.Phone.TYPE
+        )
+        fun query(selection: String, args: Array<String>): List<Triple<String, String, Int>> =
+            context.contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                projection,
+                selection,
+                args,
+                null
+            )?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                val typeIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.TYPE)
+                val out = mutableListOf<Triple<String, String, Int>>()
+                while (cursor.moveToNext() && numberIndex >= 0) {
+                    out += Triple(
+                        if (nameIndex >= 0) cursor.getString(nameIndex).orEmpty() else "",
+                        cursor.getString(numberIndex).orEmpty(),
+                        if (typeIndex >= 0) cursor.getInt(typeIndex) else ContactsContract.CommonDataKinds.Phone.TYPE_OTHER
+                    )
+                }
+                out
+            }.orEmpty()
+
+        val exact = query(
+            "LOWER(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME) = ?".replace("ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME", ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME),
+            arrayOf(requested.lowercase(Locale.ROOT))
+        )
+        val candidates = if (exact.isNotEmpty()) exact else query(
+            "ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME LIKE ?".replace("ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME", ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME),
+            arrayOf("%$requested%")
+        )
+        if (candidates.isEmpty()) return null
+
+        return candidates
+            .distinctBy { it.second }
+            .sortedBy { when (it.third) {
+                ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE -> 0
+                ContactsContract.CommonDataKinds.Phone.TYPE_MAIN -> 1
+                ContactsContract.CommonDataKinds.Phone.TYPE_WORK_MOBILE -> 2
+                ContactsContract.CommonDataKinds.Phone.TYPE_WORK -> 3
+                else -> 4
+            }}
+            .firstOrNull { it.second.isNotBlank() }
+            ?.second
     }
 }
