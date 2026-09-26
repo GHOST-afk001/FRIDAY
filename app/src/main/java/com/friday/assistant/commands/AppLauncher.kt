@@ -336,11 +336,11 @@ class AppLauncher(private val context: Context) {
             }.orEmpty()
 
         val exact = query(
-            "LOWER(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME) = ?".replace("ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME", ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME),
+            "LOWER(${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME}) = ?".replace("$", "$"),
             arrayOf(requested.lowercase(Locale.ROOT))
         )
         val candidates = if (exact.isNotEmpty()) exact else query(
-            "ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME LIKE ?".replace("ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME", ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME),
+            "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?".replace("$", "$"),
             arrayOf("%$requested%")
         )
         if (candidates.isEmpty()) return null
