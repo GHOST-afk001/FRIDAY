@@ -110,6 +110,9 @@ class FridayOnboardingActivity : ComponentActivity() {
             return
         }
         getSharedPreferences("friday_onboarding", MODE_PRIVATE).edit().putBoolean("completed", true).apply()
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            runCatching { com.friday.assistant.voice.FridayAlwaysOnService.start(this) }
+        }
         openHud()
     }
 
@@ -185,9 +188,31 @@ class FridayOnboardingActivity : ComponentActivity() {
                                 Button(
                                     onClick = {
                                         if (key.isNotBlank()) {
-                                            agent.configureApiKey(key.trim())
-                                            key = ""
-                                            saved = agent.hasApiKey()
+                                            val persisted = agent.configureApiKey(key.trim())
+                                            if (persisted) {
+                                                key = ""
+                                                saved = agent.hasApiKey()
+                                                getSharedPreferences("friday_onboarding", MODE_PRIVATE)
+                                                    .edit()
+                                                    .putBoolean("completed", true)
+                                                    .apply()
+                                                if (androidx.core.content.ContextCompat.checkSelfPermission(
+                                                        this@FridayOnboardingActivity,
+                                                        android.Manifest.permission.RECORD_AUDIO
+                                                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                                ) {
+                                                    runCatching {
+                                                        com.friday.assistant.voice.FridayAlwaysOnService.start(this@FridayOnboardingActivity)
+                                                    }
+                                                }
+                                                Toast.makeText(
+                                                    this@FridayOnboardingActivity,
+                                                    "Gemini key saved permanently.",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            } else {
+                                                Toast.makeText(this@FridayOnboardingActivity, "Gemini key could not be saved. Please try again.", Toast.LENGTH_LONG).show()
+                                            }
                                         }
                                     },
                                     modifier = Modifier.fillMaxWidth()

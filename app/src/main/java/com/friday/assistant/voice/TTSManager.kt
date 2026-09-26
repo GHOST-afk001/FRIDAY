@@ -58,8 +58,9 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
         }
 
         runCatching {
-            tts?.setSpeechRate(0.88f)
-            tts?.setPitch(1.0f)
+            // Softer, more feminine Hinglish delivery.
+            tts?.setSpeechRate(0.94f)
+            tts?.setPitch(1.12f)
         }
         queued?.let { speakNow(it.first, it.second, speechGeneration.incrementAndGet()) }
     }
@@ -91,7 +92,12 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
             mainHandler.post { if (speechGeneration.get() == generation) onDone() }
             return
         }
-        val segments = splitByScript(text)
+        val cleanText = sanitizeForSpeech(text)
+        if (cleanText.isBlank()) {
+            mainHandler.post { if (speechGeneration.get() == generation && !destroyed) onDone() }
+            return
+        }
+        val segments = splitByScript(cleanText)
         speakSegment(engine, segments, 0, onDone, generation)
     }
 
@@ -109,15 +115,21 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
         val target = if (containsDevanagari(segment)) Locale.forLanguageTag("hi-IN") else Locale.forLanguageTag("en-IN")
         runCatching {
             if (engine.isLanguageAvailable(target) >= TextToSpeech.LANG_AVAILABLE) engine.language = target
-            val preferred = engine.voices?.firstOrNull { voice ->
-                !voice.isNetworkConnectionRequired &&
-                    voice.locale.language == target.language &&
-                    voice.name.lowercase(Locale.ROOT).let { name ->
+            val preferred = engine.voices.orEmpty()
+                .filter { voice -> !voice.isNetworkConnectionRequired && voice.locale.language == target.language }
+                .sortedByDescending { voice ->
+                    val name = voice.name.lowercase(Locale.ROOT)
+                    when {
                         name.contains("female") || name.contains("fem") || name.contains("woman") ||
-                            name.contains("samantha") || name.contains("zira")
+                            name.contains("samantha") || name.contains("zira") || name.contains("karen") -> 4
+                        name.contains("enhanced") || name.contains("premium") || name.contains("neural") -> 2
+                        else -> 1
                     }
-            }
+                }
+                .firstOrNull()
             if (preferred != null) engine.voice = preferred
+            engine.setPitch(1.12f)
+            engine.setSpeechRate(0.94f)
         }
 
         val utteranceId = "friday-${generation}-${index}-${System.nanoTime()}"
@@ -132,6 +144,15 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
         if (result != TextToSpeech.SUCCESS) complete(utteranceId)
     }
 
+    private fun sanitizeForSpeech(text: String): String {
+        return text
+            .replace(Regex("https?://\\S+"), "")
+            .replace(Regex("[ *_#>]+"), " ")
+            .replace(Regex("(?i)\\b(comma|full stop|fullstop|period|colon|semicolon)\\b"), " ")
+            .replace(Regex("[\\[\\]{}<>|]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
     private fun splitByScript(text: String): List<String> {
         val result = mutableListOf<String>()
         val builder = StringBuilder()

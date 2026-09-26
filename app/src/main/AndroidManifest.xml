@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.INTERNET" />
@@ -12,12 +13,20 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.READ_ASSIST_STRUCTURE_SCREEN_CONTENT" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <queries>
         <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>
         <intent><action android:name="android.speech.RecognitionService" /></intent>
         <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
         <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="geo" /></intent>
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.android.chrome" />
+        <package android:name="com.whatsapp" />
+        <package android:name="com.spotify.music" />
+        <package android:name="com.instagram.android" />
+        <package android:name="com.google.android.apps.messaging" />
     </queries>
     <application android:name=".FridayApplication" android:allowBackup="true" android:label="@string/app_name" android:theme="@style/Theme.Friday" android:supportsRtl="true">
         <activity android:name=".FridayHudActivity" android:exported="true">
@@ -25,13 +34,12 @@
             <intent-filter><action android:name="android.intent.action.ASSIST" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
         </activity>
         <activity android:name=".FridayOnboardingActivity" android:exported="false" />
-        <!-- Temporarily keep the system-managed VoiceInteractionService disabled while stabilizing
-             the launcher. This prevents Android from starting the assistant bridge before the
-             visible FRIDAY process is proven stable on the real Samsung device. -->
-        <service android:name=".voice.FridayVoiceInteractionService" android:label="FRIDAY" android:enabled="false" android:exported="true" android:process=":voice" android:permission="android.permission.BIND_VOICE_INTERACTION"><intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter><meta-data android:name="android.voice_interaction" android:resource="@xml/voice_interaction_service" /></service>
+        <service android:name=".voice.FridayVoiceInteractionService" android:label="FRIDAY" android:enabled="true" android:exported="true" android:directBootAware="true" android:process=":voice" android:permission="android.permission.BIND_VOICE_INTERACTION"><intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter><meta-data android:name="android.voice_interaction" android:resource="@xml/voice_interaction_service" /></service>
         <service android:name=".voice.FridayVoiceInteractionSessionService" android:exported="true" android:process=":voice" android:permission="android.permission.BIND_VOICE_INTERACTION" />
+        <service android:name=".voice.FridayRecognitionService" android:label="FRIDAY Voice Recognition" android:exported="true"><intent-filter><action android:name="android.speech.RecognitionService" /><category android:name="android.intent.category.DEFAULT" /></intent-filter></service>
         <service android:name=".runtime.FridayNotificationListenerService" android:exported="false" android:label="FRIDAY Notification Access" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"><intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter><meta-data android:name="android.service.notification.default_filter_types" android:value="conversations|alerting" /></service>
-        <service android:name=".automation.FridayAccessibilityService" android:exported="false" android:label="FRIDAY Automation" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/friday_accessibility_service" /></service>
+        <service android:name=".automation.FridayAccessibilityService" android:exported="true" android:label="FRIDAY Automation" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/friday_accessibility_service" /></service>
         <service android:name=".voice.FridayHandsFreeService" android:exported="false" android:foregroundServiceType="microphone" />
+        <service android:name=".voice.FridayAlwaysOnService" android:exported="false" android:foregroundServiceType="microphone" />
     </application>
 </manifest>

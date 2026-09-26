@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -27,21 +28,52 @@ class FridayAgent(context: Context) {
     private val local = FridayCommandProcessor()
     private val launcher = AppLauncher(appContext)
     private val gemini = GeminiProvider(appContext)
+    private val groq = GroqProvider(appContext)
     private val memory = FridayMemory(appContext)
     private val brainScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val requestGeneration = AtomicLong(0L)
     @Volatile private var closed = false
     @Volatile private var activeRequest: Job? = null
 
-    fun configureApiKey(key: String) { if (!closed) gemini.setApiKey(key) }
+    fun configureApiKey(key: String): Boolean = !closed && gemini.setApiKey(key)
     fun hasApiKey() = !closed && gemini.isConfigured()
     fun clearApiKey() { if (!closed) gemini.clearApiKey() }
+    fun configureGroqApiKey(key: String): Boolean = !closed && groq.setApiKey(key)
+    fun hasGroqApiKey() = !closed && groq.isConfigured()
+    fun clearGroqApiKey() { if (!closed) groq.clearApiKey() }
+
+    fun verifyGemini(callback: (Boolean, String) -> Unit) {
+        if (closed) return
+        brainScope.launch {
+            val result = gemini.testConnection()
+            val message = result.getOrElse { it.message ?: "Gemini connection failed" }
+            withContext(Dispatchers.Main.immediate) {
+                if (!closed) callback(result.isSuccess, message)
+            }
+        }
+    }
+
+    fun verifyGroq(callback: (Boolean, String) -> Unit) {
+        if (closed) return
+        brainScope.launch {
+            val result = groq.testConnection()
+            val message = result.getOrElse { it.message ?: "Groq connection failed" }
+            withContext(Dispatchers.Main.immediate) { if (!closed) callback(result.isSuccess, message) }
+        }
+    }
 
     fun handle(input: String, callback: (String, Boolean) -> Unit) {
         if (closed) return
         FridayRuntime.update("UNDERSTANDING", "Checking local Android commands", true)
 
         handleRememberRequest(input)?.let { answer ->
+            remember("user", input)
+            remember("assistant", answer)
+            callback(answer, true)
+            return
+        }
+
+        handleFavoriteSong(input)?.let { answer ->
             remember("user", input)
             remember("assistant", answer)
             callback(answer, true)
@@ -80,9 +112,9 @@ class FridayAgent(context: Context) {
             return
         }
 
-        if (!gemini.isConfigured()) {
-            val answer = "Boss, Gemini brain abhi configured nahi hai. Gemini API key add kijiye; uske baad main open-ended requests handle karungi."
-            FridayRuntime.update("BRAIN NOT CONFIGURED", "Gemini API key is required for open-ended intelligence", false)
+        if (!gemini.isConfigured() && !groq.isConfigured()) {
+            val answer = "Boss, abhi Gemini aur Groq dono brain configured nahi hain. Kam se kam ek AI brain connect kijiye."
+            FridayRuntime.update("BRAIN NOT CONFIGURED", "Configure Gemini primary or Groq fallback brain", false)
             callback(answer, false)
             return
         }
@@ -94,7 +126,7 @@ class FridayAgent(context: Context) {
         activeRequest = brainScope.launch {
             try {
                 if (closed || !isActive || requestGeneration.get() != myGeneration) return@launch
-                FridayRuntime.update("AI THINKING", "Gemini is reasoning and can request Android actions", true)
+                FridayRuntime.update("AI THINKING", if (gemini.isConfigured()) "Gemini is primary; Groq fallback is armed" else "Groq is reasoning as the available brain", true)
 
                 val enrichedInput = buildString {
                     append(memory.contextForBrain()).append("\n")
@@ -105,9 +137,43 @@ class FridayAgent(context: Context) {
                     append("\nUser message: ").append(input)
                 }
 
-                var reply = gemini.askWithTools(enrichedInput, history).getOrElse {
-                    FridayRuntime.update("BRAIN ERROR", "Gemini request failed; no device action was claimed", false)
-                    finishFailure(input, callback, myGeneration)
+                var usingGroq = false
+                var requestResult = if (gemini.isConfigured()) {
+                    gemini.askWithTools(enrichedInput, history)
+                } else {
+                    usingGroq = true
+                    groq.askWithTools(enrichedInput, history)
+                }
+
+                var retry = 0
+                while (requestResult.isFailure && retry < 1 && isActive && !closed) {
+                    retry++
+                    delay(350L * retry)
+                    requestResult = if (usingGroq) groq.askWithTools(enrichedInput, history) else gemini.askWithTools(enrichedInput, history)
+                }
+
+                if (requestResult.isFailure && !usingGroq && groq.isConfigured() && isActive && !closed) {
+                    val geminiDetail = requestResult.exceptionOrNull()?.message ?: "Gemini request failed"
+                    usingGroq = true
+                    retry = 0
+                    FridayRuntime.update("AI FALLBACK", "Gemini failed; switching to Groq fallback", true)
+                    requestResult = groq.askWithTools(enrichedInput, history)
+                    while (requestResult.isFailure && retry < 2 && isActive && !closed) {
+                        retry++
+                        delay(700L * retry)
+                        requestResult = groq.askWithTools(enrichedInput, history)
+                    }
+                    if (requestResult.isFailure) {
+                        val groqDetail = requestResult.exceptionOrNull()?.message ?: "Groq fallback failed"
+                        finishFailure(input, callback, myGeneration, "Gemini failed (" + geminiDetail.take(90) + "); Groq fallback also failed (" + groqDetail.take(120) + ")")
+                        return@launch
+                    }
+                }
+
+                var reply = requestResult.getOrElse {
+                    val detail = it.message ?: "AI request failed"
+                    FridayRuntime.update("BRAIN ERROR", detail.take(240), false)
+                    finishFailure(input, callback, myGeneration, detail)
                     return@launch
                 }
 
@@ -119,9 +185,15 @@ class FridayAgent(context: Context) {
                     FridayRuntime.update("ANDROID TOOL", command.take(160).ifBlank { "Executing requested phone action" }, true)
 
                     val toolResult = executeGeminiTool(call.name, call.args)
-                    val modelContent = reply.modelContent ?: error("Gemini tool call did not include model content")
-                    reply = gemini.continueWithToolResult(history, enrichedInput, modelContent, call, toolResult).getOrElse {
-                        GeminiReply(text = "Boss, action ka result mil gaya, lekin Gemini final response generate nahi kar paayi.")
+                    reply = if (usingGroq) {
+                        groq.continueWithToolResult(call, toolResult).getOrElse {
+                            GeminiReply(text = "Boss, action ka result mil gaya, lekin Groq fallback final response generate nahi kar paayi.")
+                        }
+                    } else {
+                        val modelContent = reply.modelContent ?: error("Gemini tool call did not include model content")
+                        gemini.continueWithToolResult(history, enrichedInput, modelContent, call, toolResult).getOrElse {
+                            GeminiReply(text = "Boss, action ka result mil gaya, lekin Gemini final response generate nahi kar paayi.")
+                        }
                     }
                 }
 
@@ -136,7 +208,7 @@ class FridayAgent(context: Context) {
                 remember("assistant", answer)
                 withContext(Dispatchers.Main.immediate) {
                     if (!closed && requestGeneration.get() == myGeneration) {
-                        FridayRuntime.update("RESPONSE READY", "Gemini response ready for speech", true)
+                        FridayRuntime.update("RESPONSE READY", if (usingGroq) "Groq fallback response ready for speech" else "Gemini response ready for speech", true)
                         callback(answer, false)
                     }
                 }
@@ -193,7 +265,12 @@ class FridayAgent(context: Context) {
     private fun executeLocal(result: FridayResponse, input: String, callback: (String, Boolean) -> Unit) {
         remember("user", input)
         val action = result.action
-        if (action != null && !result.needsConfirmation) {
+        // A spoken/typed command is already an explicit user instruction. Calls are
+        // executed here after the normal contact/permission checks; emergency actions
+        // remain confirmation-gated by the parser.
+        val explicitCall = action is com.friday.assistant.commands.FridayAction.DialContact ||
+            action is com.friday.assistant.commands.FridayAction.DialNumber
+        if (action != null && (!result.needsConfirmation || explicitCall)) {
             FridayRuntime.update("EXECUTING", "Running the requested Android action", true)
             val launched = runCatching { launcher.launch(action) }.getOrDefault(false)
             val answer = if (launched) result.text else "I couldn't complete that action on this phone, Boss."
@@ -207,9 +284,9 @@ class FridayAgent(context: Context) {
         }
     }
 
-    private suspend fun finishFailure(input: String, callback: (String, Boolean) -> Unit, generation: Long) {
+    private suspend fun finishFailure(input: String, callback: (String, Boolean) -> Unit, generation: Long, detail: String) {
         if (closed || requestGeneration.get() != generation) return
-        val answer = "Imroz Sir, Gemini connection fail hui. Main koi action complete hone ka false claim nahi karungi."
+        val answer = "Boss, Gemini task fail hua: ${detail.take(220)}"
         remember("user", input)
         remember("assistant", answer)
         withContext(Dispatchers.Main.immediate) {
@@ -237,6 +314,7 @@ class FridayAgent(context: Context) {
         activeRequest?.cancel()
         activeRequest = null
         gemini.cancel()
+        groq.cancel()
         brainScope.cancel()
         FridayRuntime.update("IDLE", "FRIDAY brain stopped", true)
     }
@@ -260,6 +338,8 @@ class FridayAgent(context: Context) {
     }
 
     private fun handleNotificationQuery(input: String): String? {
+        // Resync active status-bar notifications before answering.
+        FridayNotifications.refreshFromSystem()
         val lower = input.trim().lowercase(Locale.ROOT)
         val asks = lower.contains("notification") || lower.contains("message aaya") || lower.contains("msg aaya") ||
             lower.contains("kisne message") || lower.contains("who messaged")
@@ -268,6 +348,28 @@ class FridayAgent(context: Context) {
             .find(input)?.groupValues?.get(1)?.trim()
         return FridayNotifications.describe(query).let { result ->
             if (result == "There are no recent notifications.") "Boss, abhi koi recent notification nahi hai." else result
+        }
+    }
+
+    private fun handleFavoriteSong(input: String): String? {
+        val value = input.trim()
+        val save = Regex("^(?:my|mera|meri)\\s+(?:favorite|favourite)\\s+(?:song|gaana|gana)\\s+(?:is|hai)\\s+(.+)$", RegexOption.IGNORE_CASE).find(value)
+        if (save != null) {
+            val song = save.groupValues[1].trim().removeSuffix(".")
+            if (song.isBlank()) return null
+            return if (memory.rememberFact("favorite song: $song")) {
+                "Yaad rakh liya Boss. Aapka favorite song $song hai."
+            } else {
+                "Boss, main is preference ko save nahi kar paayi."
+            }
+        }
+        val asks = Regex("^(?:what(?:'s| is)\\s+my|mera)\\s+(?:favorite|favourite)\\s+(?:song|gaana|gana)\\??$", RegexOption.IGNORE_CASE).matches(value)
+        if (!asks) return null
+        val fact = memory.facts().lastOrNull { it.lowercase(Locale.ROOT).startsWith("favorite song:") }
+        return if (fact != null) {
+            "Boss, aapka favorite song ${fact.substringAfter(":").trim()} hai."
+        } else {
+            "Boss, aapne abhi tak mujhe favorite song nahi bataya. Aap bata denge toh main yaad rakhungi."
         }
     }
 
