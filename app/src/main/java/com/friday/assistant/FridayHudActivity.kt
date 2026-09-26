@@ -148,13 +148,14 @@ class FridayHudActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(4), dp(20), dp(4))
         }
+        lateinit var dialog: android.app.AlertDialog
         fun addSetting(title: String, action: () -> Unit) {
             content.addView(android.widget.Button(this).apply {
                 text = title
                 setOnClickListener { action(); if (title != "DEVICE DIAGNOSTICS") dialog.dismiss() }
             }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(6) })
         }
-        val dialog = android.app.AlertDialog.Builder(this)
+        dialog = android.app.AlertDialog.Builder(this)
             .setTitle("FRIDAY Settings")
             .setMessage("Brain, voice, permissions and Android control — all in one place.")
             .setView(content)
