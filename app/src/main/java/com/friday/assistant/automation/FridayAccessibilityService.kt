@@ -100,6 +100,39 @@ class FridayAccessibilityService : AccessibilityService() {
     fun openNotifications(): Boolean = performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
     fun openQuickSettings(): Boolean = performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
 
+    fun setQuickSetting(labels: List<String>, desiredEnabled: Boolean): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val wanted = labels.map { it.trim().lowercase() }.filter { it.isNotBlank() }
+        val node = findNodeRecursive(root) { candidate ->
+            if (!candidate.isVisibleToUser) return@findNodeRecursive false
+            val text = candidate.text?.toString()?.trim()?.lowercase().orEmpty()
+            val desc = candidate.contentDescription?.toString()?.trim()?.lowercase().orEmpty()
+            val haystack = "$text $desc"
+            wanted.any { haystack.contains(it) }
+        } ?: return false
+
+        val current = readToggleState(node) ?: return false
+        if (current == desiredEnabled) return true
+        return performClick(node)
+    }
+
+    private fun readToggleState(node: AccessibilityNodeInfo): Boolean? {
+        if (node.isChecked) return true
+        val parent = node.parent
+        if (parent?.isChecked == true) return true
+        val stateText = listOfNotNull(
+            node.text?.toString(),
+            node.contentDescription?.toString(),
+            parent?.text?.toString(),
+            parent?.contentDescription?.toString()
+        ).joinToString(" ").lowercase()
+        return when {
+            Regex("\b(on|enabled|active|turned on| चालू |चालू)\b").containsMatchIn(stateText) -> true
+            Regex("\b(off|disabled|inactive|turned off| बंद |बंद)\b").containsMatchIn(stateText) -> false
+            else -> null
+        }
+    }
+
     fun tap(x: Float, y: Float): Boolean {
         val path = Path().apply { moveTo(x, y) }
         return dispatchGesture(
