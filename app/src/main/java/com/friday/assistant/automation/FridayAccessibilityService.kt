@@ -103,6 +103,7 @@ class FridayAccessibilityService : AccessibilityService() {
     fun setQuickSetting(labels: List<String>, desiredEnabled: Boolean): Boolean {
         val root = rootInActiveWindow ?: return false
         val wanted = labels.map { it.trim().lowercase() }.filter { it.isNotBlank() }
+        if (wanted.isEmpty()) return false
         val node = findNodeRecursive(root) { candidate ->
             if (!candidate.isVisibleToUser) return@findNodeRecursive false
             val text = candidate.text?.toString()?.trim()?.lowercase().orEmpty()
@@ -117,18 +118,23 @@ class FridayAccessibilityService : AccessibilityService() {
     }
 
     private fun readToggleState(node: AccessibilityNodeInfo): Boolean? {
-        if (node.isChecked) return true
+        if (node.isCheckable) return node.isChecked
+
         val parent = node.parent
-        if (parent?.isChecked == true) return true
+        if (parent?.isCheckable == true) return parent.isChecked
+
         val stateText = listOfNotNull(
             node.text?.toString(),
             node.contentDescription?.toString(),
             parent?.text?.toString(),
             parent?.contentDescription?.toString()
         ).joinToString(" ").lowercase()
+
         return when {
-            Regex("\b(on|enabled|active|turned on| चालू |चालू)\b").containsMatchIn(stateText) -> true
-            Regex("\b(off|disabled|inactive|turned off| बंद |बंद)\b").containsMatchIn(stateText) -> false
+            Regex("""\b(on|enabled|active|turned on|चालू)\b""").containsMatchIn(stateText) -> true
+            Regex("""\b(off|disabled|inactive|turned off|बंद)\b""").containsMatchIn(stateText) -> false
+            stateText.contains("चालू") -> true
+            stateText.contains("बंद") -> false
             else -> null
         }
     }
