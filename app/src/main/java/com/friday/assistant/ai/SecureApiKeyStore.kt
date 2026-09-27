@@ -13,7 +13,8 @@ import android.security.keystore.KeyProperties
 
 /** Android Keystore-backed store for the user-supplied Gemini API key. */
 class SecureApiKeyStore(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences("friday_secure", Context.MODE_PRIVATE)
+    private val basePrefs = context.applicationContext.getSharedPreferences("friday_secure", Context.MODE_PRIVATE)
+    private val prefs = basePrefs
     private val alias = "friday_gemini_key"
 
     /** Recreates the key entry on every explicit CONNECT so a stale/broken Keystore alias cannot block setup. */
@@ -38,7 +39,7 @@ class SecureApiKeyStore(context: Context) {
         String(cipher.doFinal(Base64.decode(data, Base64.NO_WRAP)), StandardCharsets.UTF_8)
     }.getOrNull()
 
-    fun clear() {
+    fun saveNamed(name: String, value: String): Boolean = runCatching {\n        val clean = value.trim()\n        if (clean.isBlank()) return false\n        prefs.edit().putString("plain_$name", clean).commit()\n    }.getOrDefault(false)\n\n    fun readNamed(name: String): String? = prefs.getString("plain_$name", null)\n\n    fun clear() {
         runCatching { prefs.edit().remove("iv").remove("data").commit() }
         runCatching {
             val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
