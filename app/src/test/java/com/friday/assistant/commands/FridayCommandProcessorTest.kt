@@ -184,4 +184,34 @@ class FridayCommandProcessorTest {
         val result = processor.process("Germany shift hone ke options research karke batao")
         assertTrue(!result.handledLocally)
     }
+    @Test fun relativeWakeMeAlarmIsRecognized() {
+        val result = processor.process("wake me in 20 minutes")
+        assertTrue(result.action is FridayAction.AlarmAfter)
+        assertEquals(1200, (result.action as FridayAction.AlarmAfter).seconds)
+    }
+
+    @Test fun brightnessPercentIsParsed() {
+        val result = processor.process("brightness 50 percent")
+        assertTrue(result.handledLocally)
+        assertEquals(FridayAction.BrightnessSet(50), result.action)
+    }
+
+    @Test fun wifiOnIsParsed() {
+        val result = processor.process("turn wifi on")
+        assertTrue(result.handledLocally)
+        assertEquals(FridayAction.Wifi(true), result.action)
+    }
+
+    @Test fun mobileDataOffIsParsed() {
+        val result = processor.process("mobile data off")
+        assertTrue(result.handledLocally)
+        assertEquals(FridayAction.MobileData(false), result.action)
+    }
+
+    @Test fun mediaNextIsParsed() {
+        val result = processor.process("next song")
+        assertTrue(result.handledLocally)
+        assertEquals(FridayAction.MediaNext, result.action)
+    }
+
 }
