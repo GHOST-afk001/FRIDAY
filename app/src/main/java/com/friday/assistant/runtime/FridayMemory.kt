@@ -118,7 +118,7 @@ class FridayMemory(context: Context) {
             lower.contains("password") || lower.contains("passcode") ||
             lower.contains("otp") || lower.contains("one time password") ||
             lower.contains("authorization: bearer") || lower.contains("bearer ") ||
-            Regex("""(?i)(?:AIza[0-9A-Za-z_-]{20,}|gsk_[0-9A-Za-z_-]{20,}|sk-[0-9A-Za-z_-]{20,}|api[_-]?key\\s*[=:])""").containsMatchIn(value)
+            Regex("""(?i)(?:AIza[0-9A-Za-z_-]{20,}|gsk_[0-9A-Za-z_-]{20,}|sk-[0-9A-Za-z_-]{20,}|api[_-]?key\s*[=:])""").containsMatchIn(value)
     }
 
     companion object {
