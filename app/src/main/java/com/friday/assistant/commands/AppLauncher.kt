@@ -39,6 +39,7 @@ class AppLauncher(private val context: Context) {
             is FridayAction.Timer -> start(Intent(AlarmClock.ACTION_SET_TIMER).apply { putExtra(AlarmClock.EXTRA_LENGTH, action.seconds); putExtra(AlarmClock.EXTRA_SKIP_UI, true) })
             is FridayAction.Alarm -> start(Intent(AlarmClock.ACTION_SET_ALARM).apply { putExtra(AlarmClock.EXTRA_HOUR, action.hour); putExtra(AlarmClock.EXTRA_MINUTES, action.minute); putExtra(AlarmClock.EXTRA_SKIP_UI, true) })
             is FridayAction.AlarmAfter -> start(Intent(AlarmClock.ACTION_SET_TIMER).apply { putExtra(AlarmClock.EXTRA_LENGTH, action.seconds); putExtra(AlarmClock.EXTRA_SKIP_UI, true) })
+            is FridayAction.Weather -> false
             is FridayAction.MapQuery -> {
                 val uri = if (action.navigation) Uri.parse("google.navigation:q=${Uri.encode(action.query)}") else Uri.parse("geo:0,0?q=${Uri.encode(action.query)}")
                 start(Intent(Intent.ACTION_VIEW, uri))
