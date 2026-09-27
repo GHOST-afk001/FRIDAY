@@ -98,6 +98,7 @@ class FridayAccessibilityService : AccessibilityService() {
     fun goBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
     fun openRecents(): Boolean = performGlobalAction(GLOBAL_ACTION_RECENTS)
     fun openNotifications(): Boolean = performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+    fun openQuickSettings(): Boolean = performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
 
     fun tap(x: Float, y: Float): Boolean {
         val path = Path().apply { moveTo(x, y) }
@@ -152,6 +153,7 @@ class FridayAccessibilityService : AccessibilityService() {
         fun goBack(): Boolean = instance?.goBack() == true
         fun openRecents(): Boolean = instance?.openRecents() == true
         fun openNotifications(): Boolean = instance?.openNotifications() == true
+        fun openQuickSettings(): Boolean = instance?.openQuickSettings() == true
         fun tap(x: Float, y: Float): Boolean = instance?.tap(x, y) == true
         fun replyToWhatsApp(replyText: String): Boolean {
             val service = instance ?: return false
