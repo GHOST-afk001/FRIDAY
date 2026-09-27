@@ -57,7 +57,7 @@ class FridayOnboardingActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         agent = FridayAgent(applicationContext)
         val completed = getSharedPreferences("friday_onboarding", MODE_PRIVATE).getBoolean("completed", false)
-        if (completed && (agent.hasApiKey() || agent.hasOpenRouterKey())) {
+        if (completed && (agent.hasApiKey() || agent.hasGroqKey() || agent.hasOpenRouterKey())) {
             openHud()
             return
         }
@@ -105,7 +105,7 @@ class FridayOnboardingActivity : ComponentActivity() {
     }.getOrDefault(false)
 
     private fun continueToFriday() {
-        if (!agent.hasApiKey() && !agent.hasOpenRouterKey()) {
+        if (!agent.hasApiKey() && !agent.hasGroqKey() && !agent.hasOpenRouterKey()) {
             Toast.makeText(this, "Connect Gemini or OpenRouter brain first.", Toast.LENGTH_SHORT).show()
             return
         }
@@ -121,9 +121,11 @@ class FridayOnboardingActivity : ComponentActivity() {
     @Composable
     private fun Onboarding() {
         var key by remember { mutableStateOf("") }
+        var groqKey by remember { mutableStateOf("") }
         var openRouterKey by remember { mutableStateOf("") }
         var ipToken by remember { mutableStateOf("") }
         var saved by remember { mutableStateOf(agent.hasApiKey()) }
+        var groqSaved by remember { mutableStateOf(agent.hasGroqKey()) }
         var openRouterSaved by remember { mutableStateOf(agent.hasOpenRouterKey()) }
         var accessibility by remember { mutableStateOf(isAccessibilityEnabled()) }
         var assistantSelected by remember { mutableStateOf(isAssistantSelected()) }
@@ -132,6 +134,7 @@ class FridayOnboardingActivity : ComponentActivity() {
         LaunchedEffect(Unit) {
             while (true) {
                 saved = agent.hasApiKey()
+                groqSaved = agent.hasGroqKey()
                 openRouterSaved = agent.hasOpenRouterKey()
                 accessibility = isAccessibilityEnabled()
                 assistantSelected = isAssistantSelected()
@@ -172,8 +175,9 @@ class FridayOnboardingActivity : ComponentActivity() {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text("SYSTEM BRIDGES", color = Color(0xFF35E8FF), fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
 
-                            StatusRow("GEMINI BRAIN", saved, if (saved) "CONNECTED" else "OPTIONAL")
-                            StatusRow("OPENROUTER BRAIN", openRouterSaved, if (openRouterSaved) "CONNECTED" else "OPTIONAL")
+                            StatusRow("GEMINI BRAIN • PRIMARY", saved, if (saved) "CONNECTED" else "REQUIRED")
+                            StatusRow("GROQ BRAIN • SECONDARY", groqSaved, if (groqSaved) "CONNECTED" else "OPTIONAL")
+                            StatusRow("OPENROUTER BRAIN • 3RD", openRouterSaved, if (openRouterSaved) "CONNECTED" else "OPTIONAL")
                             StatusRow("REST COUNTRIES", true, "NO KEY REQUIRED")
                             StatusRow("AUTOMATION", accessibility, if (accessibility) "ONLINE" else "PERMISSION REQUIRED")
                             StatusRow("ANDROID ASSISTANT", assistantSelected, if (assistantSelected) "ACTIVE" else "SELECT FRIDAY")
@@ -200,7 +204,27 @@ class FridayOnboardingActivity : ComponentActivity() {
                                 ) { Text("CONNECT GEMINI BRAIN") }
                             }
 
-                            OutlinedTextField(
+                                               OutlinedTextField(
+                                value = groqKey,
+                                onValueChange = { groqKey = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Groq API key (secondary brain)") },
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    if (groqKey.isNotBlank()) {
+                                        agent.configureGroqKey(groqKey.trim())
+                                        groqKey = ""
+                                        groqSaved = agent.hasGroqKey()
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("CONNECT GROQ BRAIN") }
+
+         OutlinedTextField(
                                 value = openRouterKey,
                                 onValueChange = { openRouterKey = it },
                                 modifier = Modifier.fillMaxWidth(),
@@ -252,7 +276,7 @@ class FridayOnboardingActivity : ComponentActivity() {
                     Spacer(Modifier.height(10.dp))
                     Button(
                         onClick = ::continueToFriday,
-                        enabled = saved || openRouterSaved,
+                        enabled = saved || groqSaved || openRouterSaved,
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                         shape = RoundedCornerShape(14.dp)
                     ) {
