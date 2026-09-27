@@ -317,6 +317,7 @@ class FridayAgent(context: Context) {
         activeRequest = null
         gemini.cancel()
         groq.cancel()
+        openRouter.cancel()
         brainScope.cancel()
         FridayRuntime.update("IDLE", "FRIDAY brain stopped", true)
     }
