@@ -11,6 +11,8 @@ import com.friday.assistant.runtime.FridayNotifications
 import com.friday.assistant.runtime.FridayNotificationReply
 import com.friday.assistant.runtime.FridayRuntime
 import com.friday.assistant.weather.FridayWeatherService
+import com.friday.assistant.integrations.RestCountriesService
+import com.friday.assistant.integrations.IpInfoService
 import java.time.LocalDate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +32,9 @@ class FridayAgent(context: Context) {
     private val local = FridayCommandProcessor()
     private val launcher = AppLauncher(appContext)
     private val gemini = GeminiProvider(appContext)
+    private val openRouter = OpenRouterProvider(appContext)
+    private val countries = RestCountriesService()
+    private val ipInfo = IpInfoService(appContext)
     private val memory = FridayMemory(appContext)
     private val brainScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val requestGeneration = AtomicLong(0L)
@@ -37,6 +42,8 @@ class FridayAgent(context: Context) {
     @Volatile private var activeRequest: Job? = null
 
     fun configureApiKey(key: String) { if (!closed) gemini.setApiKey(key) }
+    fun configureOpenRouterKey(key: String) { if (!closed) openRouter.configureApiKey(key) }
+    fun configureIpInfoToken(token: String) { if (!closed) ipInfo.configureToken(token) }
     fun hasApiKey() = !closed && gemini.isConfigured()
     fun clearApiKey() { if (!closed) gemini.clearApiKey() }
 
@@ -66,6 +73,10 @@ class FridayAgent(context: Context) {
             return
         }
 
+        handleCountryOrLocation(input)?.let { answer ->
+            remember("user", input); remember("assistant", answer); callback(answer, true); return
+        }
+
         handleIdentity(input)?.let { answer ->
             remember("user", input)
             remember("assistant", answer)
@@ -84,9 +95,9 @@ class FridayAgent(context: Context) {
             return
         }
 
-        if (!gemini.isConfigured()) {
-            val answer = "Boss, Gemini brain abhi configured nahi hai. Gemini API key add kijiye; uske baad main open-ended requests handle karungi."
-            FridayRuntime.update("BRAIN NOT CONFIGURED", "Gemini API key is required for open-ended intelligence", false)
+        if (!gemini.isConfigured() && !openRouter.isConfigured()) {
+            val answer = "Boss, AI brain ke liye Gemini ya OpenRouter key configure karni hogi."
+            FridayRuntime.update("BRAIN NOT CONFIGURED", "No AI provider is configured", false)
             callback(answer, false)
             return
         }
@@ -110,6 +121,11 @@ class FridayAgent(context: Context) {
                 }
 
                 var reply = gemini.askWithTools(enrichedInput, history).getOrElse {
+                    if (openRouter.isConfigured()) {
+                        val text = openRouter.ask(enrichedInput, history).getOrElse { "Boss, dono AI providers fail ho gaye. Main false action claim nahi karungi." }
+                        withContext(Dispatchers.Main.immediate) { if (!closed && requestGeneration.get() == myGeneration) callback(text, false) }
+                        return@launch
+                    }
                     FridayRuntime.update("BRAIN ERROR", "Gemini request failed; no device action was claimed", false)
                     finishFailure(input, callback, myGeneration)
                     return@launch
@@ -236,6 +252,14 @@ class FridayAgent(context: Context) {
         withContext(Dispatchers.Main.immediate) {
             if (!closed && requestGeneration.get() == generation) callback(answer, false)
         }
+    }
+
+    private fun handleCountryOrLocation(input: String): String? {
+        val lower=input.trim().lowercase(Locale.ROOT)
+        if (lower.contains("where am i") || lower.contains("meri location") || lower.contains("my location")) return ipInfo.currentLocation()
+        val match=Regex("^(?:tell me about|information about|info about|details about|facts about)\\s+(.+)$",RegexOption.IGNORE_CASE).find(input.trim())
+            ?: Regex("^(.+?)\\s+(?:country|desh)\\s+(?:info|information|details)$",RegexOption.IGNORE_CASE).find(input.trim())
+        return match?.groupValues?.getOrNull(1)?.trim()?.takeIf{it.isNotBlank()}?.let{countries.countryInfo(it)}
     }
 
     private fun handleIdentity(input: String): String? {
