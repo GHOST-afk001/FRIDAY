@@ -15,7 +15,7 @@ class FridayMemory(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val lock = Any()
 
-    fun ownerName(): String = prefs.getString(KEY_OWNER_NAME, "Imroz").orEmpty().ifBlank { "Imroz" }
+    fun ownerName(): String = prefs.getString(KEY_OWNER_NAME, DEFAULT_OWNER_NAME).orEmpty().ifBlank { DEFAULT_OWNER_NAME }
 
     fun setOwnerName(name: String) {
         val clean = name.trim().take(60)
@@ -23,7 +23,6 @@ class FridayMemory(context: Context) {
         prefs.edit().putString(KEY_OWNER_NAME, clean).apply()
     }
 
-    /** Stores a durable user fact/preference that should survive future conversations. */
     fun rememberFact(fact: String): Boolean {
         val clean = fact.replace(Regex("\\s+"), " ").trim().take(MAX_FACT)
         if (clean.isBlank() || looksLikeSecret(clean)) return false
@@ -31,9 +30,7 @@ class FridayMemory(context: Context) {
             val facts = readJsonArray(KEY_FACTS)
             val normalized = clean.lowercase(Locale.ROOT)
             for (i in 0 until facts.length()) {
-                if (facts.optString(i).lowercase(Locale.ROOT) == normalized) {
-                    return true
-                }
+                if (facts.optString(i).lowercase(Locale.ROOT) == normalized) return true
             }
             facts.put(clean)
             while (facts.length() > MAX_FACTS) facts.remove(0)
@@ -42,11 +39,6 @@ class FridayMemory(context: Context) {
         return true
     }
 
-
-    /**
-     * Lightweight automatic learning from explicit preference language.
-     * Only stores stable, non-secret facts that the user directly states.
-     */
     fun learnFromUserUtterance(text: String) {
         val value = text.replace(Regex("\\s+"), " ").trim()
         if (value.isBlank()) return
@@ -93,7 +85,6 @@ class FridayMemory(context: Context) {
         }
     }
 
-    /** Compact durable context injected into Gemini on every new request. */
     fun contextForBrain(): String {
         val name = ownerName()
         val facts = facts()
@@ -133,6 +124,7 @@ class FridayMemory(context: Context) {
         private const val KEY_OWNER_NAME = "owner_name"
         private const val KEY_FACTS = "facts"
         private const val KEY_HISTORY = "history"
+        private const val DEFAULT_OWNER_NAME = "Boss"
         private const val MAX_FACTS = 80
         private const val MAX_HISTORY = 120
         private const val MAX_FACT = 500
