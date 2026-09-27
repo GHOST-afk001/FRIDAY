@@ -187,6 +187,7 @@ class FridayAccessibilityService : AccessibilityService() {
         fun openRecents(): Boolean = instance?.openRecents() == true
         fun openNotifications(): Boolean = instance?.openNotifications() == true
         fun openQuickSettings(): Boolean = instance?.openQuickSettings() == true
+        fun setQuickSetting(labels: List<String>, desiredEnabled: Boolean): Boolean = instance?.setQuickSetting(labels, desiredEnabled) == true
         fun tap(x: Float, y: Float): Boolean = instance?.tap(x, y) == true
         fun replyToWhatsApp(replyText: String): Boolean {
             val service = instance ?: return false
