@@ -106,7 +106,7 @@ class FridayOnboardingActivity : ComponentActivity() {
 
     private fun continueToFriday() {
         if (!agent.hasApiKey() && !agent.hasGroqKey() && !agent.hasOpenRouterKey()) {
-            Toast.makeText(this, "Connect Gemini or OpenRouter brain first.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Connect at least one AI brain first.", Toast.LENGTH_SHORT).show()
             return
         }
         getSharedPreferences("friday_onboarding", MODE_PRIVATE).edit().putBoolean("completed", true).apply()
