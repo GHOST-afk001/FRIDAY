@@ -148,8 +148,8 @@ class FridayCommandProcessor {
     private fun parseMobileDataCommand(c: String): FridayResponse? {
         if (!(c.contains("mobile data") || c.contains("mobile internet") || c.contains("data"))) return null
         val enabled = when {
-            c.contains("off") || c.contains("band") || c.contains("disable") -> false
-            c.contains("on") || c.contains("chalu") || c.contains("enable") -> true
+            c.contains("off") || c.contains("बंद") || c.contains("band") || c.contains("disable") || c.contains("ऑफ") -> false
+            c.contains("on") || c.contains("चालू") || c.contains("chalu") || c.contains("enable") || c.contains("ऑन") -> true
             else -> return null
         }
         return FridayResponse(if (enabled) "Mobile data on kar rahi hoon." else "Mobile data off kar rahi hoon.", FridayAction.MobileData(enabled))
@@ -158,8 +158,8 @@ class FridayCommandProcessor {
     private fun parsePowerSavingCommand(c: String): FridayResponse? {
         if (!(c.contains("power saving") || c.contains("battery saver") || c.contains("power saver") || c.contains("battery saving"))) return null
         val enabled = when {
-            c.contains("off") || c.contains("disable") || c.contains("band") -> false
-            c.contains("on") || c.contains("enable") || c.contains("chalu") -> true
+            c.contains("off") || c.contains("बंद") || c.contains("disable") || c.contains("band") || c.contains("ऑफ") -> false
+            c.contains("on") || c.contains("चालू") || c.contains("enable") || c.contains("chalu") || c.contains("ऑन") -> true
             else -> return null
         }
         return FridayResponse(if (enabled) "Power saving on kar rahi hoon." else "Power saving off kar rahi hoon.", FridayAction.PowerSaving(enabled))
