@@ -8,7 +8,7 @@ import java.net.URL
 
 class GroqProvider(context: Context) {
     private val keys = SecureApiKeyStore(context)
-    private val model = "llama-3.3-70b-versatile"
+    private val model = "openai/gpt-oss-120b"
     @Volatile private var activeConnection: HttpURLConnection? = null
 
     fun configureApiKey(key: String) = keys.saveNamed("groq_key", key)
