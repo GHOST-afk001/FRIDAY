@@ -141,7 +141,8 @@ class FridayCommandProcessor {
         if (n.contains("decrease") || n.contains("down") || n.contains("dim") || n.contains("kam karo") || n.contains("कम")) return FridayResponse("Brightness kam kar rahi hoon.", FridayAction.BrightnessAdjust(-10))
         val percent = Regex("(\\d{1,3})\\s*(?:%|percent|percentage)", RegexOption.IGNORE_CASE).find(n)?.groupValues?.get(1)?.toIntOrNull()
             ?: Regex("(?:brightness|ब्राइटनेस|रोशनी)\\s+(?:to|at|par|pe)\\s+(\\d{1,3})\\b", RegexOption.IGNORE_CASE).find(n)?.groupValues?.get(1)?.toIntOrNull()
-        val directNumber = Regex("(?:brightness|ब्राइटनेस|रोशनी)\\s+(\\d{1,3})\\b", RegexOption.IGNORE_CASE).find(n)?.groupValues?.get(1)?.toIntOrNull()\n        return (percent ?: directNumber)?.coerceIn(0,100)?.let { FridayResponse("Brightness $it% kar rahi hoon.", FridayAction.BrightnessSet(it)) }
+        val directNumber = Regex("(?:brightness|ब्राइटनेस|रोशनी)\\s+(\\d{1,3})\\b", RegexOption.IGNORE_CASE).find(n)?.groupValues?.get(1)?.toIntOrNull()
+        return (percent ?: directNumber)?.coerceIn(0,100)?.let { FridayResponse("Brightness $it% kar rahi hoon.", FridayAction.BrightnessSet(it)) }
     }
 
     private fun parseWifiCommand(c: String): FridayResponse? {
