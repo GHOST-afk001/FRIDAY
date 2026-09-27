@@ -25,12 +25,12 @@ class ActionPolicyValidator {
             if (normalized.count { it.isDigit() } !in 7..15) {
                 Outcome.Rejected("The phone number does not look valid.")
             } else {
-                Outcome.Approved(action.copy(number = normalized))
+                Outcome.RequiresConfirmation(action.copy(number = normalized), "Please confirm the phone call before I place it.")
             }
         }
         is FridayAction.DialContact -> {
             if (action.name.trim().isBlank()) Outcome.Rejected("I need a contact name before calling.")
-            else Outcome.Approved(action)
+            else Outcome.RequiresConfirmation(action, "Please confirm the call before I place it.")
         }
         is FridayAction.SmsContact -> {
             val name = action.name.trim()
@@ -39,8 +39,9 @@ class ActionPolicyValidator {
                 name.isBlank() -> Outcome.Rejected("I need a contact name before preparing the message.")
                 body.isBlank() -> Outcome.Rejected("I need the message text before preparing SMS.")
                 body.length > 4000 -> Outcome.Rejected("That message is too long for a safe SMS hand-off.")
-                else -> Outcome.Approved(
-                    action.copy(name = name, message = body)
+                else -> Outcome.RequiresConfirmation(
+                    action.copy(name = name, message = body),
+                    "Please confirm before I send this message."
                 )
             }
         }
@@ -48,10 +49,10 @@ class ActionPolicyValidator {
             val command = action.command.trim()
             when {
                 command.isBlank() -> Outcome.Rejected("I need an automation command before controlling another app.")
-                command.startsWith("whatsapp_message|") -> Outcome.Approved(action)
-                command == "home" || command == "back" || command == "recents" || command == "notifications" -> Outcome.Approved(action)
-                command.startsWith("click ") || command.startsWith("tap ") -> Outcome.Approved(action)
-                else -> Outcome.RequiresConfirmation(action, "I need your confirmation before controlling another app's visible UI.")
+                else -> Outcome.RequiresConfirmation(
+                    action,
+                    "I need your confirmation before controlling another app's visible UI."
+                )
             }
         }
         else -> Outcome.Approved(action)
