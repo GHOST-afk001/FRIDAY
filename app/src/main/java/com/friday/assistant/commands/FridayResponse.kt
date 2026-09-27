@@ -22,6 +22,11 @@ sealed interface FridayAction {
     data object FlashlightOff : FridayAction
     data object VolumeUp : FridayAction
     data object VolumeDown : FridayAction
+    data class BrightnessSet(val percent: Int) : FridayAction
+    data class BrightnessAdjust(val deltaPercent: Int) : FridayAction
+    data class Wifi(val enabled: Boolean) : FridayAction
+    data class MobileData(val enabled: Boolean) : FridayAction
+    data class PowerSaving(val enabled: Boolean) : FridayAction
     data class Timer(val seconds: Int) : FridayAction
     data class Alarm(val hour: Int, val minute: Int) : FridayAction
     data class AlarmAfter(val seconds: Int) : FridayAction
