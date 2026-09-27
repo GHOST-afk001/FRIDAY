@@ -211,7 +211,7 @@ class FridayCommandProcessor {
 
     private fun parseAlarm(c: String): FridayAction? {
         if (!(c.contains("alarm") || c.contains("अलार्म") || c.contains("wake me"))) return null
-        val relative = Regex("(?:alarm|अलार्म)\\s+(?:after|in|me|mein|baad|ke baad|में|बाद)\\s+(\\d+)\\s*(hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs|घंटा|घंटे|मिनट|सेकंड)", RegexOption.IGNORE_CASE).find(c)
+        val relative = Regex("(?:alarm|अलार्म|wake me)\\s+(?:after|in|me|mein|baad|ke baad|में|बाद)\\s+(\\d+)\\s*(hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs|घंटा|घंटे|मिनट|सेकंड)", RegexOption.IGNORE_CASE).find(c)
             ?: Regex("(?:alarm|अलार्म)\\s+(\\d+)\\s*(hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs|घंटा|घंटे|मिनट|सेकंड)\\s*(?:baad|later|mein|में|बाद)", RegexOption.IGNORE_CASE).find(c)
         if (relative != null) {
             val value = relative.groupValues[1].toLongOrNull() ?: return null
