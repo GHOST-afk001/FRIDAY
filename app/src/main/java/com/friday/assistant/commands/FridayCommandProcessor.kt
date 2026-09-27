@@ -3,6 +3,8 @@ package com.friday.assistant.commands
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 class FridayCommandProcessor {
     fun process(input: String): FridayResponse {
@@ -29,6 +31,8 @@ class FridayCommandProcessor {
         if (normalized.contains("standby") || normalized.contains("so jao") || normalized.contains("stop listening")) return FridayResponse("Understood Boss. Standby mode.")
 
         if (isEmergencySosCommand(normalized)) return FridayResponse("Emergency dialer mein 112 open karne ke liye confirmation chahiye.", FridayAction.EmergencySos, needsConfirmation = true)
+
+        parseWeather(normalized)?.let { return FridayResponse("Weather check kar rahi hoon, Boss.", it) }
 
         parseAccessibilityCommand(normalized)?.let { return it }
 
@@ -63,6 +67,36 @@ class FridayCommandProcessor {
         }
         parseSms(normalized, raw)?.let { (name, message) -> return FridayResponse("${name.trim()} ko message bhej rahi hoon.", FridayAction.SmsContact(name.trim(), message), needsConfirmation = false) }
         return FridayResponse("", handledLocally = false)
+    }
+
+
+    private fun parseWeather(c: String): FridayAction.Weather? {
+        val n = c.trim().replace(Regex("\\s+"), " ")
+        if (!(n.contains("weather") || n.contains("mausam") || n.contains("temperature") || n.contains("taapman") || n.contains("तापमान") || n.contains("मौसम"))) return null
+        val date = parseWeatherDate(n)
+        val location = Regex("(?:weather|mausam|temperature|तापमान|मौसम)\\s+(?:in|at|for|of|mein|me|par|pe)\\s+(.+?)(?=\\s+(?:today|aaj|tomorrow|kal|yesterday|on)\\b|$)", RegexOption.IGNORE_CASE).find(n)?.groupValues?.get(1)?.trim()
+            ?: Regex("(?:in|at|for|of|mein|me|par|pe)\\s+(.+?)(?=\\s+(?:today|aaj|tomorrow|kal|yesterday|on)\\b|$)", RegexOption.IGNORE_CASE).find(n)?.groupValues?.get(1)?.trim()
+        return FridayAction.Weather(location?.takeIf { it.isNotBlank() }, date?.toString())
+    }
+
+    private fun parseWeatherDate(n: String): LocalDate? {
+        val today = LocalDate.now()
+        val lower = n.lowercase(Locale.ROOT)
+        if (lower.contains("day after tomorrow") || lower.contains("parson") || lower.contains("परसों")) return today.plusDays(2)
+        if (lower.contains("yesterday") || lower.contains("kal jo") || lower.contains("kal tha") || lower.contains("kal thi")) return today.minusDays(1)
+        if (lower.contains("tomorrow") || lower.contains("kal")) return today.plusDays(1)
+        if (lower.contains("today") || lower.contains("aaj") || lower.contains("abhi") || lower.contains("current")) return today
+        Regex("\\b(20\\d{2})[-/](\\d{1,2})[-/](\\d{1,2})\\b").find(n)?.let {
+            return runCatching { LocalDate.of(it.groupValues[1].toInt(), it.groupValues[2].toInt(), it.groupValues[3].toInt()) }.getOrNull()
+        }
+        Regex("\\b(\\d{1,2})[-/](\\d{1,2})[-/](20\\d{2})\\b").find(n)?.let {
+            return runCatching { LocalDate.of(it.groupValues[3].toInt(), it.groupValues[2].toInt(), it.groupValues[1].toInt()) }.getOrNull()
+        }
+        val months = mapOf("january" to 1, "jan" to 1, "february" to 2, "feb" to 2, "march" to 3, "mar" to 3, "april" to 4, "apr" to 4, "may" to 5, "june" to 6, "jun" to 6, "july" to 7, "jul" to 7, "august" to 8, "aug" to 8, "september" to 9, "sep" to 9, "october" to 10, "oct" to 10, "november" to 11, "nov" to 11, "december" to 12, "dec" to 12)
+        val m = Regex("\\b(\\d{1,2})\\s+([A-Za-z]+)(?:\\s+(20\\d{2}))?\\b", RegexOption.IGNORE_CASE).find(n) ?: return null
+        val month = months[m.groupValues[2].lowercase(Locale.ROOT)] ?: return null
+        val year = m.groupValues[3].toIntOrNull() ?: today.year
+        return runCatching { LocalDate.of(year, month, m.groupValues[1].toInt()) }.getOrNull()
     }
 
     private fun parseAccessibilityCommand(c: String): FridayResponse? {
