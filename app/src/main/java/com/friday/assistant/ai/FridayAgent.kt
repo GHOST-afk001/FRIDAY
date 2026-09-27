@@ -43,6 +43,7 @@ class FridayAgent(context: Context) {
     fun handle(input: String, callback: (String, Boolean) -> Unit) {
         if (closed) return
         FridayRuntime.update("UNDERSTANDING", "Checking local Android commands", true)
+        memory.learnFromUserUtterance(input)
 
         handleRememberRequest(input)?.let { answer ->
             remember("user", input)
