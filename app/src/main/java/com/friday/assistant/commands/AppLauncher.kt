@@ -24,6 +24,11 @@ class AppLauncher(private val context: Context) {
             is FridayAction.Sequence -> action.actions.all { launch(it) }
             FridayAction.YouTube -> openPackageOrUrl("com.google.android.youtube", "https://www.youtube.com")
             is FridayAction.YouTubeSearch -> openYouTubeSearch(action.query)
+            is FridayAction.BrightnessSet -> setBrightnessPercent(action.percent)
+            is FridayAction.BrightnessAdjust -> adjustBrightness(action.deltaPercent)
+            is FridayAction.Wifi -> toggleQuickSetting("wifi", action.enabled)
+            is FridayAction.MobileData -> toggleQuickSetting("mobile data", action.enabled)
+            is FridayAction.PowerSaving -> toggleQuickSetting("power saving", action.enabled)
             is FridayAction.SpotifySearch -> openSpotifySearch(action.query)
             FridayAction.Calculator -> openCalculator()
             FridayAction.Settings -> start(Intent(Settings.ACTION_SETTINGS))
@@ -79,6 +84,50 @@ class AppLauncher(private val context: Context) {
         context.startActivity(intent); return true
     }
 
+    private fun setBrightnessPercent(percent: Int): Boolean {
+        val value = percent.coerceIn(0, 100)
+        return try {
+            if (!Settings.System.canWrite(context)) {
+                start(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:" + context.packageName)))
+                return false
+            }
+            val brightness = (value * 255 / 100).coerceIn(0, 255)
+            Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, brightness)
+            Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
+            true
+        } catch (_: Throwable) { false }
+    }
+
+    private fun adjustBrightness(deltaPercent: Int): Boolean {
+        return try {
+            if (!Settings.System.canWrite(context)) {
+                start(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:" + context.packageName)))
+                return false
+            }
+            val current = Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128)
+            val currentPercent = current * 100 / 255
+            setBrightnessPercent((currentPercent + deltaPercent).coerceIn(0, 100))
+        } catch (_: Throwable) { false }
+    }
+
+    private fun toggleQuickSetting(kind: String, enabled: Boolean): Boolean {
+        if (FridayAutomation.isConnected()) {
+            val labels = when (kind) {
+                "wifi" -> listOf("Wi-Fi", "WiFi", "वाई-फाई", "वाईफाई")
+                "mobile data" -> listOf("Mobile data", "Mobile Data", "मोबाइल डेटा", "Data")
+                else -> listOf("Power saving", "Power saving mode", "Battery saver", "Power Saver", "पावर सेविंग", "बैटरी सेवर")
+            }
+            if (FridayAutomation.openQuickSettings()) {
+                for (label in labels) if (FridayAutomation.clickVisibleText(label)) return true
+            }
+        }
+        val intent = when (kind) {
+            "wifi" -> Intent(Settings.ACTION_WIFI_SETTINGS)
+            "mobile data" -> Intent(Settings.ACTION_DATA_ROAMING_SETTINGS)
+            else -> Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)
+        }
+        return start(intent)
+    }
     private fun openPackageOrUrl(packageName: String, fallbackUrl: String?): Boolean = openInstalledApp(packageName, packageName) || (fallbackUrl?.let { start(Intent(Intent.ACTION_VIEW, Uri.parse(it))) } ?: false)
 
     private fun openInstalledApp(packageOrLabel: String, label: String): Boolean {
