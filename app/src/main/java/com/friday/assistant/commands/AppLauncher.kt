@@ -137,7 +137,7 @@ class AppLauncher(private val context: Context) {
                 else -> listOf("Power saving", "Power saving mode", "Battery saver", "Power Saver", "पावर सेविंग", "बैटरी सेवर")
             }
             if (FridayAutomation.openQuickSettings()) {
-                for (label in labels) if (FridayAutomation.clickVisibleText(label)) return true
+                if (FridayAutomation.setQuickSetting(labels, enabled)) return true
             }
         }
         val intent = when (kind) {
