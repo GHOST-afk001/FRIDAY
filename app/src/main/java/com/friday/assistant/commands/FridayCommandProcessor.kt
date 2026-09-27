@@ -128,18 +128,18 @@ class FridayCommandProcessor {
     private fun parseBrightnessCommand(c: String): FridayResponse? {
         val n = c.trim().replace(Regex("\\s+"), " ")
         if (!(n.contains("brightness") || n.contains("screen bright") || n.contains("ब्राइटनेस") || n.contains("रोशनी"))) return null
-        if (n.contains("increase") || n.contains("up") || n.contains("bright karo") || n.contains("बढ़ा")) return FridayResponse("Brightness badha rahi hoon.", FridayAction.BrightnessAdjust(10))
+        if (n.contains("increase") || n.contains("up") || n.contains("bright karo") || n.contains("badha") || n.contains("बढ़ा")) return FridayResponse("Brightness badha rahi hoon.", FridayAction.BrightnessAdjust(10))
         if (n.contains("decrease") || n.contains("down") || n.contains("dim") || n.contains("kam karo") || n.contains("कम")) return FridayResponse("Brightness kam kar rahi hoon.", FridayAction.BrightnessAdjust(-10))
         val percent = Regex("(\\d{1,3})\\s*(?:%|percent|percentage)", RegexOption.IGNORE_CASE).find(n)?.groupValues?.get(1)?.toIntOrNull()
             ?: Regex("(?:brightness|ब्राइटनेस|रोशनी)\\s+(?:to|at|par|pe)\\s+(\\d{1,3})\\b", RegexOption.IGNORE_CASE).find(n)?.groupValues?.get(1)?.toIntOrNull()
-        return percent?.coerceIn(0,100)?.let { FridayResponse("Brightness $it% kar rahi hoon.", FridayAction.BrightnessSet(it)) }
+        val directNumber = Regex("(?:brightness|ब्राइटनेस|रोशनी)\\s+(\\d{1,3})\\b", RegexOption.IGNORE_CASE).find(n)?.groupValues?.get(1)?.toIntOrNull()\n        return (percent ?: directNumber)?.coerceIn(0,100)?.let { FridayResponse("Brightness $it% kar rahi hoon.", FridayAction.BrightnessSet(it)) }
     }
 
     private fun parseWifiCommand(c: String): FridayResponse? {
         if (!(c.contains("wifi") || c.contains("wi-fi") || c.contains("वाईफाई"))) return null
         val enabled = when {
-            c.contains("off") || c.contains("band") || c.contains("disable") -> false
-            c.contains("on") || c.contains("chalu") || c.contains("enable") -> true
+            c.contains("off") || c.contains("बंद") || c.contains("band") || c.contains("disable") || c.contains("ऑफ") -> false
+            c.contains("on") || c.contains("चालू") || c.contains("chalu") || c.contains("enable") || c.contains("ऑन") -> true
             else -> return null
         }
         return FridayResponse(if (enabled) "Wi-Fi on kar rahi hoon." else "Wi-Fi off kar rahi hoon.", FridayAction.Wifi(enabled))
