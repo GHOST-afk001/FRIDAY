@@ -22,6 +22,11 @@ sealed interface FridayAction {
     data object FlashlightOff : FridayAction
     data object VolumeUp : FridayAction
     data object VolumeDown : FridayAction
+    data object MediaPlayPause : FridayAction
+    data object MediaNext : FridayAction
+    data object MediaPrevious : FridayAction
+    data object Calendar : FridayAction
+    data object EmailCompose : FridayAction
     data class BrightnessSet(val percent: Int) : FridayAction
     data class BrightnessAdjust(val deltaPercent: Int) : FridayAction
     data class Wifi(val enabled: Boolean) : FridayAction
