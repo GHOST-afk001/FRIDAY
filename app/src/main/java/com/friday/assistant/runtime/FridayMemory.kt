@@ -42,6 +42,27 @@ class FridayMemory(context: Context) {
         return true
     }
 
+
+    /**
+     * Lightweight automatic learning from explicit preference language.
+     * Only stores stable, non-secret facts that the user directly states.
+     */
+    fun learnFromUserUtterance(text: String) {
+        val value = text.replace(Regex("\\s+"), " ").trim()
+        if (value.isBlank()) return
+        val candidates = listOf(
+            Regex("^(?:i|main)\\s+(?:like|love|prefer|pasand karta hoon|pasand hai)\\s+(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^(?:mujhe|i)\\s+(?:pasand|favorite|favourite)\\s+(?:hai|is)\\s+(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^(?:my favorite|my favourite)\\s+(.+?)\\s+(?:is|hai)\\s+(.+)$", RegexOption.IGNORE_CASE)
+        )
+        candidates.firstNotNullOfOrNull { it.find(value) }?.let { match ->
+            val fact = if (match.groupValues.size > 2 && match.groupValues[2].isNotBlank())
+                "Favorite " + match.groupValues[1].trim() + " is " + match.groupValues[2].trim()
+            else "Preference: " + match.groupValues[1].trim()
+            rememberFact(fact)
+        }
+    }
+
     fun forgetFacts() {
         prefs.edit().remove(KEY_FACTS).apply()
     }
