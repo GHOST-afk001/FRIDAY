@@ -127,43 +127,47 @@ class FridayAgent(context: Context) {
                     append("\nUser message: ").append(input)
                 }
 
-                var activeBrain = "Gemini"
-                var reply = gemini.askWithTools(enrichedInput, history).getOrElse {
-                    if (groq.isConfigured()) {
-                        activeBrain = "Groq"
-                        groq.askWithTools(enrichedInput, history).getOrElse {
-                            if (openRouter.isConfigured()) {
-                                activeBrain = "OpenRouter"
-                                openRouter.askWithTools(enrichedInput, history).getOrElse {
-                                    GeminiReply(text = "Boss, teeno AI brains fail ho gaye. Main false action claim nahi karungi.")
-                                }
-                            }
-                            FridayRuntime.update("BRAIN ERROR", "Gemini, Groq and OpenRouter failed", false)
-                            finishFailure(input, callback, myGeneration)
-                            return@launch
-                        }
-                    } else if (openRouter.isConfigured()) {
-                        activeBrain = "OpenRouter"
-                        openRouter.askWithTools(enrichedInput, history).getOrElse {
-                            GeminiReply(text = "Boss, teeno AI brains fail ho gaye. Main false action claim nahi karungi.")
-                        }
-                    } else {
-                        FridayRuntime.update("BRAIN ERROR", "Gemini failed and no secondary brain is configured", false)
-                        finishFailure(input, callback, myGeneration)
-                        return@launch
+                var activeBrain = ""
+                var reply: GeminiReply? = null
+
+                if (gemini.isConfigured()) {
+                    gemini.askWithTools(enrichedInput, history).onSuccess {
+                        activeBrain = "Gemini"
+                        reply = it
                     }
                 }
+
+                if (reply == null && groq.isConfigured()) {
+                    groq.askWithTools(enrichedInput, history).onSuccess {
+                        activeBrain = "Groq"
+                        reply = it
+                    }
+                }
+
+                if (reply == null && openRouter.isConfigured()) {
+                    openRouter.askWithTools(enrichedInput, history).onSuccess {
+                        activeBrain = "OpenRouter"
+                        reply = it
+                    }
+                }
+
+                if (reply == null) {
+                    FridayRuntime.update("BRAIN ERROR", "Gemini, Groq and OpenRouter failed", false)
+                    finishFailure(input, callback, myGeneration)
+                    return@launch
+                }
+
                 FridayRuntime.update("AI THINKING", "$activeBrain is reasoning", true)
 
                 var toolTurns = 0
-                while (reply.toolCall != null && toolTurns < MAX_TOOL_TURNS && isActive && !closed && requestGeneration.get() == myGeneration) {
-                    val call = reply.toolCall ?: break
+                while (reply?.toolCall != null && toolTurns < MAX_TOOL_TURNS && isActive && !closed && requestGeneration.get() == myGeneration) {
+                    val call = reply?.toolCall ?: break
                     toolTurns++
                     val command = call.args.optString("command").trim()
                     FridayRuntime.update("ANDROID TOOL", command.take(160).ifBlank { "Executing requested phone action" }, true)
 
                     val toolResult = executeGeminiTool(call.name, call.args)
-                    val modelContent = reply.modelContent ?: error("Gemini tool call did not include model content")
+                    val modelContent = reply?.modelContent ?: error("$activeBrain tool call did not include model content")
                     reply = if (activeBrain == "Groq") {
                         groq.continueWithToolResult(history, enrichedInput, modelContent, call, toolResult).getOrElse {
                             GeminiReply(text = "Boss, action ka result mil gaya, lekin Groq final response generate nahi kar paayi.")
@@ -179,12 +183,12 @@ class FridayAgent(context: Context) {
                     }
                 }
 
-                if (reply.toolCall != null) {
+                if (reply?.toolCall != null) {
                     reply = GeminiReply(text = "Boss, main is request ko ek hi run mein safely complete nahi kar paayi.")
                 }
 
                 if (closed || !isActive || requestGeneration.get() != myGeneration) return@launch
-                val answer = reply.text?.trim().takeUnless { it.isNullOrBlank() }
+                val answer = reply?.text?.trim().takeUnless { it.isNullOrBlank() }
                     ?: "Boss, mujhe is request ka usable response nahi mila."
                 remember("user", input)
                 remember("assistant", answer)
