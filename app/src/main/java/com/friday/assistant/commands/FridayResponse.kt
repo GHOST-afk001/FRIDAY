@@ -36,6 +36,7 @@ sealed interface FridayAction {
     data class Alarm(val hour: Int, val minute: Int) : FridayAction
     data class AlarmAfter(val seconds: Int) : FridayAction
     data class MapQuery(val query: String, val navigation: Boolean = false) : FridayAction
+    data class Weather(val location: String? = null, val dateIso: String? = null) : FridayAction
     data class DialNumber(val number: String) : FridayAction
     data class DialContact(val name: String) : FridayAction
     data class SmsContact(val name: String, val message: String) : FridayAction
