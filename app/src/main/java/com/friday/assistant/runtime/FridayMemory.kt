@@ -66,7 +66,7 @@ class FridayMemory(context: Context) {
 
     fun rememberConversation(role: String, text: String) {
         val clean = text.replace(Regex("\\s+"), " ").trim().take(MAX_MESSAGE)
-        if (clean.isBlank()) return
+        if (clean.isBlank() || looksLikeSecret(clean)) return
         synchronized(lock) {
             val history = readJsonArray(KEY_HISTORY)
             history.put(JSONObject().put("role", if (role == "assistant") "assistant" else "user").put("text", clean).put("time", System.currentTimeMillis()))
@@ -116,7 +116,9 @@ class FridayMemory(context: Context) {
         val lower = value.lowercase(Locale.ROOT)
         return lower.contains("api key") || lower.contains("apikey") ||
             lower.contains("password") || lower.contains("passcode") ||
-            lower.contains("otp") || lower.contains("one time password")
+            lower.contains("otp") || lower.contains("one time password") ||
+            lower.contains("authorization: bearer") || lower.contains("bearer ") ||
+            Regex("""(?i)(?:AIza[0-9A-Za-z_-]{20,}|gsk_[0-9A-Za-z_-]{20,}|sk-[0-9A-Za-z_-]{20,}|api[_-]?key\\s*[=:])""").containsMatchIn(value)
     }
 
     companion object {
