@@ -22,7 +22,7 @@ class FridayCommandProcessor {
         val command = raw.lowercase(Locale.ROOT)
         if (command.isBlank()) return FridayResponse("I didn't catch that. Please say it again.")
         if (isGreeting(command)) return FridayResponse("Yes Boss. Main Friday hoon. Bataiye.")
-        if (command.contains("who are you") || command.contains("tum kaun") || command.contains("aap kaun")) return FridayResponse("Main Friday hoon, aapki personal Android assistant. Ready when you are, Boss.")
+        if (command.contains("who are you") || command.contains("tum kaun") || command.contains("aap kaun")) return FridayResponse("Hi, I'm Friday, a personal AI assistant. Ready when you are, Boss.")
 
         val normalized = command.replace(Regex("^\\s*(?:hey\\s+)?friday\\b\\s*"), "").trim()
         val hasHindiTimeWord = Regex("(^|\\s)टाइम(\\s|$)").containsMatchIn(normalized)
@@ -63,7 +63,7 @@ class FridayCommandProcessor {
             val compact = target.filter { it.isDigit() || it == '+' }
             val isNumber = compact.length in 7..15 && target.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }
             val action = if (isNumber) FridayAction.DialNumber(compact) else FridayAction.DialContact(target)
-            return FridayResponse("${target.trim()} ko call kar rahi hoon.", action, needsConfirmation = false)
+            return FridayResponse("Hi, I'm Friday, a personal AI assistant. Main ${target.trim()} ko call kar rahi hoon.", action, needsConfirmation = false)
         }
         parseSms(normalized, raw)?.let { (name, message) -> return FridayResponse("${name.trim()} ko message bhej rahi hoon.", FridayAction.SmsContact(name.trim(), message), needsConfirmation = false) }
         return FridayResponse("", handledLocally = false)
