@@ -304,7 +304,8 @@ class FridayAgent(context: Context) {
         val value = input.trim()
         val lower = value.lowercase(Locale.ROOT)
         if (lower.matches(Regex("(?:what is|what's|whats) my name\\??")) || lower in setOf("mera naam kya hai", "mera name kya hai", "main kaun hoon", "who am i")) {
-            val owner = memory.ownerName()\n            return if (owner.equals("Boss", ignoreCase = true)) "Aap Boss hain. Main FRIDAY hoon, aapki personal AI assistant." else "Aap " + owner + " Sir hain. Main FRIDAY hoon, aapki personal AI assistant."
+            val owner = memory.ownerName()
+            return if (owner.equals("Boss", ignoreCase = true)) "Aap Boss hain. Main FRIDAY hoon, aapki personal AI assistant." else "Aap " + owner + " Sir hain. Main FRIDAY hoon, aapki personal AI assistant."
         }
         val match = Regex("^(?:my name is|mera naam|mera name|call me)\\s+([\\p{L}][\\p{L} .'-]{1,29})(?:\\s+hai)?[.!]?$", RegexOption.IGNORE_CASE).find(value) ?: return null
         val name = match.groupValues[1].trim().replace(Regex("\\s+hai$", RegexOption.IGNORE_CASE), "").trim()
