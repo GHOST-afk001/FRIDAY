@@ -11,7 +11,7 @@ class FridayCommandProcessor {
         val raw = input.trim()
         if (raw.isBlank()) return FridayResponse("I didn't catch that. Please say it again.")
         parseWhatsappMessage(raw)?.let { (name, message) ->
-            return FridayResponse("${name.trim()} ko WhatsApp message bhej rahi hoon.", FridayAction.AccessibilityCommand("whatsapp_message|${name.trim()}|${message.trim()}"), needsConfirmation = false)
+            return FridayResponse("${name.trim()} ko WhatsApp message bhejne ke liye confirmation chahiye.", FridayAction.AccessibilityCommand("whatsapp_message|${name.trim()}|${message.trim()}"), needsConfirmation = true)
         }
         CompoundCommandParser.parse(raw, this)?.let { return it }
         return processWithoutCompound(raw)
@@ -72,9 +72,9 @@ class FridayCommandProcessor {
             val compact = target.filter { it.isDigit() || it == '+' }
             val isNumber = compact.length in 7..15 && target.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }
             val action = if (isNumber) FridayAction.DialNumber(compact) else FridayAction.DialContact(target)
-            return FridayResponse("Hi, I'm Friday, a personal AI assistant. Main ${target.trim()} ko call kar rahi hoon.", action, needsConfirmation = false)
+            return FridayResponse("${target.trim()} ko call karne ke liye confirmation chahiye.", action, needsConfirmation = true)
         }
-        parseSms(normalized, raw)?.let { (name, message) -> return FridayResponse("${name.trim()} ko message bhej rahi hoon.", FridayAction.SmsContact(name.trim(), message), needsConfirmation = false) }
+        parseSms(normalized, raw)?.let { (name, message) -> return FridayResponse("${name.trim()} ko message bhejne ke liye confirmation chahiye.", FridayAction.SmsContact(name.trim(), message), needsConfirmation = true) }
         return FridayResponse("", handledLocally = false)
     }
 
@@ -119,7 +119,7 @@ class FridayCommandProcessor {
             normalized.startsWith("tap ") && normalized.length > 4 -> "tap ${normalized.substringAfter("tap ").trim()}"
             else -> return null
         }
-        return FridayResponse("Done Boss.", FridayAction.AccessibilityCommand(command), needsConfirmation = false)
+        return FridayResponse("Ye automation action karne se pehle confirmation chahiye.", FridayAction.AccessibilityCommand(command), needsConfirmation = true)
     }
 
     private fun isGreeting(c: String) = c == "hello" || c == "hello friday" || c == "hi friday" || c == "namaste" || c == "नमस्ते"
