@@ -4,6 +4,9 @@ package com.friday.assistant.automation
 object FridayAutomation {
     fun isConnected(): Boolean = FridayAccessibilityService.isConnected()
 
+    fun openQuickSettings(): Boolean = FridayAccessibilityService.openQuickSettings()
+    fun clickVisibleText(text: String): Boolean = FridayAccessibilityService.clickText(text)
+
     fun clickSend(): Boolean = FridayAccessibilityService.clickText("Send") || FridayAccessibilityService.clickText("भेजें") || FridayAccessibilityService.clickDescription("Send")
 
     fun replyToWhatsApp(message: String): Boolean = FridayAccessibilityService.replyToWhatsApp(message)
