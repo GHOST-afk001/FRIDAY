@@ -9,6 +9,8 @@ import com.friday.assistant.runtime.FridayMemory
 import com.friday.assistant.runtime.FridayNotifications
 import com.friday.assistant.runtime.FridayNotificationReply
 import com.friday.assistant.runtime.FridayRuntime
+import com.friday.assistant.weather.FridayWeatherService
+import java.time.LocalDate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -193,6 +195,23 @@ class FridayAgent(context: Context) {
     private fun executeLocal(result: FridayResponse, input: String, callback: (String, Boolean) -> Unit) {
         remember("user", input)
         val action = result.action
+        if (action is FridayAction.Weather) {
+            FridayRuntime.update("WEATHER", "Fetching Open-Meteo weather data", true)
+            brainScope.launch {
+                val answer = runCatching {
+                    val date = action.dateIso?.let { LocalDate.parse(it) }
+                    FridayWeatherService(appContext).getWeather(FridayWeatherService.Request(action.location, date))
+                }.getOrElse { "Boss, weather service error aa gaya. Main guess nahi karungi." }
+                remember("assistant", answer)
+                withContext(Dispatchers.Main.immediate) {
+                    if (!closed) {
+                        FridayRuntime.update("WEATHER READY", answer.take(180), true)
+                        callback(answer, true)
+                    }
+                }
+            }
+            return
+        }
         if (action != null && !result.needsConfirmation) {
             FridayRuntime.update("EXECUTING", "Running the requested Android action", true)
             val launched = runCatching { launcher.launch(action) }.getOrDefault(false)
