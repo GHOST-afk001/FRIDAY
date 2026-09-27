@@ -64,7 +64,7 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
     private fun createVoiceManager(): VoiceManager = VoiceManager(appContext, object : VoiceManager.Listener {
         override fun onListening() {
             if (sessionActive.get() && !cleanedUp.get()) {
-                FridayRuntime.update("LISTENING", "Microphone is listening for Imroz Sir's command", true)
+                FridayRuntime.update("LISTENING", "Microphone is listening for Boss's command", true)
             }
         }
 
