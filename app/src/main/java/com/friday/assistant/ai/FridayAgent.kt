@@ -133,11 +133,9 @@ class FridayAgent(context: Context) {
                         groq.askWithTools(enrichedInput, history).getOrElse {
                             if (openRouter.isConfigured()) {
                                 activeBrain = "OpenRouter"
-                                val text = openRouter.ask(enrichedInput, history).getOrElse { "Boss, teeno AI brains fail ho gaye. Main false action claim nahi karungi." }
-                                withContext(Dispatchers.Main.immediate) {
-                                    if (!closed && requestGeneration.get() == myGeneration) callback(text, false)
+                                openRouter.askWithTools(enrichedInput, history).getOrElse {
+                                    GeminiReply(text = "Boss, teeno AI brains fail ho gaye. Main false action claim nahi karungi.")
                                 }
-                                return@launch
                             }
                             FridayRuntime.update("BRAIN ERROR", "Gemini, Groq and OpenRouter failed", false)
                             finishFailure(input, callback, myGeneration)
@@ -145,11 +143,9 @@ class FridayAgent(context: Context) {
                         }
                     } else if (openRouter.isConfigured()) {
                         activeBrain = "OpenRouter"
-                        val text = openRouter.ask(enrichedInput, history).getOrElse { "Boss, teeno AI brains fail ho gaye. Main false action claim nahi karungi." }
-                        withContext(Dispatchers.Main.immediate) {
-                            if (!closed && requestGeneration.get() == myGeneration) callback(text, false)
+                        openRouter.askWithTools(enrichedInput, history).getOrElse {
+                            GeminiReply(text = "Boss, teeno AI brains fail ho gaye. Main false action claim nahi karungi.")
                         }
-                        return@launch
                     } else {
                         FridayRuntime.update("BRAIN ERROR", "Gemini failed and no secondary brain is configured", false)
                         finishFailure(input, callback, myGeneration)
@@ -171,6 +167,10 @@ class FridayAgent(context: Context) {
                         groq.continueWithToolResult(history, enrichedInput, modelContent, call, toolResult).getOrElse {
                             GeminiReply(text = "Boss, action ka result mil gaya, lekin Groq final response generate nahi kar paayi.")
                         }
+                    } else if (activeBrain == "OpenRouter") {
+                        openRouter.continueWithToolResult(history, enrichedInput, modelContent, call, toolResult).getOrElse {
+                            GeminiReply(text = "Boss, action ka result mil gaya, lekin OpenRouter final response generate nahi kar paayi.")
+                        }
                     } else {
                         gemini.continueWithToolResult(history, enrichedInput, modelContent, call, toolResult).getOrElse {
                             GeminiReply(text = "Boss, action ka result mil gaya, lekin Gemini final response generate nahi kar paayi.")
@@ -189,7 +189,7 @@ class FridayAgent(context: Context) {
                 remember("assistant", answer)
                 withContext(Dispatchers.Main.immediate) {
                     if (!closed && requestGeneration.get() == myGeneration) {
-                        FridayRuntime.update("RESPONSE READY", "Gemini response ready for speech", true)
+                        FridayRuntime.update("RESPONSE READY", "$activeBrain response ready for speech", true)
                         callback(answer, false)
                     }
                 }
@@ -279,7 +279,7 @@ class FridayAgent(context: Context) {
 
     private suspend fun finishFailure(input: String, callback: (String, Boolean) -> Unit, generation: Long) {
         if (closed || requestGeneration.get() != generation) return
-        val answer = "Imroz Sir, Gemini connection fail hui. Main koi action complete hone ka false claim nahi karungi."
+        val answer = "Boss, AI connection fail hui. Main koi action complete hone ka false claim nahi karungi."
         remember("user", input)
         remember("assistant", answer)
         withContext(Dispatchers.Main.immediate) {
