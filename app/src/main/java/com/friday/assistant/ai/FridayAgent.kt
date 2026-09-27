@@ -45,6 +45,7 @@ class FridayAgent(context: Context) {
     fun configureOpenRouterKey(key: String) { if (!closed) openRouter.configureApiKey(key) }
     fun configureIpInfoToken(token: String) { if (!closed) ipInfo.configureToken(token) }
     fun hasApiKey() = !closed && gemini.isConfigured()
+    fun hasOpenRouterKey() = !closed && openRouter.isConfigured()
     fun clearApiKey() { if (!closed) gemini.clearApiKey() }
 
     fun handle(input: String, callback: (String, Boolean) -> Unit) {
