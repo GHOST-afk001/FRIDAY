@@ -32,6 +32,7 @@ class FridayAgent(context: Context) {
     private val local = FridayCommandProcessor()
     private val launcher = AppLauncher(appContext)
     private val gemini = GeminiProvider(appContext)
+    private val groq = GroqProvider(appContext)
     private val openRouter = OpenRouterProvider(appContext)
     private val countries = RestCountriesService()
     private val ipInfo = IpInfoService(appContext)
@@ -42,11 +43,14 @@ class FridayAgent(context: Context) {
     @Volatile private var activeRequest: Job? = null
 
     fun configureApiKey(key: String) { if (!closed) gemini.setApiKey(key) }
+    fun configureGroqKey(key: String) { if (!closed) groq.configureApiKey(key) }
+    fun hasGroqKey() = !closed && groq.isConfigured()
     fun configureOpenRouterKey(key: String) { if (!closed) openRouter.configureApiKey(key) }
     fun configureIpInfoToken(token: String) { if (!closed) ipInfo.configureToken(token) }
     fun hasApiKey() = !closed && gemini.isConfigured()
     fun hasOpenRouterKey() = !closed && openRouter.isConfigured()
     fun clearApiKey() { if (!closed) gemini.clearApiKey() }
+    fun clearGroqKey() { if (!closed) groq.clearApiKey() }
 
     fun handle(input: String, callback: (String, Boolean) -> Unit) {
         if (closed) return
@@ -96,7 +100,7 @@ class FridayAgent(context: Context) {
             return
         }
 
-        if (!gemini.isConfigured() && !openRouter.isConfigured()) {
+        if (!gemini.isConfigured() && !groq.isConfigured() && !openRouter.isConfigured()) {
             val answer = "Boss, AI brain ke liye Gemini ya OpenRouter key configure karni hogi."
             FridayRuntime.update("BRAIN NOT CONFIGURED", "No AI provider is configured", false)
             callback(answer, false)
@@ -107,6 +111,7 @@ class FridayAgent(context: Context) {
         val myGeneration = requestGeneration.incrementAndGet()
         activeRequest?.cancel()
         gemini.cancel()
+        groq.cancel()
         activeRequest = brainScope.launch {
             try {
                 if (closed || !isActive || requestGeneration.get() != myGeneration) return@launch
@@ -121,16 +126,37 @@ class FridayAgent(context: Context) {
                     append("\nUser message: ").append(input)
                 }
 
+                var activeBrain = "Gemini"
                 var reply = gemini.askWithTools(enrichedInput, history).getOrElse {
-                    if (openRouter.isConfigured()) {
-                        val text = openRouter.ask(enrichedInput, history).getOrElse { "Boss, dono AI providers fail ho gaye. Main false action claim nahi karungi." }
-                        withContext(Dispatchers.Main.immediate) { if (!closed && requestGeneration.get() == myGeneration) callback(text, false) }
+                    if (groq.isConfigured()) {
+                        activeBrain = "Groq"
+                        groq.askWithTools(enrichedInput, history).getOrElse {
+                            if (openRouter.isConfigured()) {
+                                activeBrain = "OpenRouter"
+                                val text = openRouter.ask(enrichedInput, history).getOrElse { "Boss, teeno AI brains fail ho gaye. Main false action claim nahi karungi." }
+                                withContext(Dispatchers.Main.immediate) {
+                                    if (!closed && requestGeneration.get() == myGeneration) callback(text, false)
+                                }
+                                return@launch
+                            }
+                            FridayRuntime.update("BRAIN ERROR", "Gemini, Groq and OpenRouter failed", false)
+                            finishFailure(input, callback, myGeneration)
+                            return@launch
+                        }
+                    } else if (openRouter.isConfigured()) {
+                        activeBrain = "OpenRouter"
+                        val text = openRouter.ask(enrichedInput, history).getOrElse { "Boss, teeno AI brains fail ho gaye. Main false action claim nahi karungi." }
+                        withContext(Dispatchers.Main.immediate) {
+                            if (!closed && requestGeneration.get() == myGeneration) callback(text, false)
+                        }
+                        return@launch
+                    } else {
+                        FridayRuntime.update("BRAIN ERROR", "Gemini failed and no secondary brain is configured", false)
+                        finishFailure(input, callback, myGeneration)
                         return@launch
                     }
-                    FridayRuntime.update("BRAIN ERROR", "Gemini request failed; no device action was claimed", false)
-                    finishFailure(input, callback, myGeneration)
-                    return@launch
                 }
+                FridayRuntime.update("AI THINKING", "$activeBrain is reasoning", true)
 
                 var toolTurns = 0
                 while (reply.toolCall != null && toolTurns < MAX_TOOL_TURNS && isActive && !closed && requestGeneration.get() == myGeneration) {
@@ -141,8 +167,14 @@ class FridayAgent(context: Context) {
 
                     val toolResult = executeGeminiTool(call.name, call.args)
                     val modelContent = reply.modelContent ?: error("Gemini tool call did not include model content")
-                    reply = gemini.continueWithToolResult(history, enrichedInput, modelContent, call, toolResult).getOrElse {
-                        GeminiReply(text = "Boss, action ka result mil gaya, lekin Gemini final response generate nahi kar paayi.")
+                    reply = if (activeBrain == "Groq") {
+                        groq.continueWithToolResult(history, enrichedInput, modelContent, call, toolResult).getOrElse {
+                            GeminiReply(text = "Boss, action ka result mil gaya, lekin Groq final response generate nahi kar paayi.")
+                        }
+                    } else {
+                        gemini.continueWithToolResult(history, enrichedInput, modelContent, call, toolResult).getOrElse {
+                            GeminiReply(text = "Boss, action ka result mil gaya, lekin Gemini final response generate nahi kar paayi.")
+                        }
                     }
                 }
 
@@ -283,6 +315,7 @@ class FridayAgent(context: Context) {
         activeRequest?.cancel()
         activeRequest = null
         gemini.cancel()
+        groq.cancel()
         brainScope.cancel()
         FridayRuntime.update("IDLE", "FRIDAY brain stopped", true)
     }
