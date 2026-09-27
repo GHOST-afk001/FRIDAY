@@ -101,7 +101,7 @@ class FridayAgent(context: Context) {
         }
 
         if (!gemini.isConfigured() && !groq.isConfigured() && !openRouter.isConfigured()) {
-            val answer = "Boss, AI brain ke liye Gemini ya OpenRouter key configure karni hogi."
+            val answer = "Boss, kam se kam ek AI brain configure karna hoga: Gemini, Groq ya OpenRouter."
             FridayRuntime.update("BRAIN NOT CONFIGURED", "No AI provider is configured", false)
             callback(answer, false)
             return
