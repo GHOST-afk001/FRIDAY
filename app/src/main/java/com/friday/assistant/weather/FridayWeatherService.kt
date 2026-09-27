@@ -24,6 +24,8 @@ class FridayWeatherService(private val context: Context) {
         val location = resolveLocation(request.locationText)
             ?: return "Boss, mujhe weather ke liye location nahi mil rahi. City ka naam bata dijiye."
         val today = LocalDate.now(ZoneId.of(location.timezone))
+        val daysAhead = java.time.temporal.ChronoUnit.DAYS.between(today, target)
+        if (daysAhead > 16) return "Boss, Open-Meteo ka reliable forecast is date se 16 din tak available hai. Is date ke liye main guess nahi karungi."
         val json = when {
             !target.isBefore(today) -> fetchForecast(location.latitude, location.longitude, target, today)
             target.isAfter(today.minusDays(10)) -> fetchHistoricalForecast(location.latitude, location.longitude, target)
@@ -112,11 +114,10 @@ class FridayWeatherService(private val context: Context) {
             date == today.minusDays(1) -> "kal (past)"; else -> date.format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.ENGLISH))
         }
         val parts = mutableListOf<String>()
-        if (max.isFinite() && min.isFinite()) parts += "temperature " + formatC(min) + " se " + formatC(max)
-        else {
-            val current = root.optJSONObject("current")?.optDouble("temperature_2m", Double.NaN) ?: Double.NaN
-            if (current.isFinite()) parts += "current temperature " + formatC(current)
-        }
+        val current = root.optJSONObject("current")?.optDouble("temperature_2m", Double.NaN) ?: Double.NaN
+        if (date == today && current.isFinite()) parts += "current temperature " + formatC(current)
+        if (max.isFinite() && min.isFinite()) parts += "day range " + formatC(min) + " to " + formatC(max)
+        else if (current.isFinite() && date != today) parts += "temperature " + formatC(current)
         if (apparentMax.isFinite() && apparentMin.isFinite()) parts += "feels-like " + formatC(apparentMin) + " to " + formatC(apparentMax)
         weatherDescription(code).takeIf { it.isNotBlank() }?.let { parts += it }
         if (rain.isFinite()) parts += "precipitation " + String.format(Locale.US, "%.1f mm", rain)
