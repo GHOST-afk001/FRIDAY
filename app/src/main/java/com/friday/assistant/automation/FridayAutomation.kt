@@ -5,6 +5,7 @@ object FridayAutomation {
     fun isConnected(): Boolean = FridayAccessibilityService.isConnected()
 
     fun openQuickSettings(): Boolean = FridayAccessibilityService.openQuickSettings()
+    fun setQuickSetting(labels: List<String>, desiredEnabled: Boolean): Boolean = FridayAccessibilityService.setQuickSetting(labels, desiredEnabled)
     fun clickVisibleText(text: String): Boolean = FridayAccessibilityService.clickText(text)
 
     fun clickSend(): Boolean = FridayAccessibilityService.clickText("Send") || FridayAccessibilityService.clickText("भेजें") || FridayAccessibilityService.clickDescription("Send")
