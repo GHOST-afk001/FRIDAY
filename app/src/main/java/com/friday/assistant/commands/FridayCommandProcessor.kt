@@ -48,6 +48,15 @@ class FridayCommandProcessor {
         if (normalized.contains("volume") && (normalized.contains("up") || normalized.contains("increase") || normalized.contains("badha"))) return FridayResponse("Volume badha rahi hoon.", FridayAction.VolumeUp)
         if (normalized.contains("volume") && (normalized.contains("down") || normalized.contains("decrease") || normalized.contains("kam"))) return FridayResponse("Volume kam kar rahi hoon.", FridayAction.VolumeDown)
 
+        parseBrightnessCommand(normalized)?.let { return it }
+        parseWifiCommand(normalized)?.let { return it }
+        parseMobileDataCommand(normalized)?.let { return it }
+        parsePowerSavingCommand(normalized)?.let { return it }
+        if (normalized.contains("play") || normalized.contains("pause") || normalized.contains("music chala") || normalized.contains("music roko")) return FridayResponse("Music control kar rahi hoon.", FridayAction.MediaPlayPause)
+        if (normalized.contains("next song") || normalized.contains("next track") || normalized.contains("agla gana") || normalized.contains("अगला गाना")) return FridayResponse("Next track.", FridayAction.MediaNext)
+        if (normalized.contains("previous song") || normalized.contains("previous track") || normalized.contains("pichla gana") || normalized.contains("पिछला गाना")) return FridayResponse("Previous track.", FridayAction.MediaPrevious)
+        if (normalized.contains("calendar") || normalized.contains("calender") || normalized.contains("schedule")) return FridayResponse("Calendar khol rahi hoon.", FridayAction.Calendar)
+        if (normalized == "email" || normalized == "compose email" || normalized == "mail" || normalized.contains("email kholo") || normalized.contains("mail kholo")) return FridayResponse("Email compose khol rahi hoon.", FridayAction.EmailCompose)
         parseYoutubeSearch(normalized)?.let { return FridayResponse("YouTube par ${it} search kar rahi hoon.", FridayAction.YouTubeSearch(it)) }
         if (normalized.contains("youtube")) return FridayResponse("YouTube khol rahi hoon.", FridayAction.YouTube)
         if (normalized.contains("calculator") || normalized.contains("कैलकुलेटर")) return FridayResponse("Calculator khol rahi hoon.", FridayAction.Calculator)
