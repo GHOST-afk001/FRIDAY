@@ -145,7 +145,10 @@ class AppLauncher(private val context: Context) {
             "mobile data" -> Intent(Settings.ACTION_DATA_ROAMING_SETTINGS)
             else -> Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)
         }
-        return start(intent)
+        // Opening Settings is only a fallback for the user to complete manually.
+        // Do not report it as if the requested toggle actually changed state.
+        start(intent)
+        return false
     }
     private fun openPackageOrUrl(packageName: String, fallbackUrl: String?): Boolean = openInstalledApp(packageName, packageName) || (fallbackUrl?.let { start(Intent(Intent.ACTION_VIEW, Uri.parse(it))) } ?: false)
 
