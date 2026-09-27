@@ -105,8 +105,8 @@ class FridayOnboardingActivity : ComponentActivity() {
     }.getOrDefault(false)
 
     private fun continueToFriday() {
-        if (!agent.hasApiKey()) {
-            Toast.makeText(this, "Connect Gemini brain first.", Toast.LENGTH_SHORT).show()
+        if (!agent.hasApiKey() && !agent.hasOpenRouterKey()) {
+            Toast.makeText(this, "Connect Gemini or OpenRouter brain first.", Toast.LENGTH_SHORT).show()
             return
         }
         getSharedPreferences("friday_onboarding", MODE_PRIVATE).edit().putBoolean("completed", true).apply()
@@ -121,7 +121,10 @@ class FridayOnboardingActivity : ComponentActivity() {
     @Composable
     private fun Onboarding() {
         var key by remember { mutableStateOf("") }
+        var openRouterKey by remember { mutableStateOf("") }
+        var ipToken by remember { mutableStateOf("") }
         var saved by remember { mutableStateOf(agent.hasApiKey()) }
+        var openRouterSaved by remember { mutableStateOf(agent.hasOpenRouterKey()) }
         var accessibility by remember { mutableStateOf(isAccessibilityEnabled()) }
         var assistantSelected by remember { mutableStateOf(isAssistantSelected()) }
         val orbState by FridayStateFlow.state.collectAsState()
@@ -129,6 +132,7 @@ class FridayOnboardingActivity : ComponentActivity() {
         LaunchedEffect(Unit) {
             while (true) {
                 saved = agent.hasApiKey()
+                openRouterSaved = agent.hasOpenRouterKey()
                 accessibility = isAccessibilityEnabled()
                 assistantSelected = isAssistantSelected()
                 delay(700)
@@ -168,7 +172,9 @@ class FridayOnboardingActivity : ComponentActivity() {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text("SYSTEM BRIDGES", color = Color(0xFF35E8FF), fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
 
-                            StatusRow("GEMINI BRAIN", saved, if (saved) "CONNECTED" else "API KEY REQUIRED")
+                            StatusRow("GEMINI BRAIN", saved, if (saved) "CONNECTED" else "OPTIONAL")
+                            StatusRow("OPENROUTER BRAIN", openRouterSaved, if (openRouterSaved) "CONNECTED" else "OPTIONAL")
+                            StatusRow("REST COUNTRIES", true, "NO KEY REQUIRED")
                             StatusRow("AUTOMATION", accessibility, if (accessibility) "ONLINE" else "PERMISSION REQUIRED")
                             StatusRow("ANDROID ASSISTANT", assistantSelected, if (assistantSelected) "ACTIVE" else "SELECT FRIDAY")
 
@@ -194,6 +200,45 @@ class FridayOnboardingActivity : ComponentActivity() {
                                 ) { Text("CONNECT GEMINI BRAIN") }
                             }
 
+                            OutlinedTextField(
+                                value = openRouterKey,
+                                onValueChange = { openRouterKey = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("OpenRouter API key (fallback brain)") },
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    if (openRouterKey.isNotBlank()) {
+                                        agent.configureOpenRouterKey(openRouterKey.trim())
+                                        openRouterKey = ""
+                                        openRouterSaved = agent.hasOpenRouterKey()
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("CONNECT OPENROUTER") }
+
+                            OutlinedTextField(
+                                value = ipToken,
+                                onValueChange = { ipToken = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("IPinfo token (optional)") },
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    if (ipToken.isNotBlank()) {
+                                        agent.configureIpInfoToken(ipToken.trim())
+                                        ipToken = ""
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("SAVE IPINFO TOKEN") }
+
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = ::openAppInfo, modifier = Modifier.weight(1f)) { Text("APP INFO") }
                                 OutlinedButton(onClick = ::openAccessibility, modifier = Modifier.weight(1f)) { Text("ACCESS") }
@@ -207,7 +252,7 @@ class FridayOnboardingActivity : ComponentActivity() {
                     Spacer(Modifier.height(10.dp))
                     Button(
                         onClick = ::continueToFriday,
-                        enabled = saved,
+                        enabled = saved || openRouterSaved,
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                         shape = RoundedCornerShape(14.dp)
                     ) {
