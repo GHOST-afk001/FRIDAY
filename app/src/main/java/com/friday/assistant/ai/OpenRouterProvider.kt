@@ -9,7 +9,7 @@ import java.net.URL
 /** OpenAI-compatible third brain with the same Android tool contract as Gemini/Groq. */
 class OpenRouterProvider(context: Context) {
     private val keys = SecureApiKeyStore(context)
-    private val model = "openai/gpt-4o-mini"
+    private val model = "openai/gpt-sol-latest"
     @Volatile private var activeConnection: HttpURLConnection? = null
 
     fun configureApiKey(key: String) = keys.saveNamed("openrouter_key", key.trim())
