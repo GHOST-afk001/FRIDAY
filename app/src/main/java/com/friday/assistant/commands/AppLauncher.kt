@@ -9,6 +9,7 @@ import android.hardware.camera2.CameraManager
 import android.media.AudioManager
 import android.net.Uri
 import android.provider.AlarmClock
+import android.provider.CalendarContract
 import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.provider.Settings
@@ -25,6 +26,11 @@ class AppLauncher(private val context: Context) {
             FridayAction.YouTube -> openPackageOrUrl("com.google.android.youtube", "https://www.youtube.com")
             is FridayAction.YouTubeSearch -> openYouTubeSearch(action.query)
             is FridayAction.BrightnessSet -> setBrightnessPercent(action.percent)
+            is FridayAction.MediaPlayPause -> dispatchMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            is FridayAction.MediaNext -> dispatchMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
+            is FridayAction.MediaPrevious -> dispatchMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+            FridayAction.Calendar -> openCalendar()
+            FridayAction.EmailCompose -> openEmailCompose()
             is FridayAction.BrightnessAdjust -> adjustBrightness(action.deltaPercent)
             is FridayAction.Wifi -> toggleQuickSetting("wifi", action.enabled)
             is FridayAction.MobileData -> toggleQuickSetting("mobile data", action.enabled)
@@ -83,6 +89,19 @@ class AppLauncher(private val context: Context) {
         if (intent.resolveActivity(context.packageManager) == null) return false
         context.startActivity(intent); return true
     }
+
+    private fun dispatchMediaKey(keyCode: Int): Boolean {
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val down = android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, keyCode)
+        val up = android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, keyCode)
+        audio.dispatchMediaKeyEvent(down)
+        audio.dispatchMediaKeyEvent(up)
+        return true
+    }
+
+    private fun openCalendar(): Boolean = start(Intent(Intent.ACTION_VIEW).apply { data = CalendarContract.CONTENT_URI })
+
+    private fun openEmailCompose(): Boolean = start(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")))
 
     private fun setBrightnessPercent(percent: Int): Boolean {
         val value = percent.coerceIn(0, 100)
