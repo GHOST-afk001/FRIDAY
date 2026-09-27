@@ -112,6 +112,7 @@ class FridayAgent(context: Context) {
         activeRequest?.cancel()
         gemini.cancel()
         groq.cancel()
+        openRouter.cancel()
         activeRequest = brainScope.launch {
             try {
                 if (closed || !isActive || requestGeneration.get() != myGeneration) return@launch
