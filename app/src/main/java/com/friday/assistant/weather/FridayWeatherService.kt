@@ -108,6 +108,7 @@ class FridayWeatherService(private val context: Context) {
         val apparentMax = daily?.optJSONArray("apparent_temperature_max")?.optDouble(index, Double.NaN) ?: Double.NaN
         val apparentMin = daily?.optJSONArray("apparent_temperature_min")?.optDouble(index, Double.NaN) ?: Double.NaN
         val rain = daily?.optJSONArray("precipitation_sum")?.optDouble(index, Double.NaN) ?: Double.NaN
+        val rainProbability = daily?.optJSONArray("precipitation_probability_max")?.optDouble(index, Double.NaN) ?: Double.NaN
         val code = daily?.optJSONArray("weather_code")?.optInt(index, -1) ?: -1
         val label = when {
             date == today -> "aaj"; date == today.plusDays(1) -> "kal"; date.isAfter(today) -> date.format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.ENGLISH))
@@ -121,8 +122,9 @@ class FridayWeatherService(private val context: Context) {
         if (apparentMax.isFinite() && apparentMin.isFinite()) parts += "feels-like " + formatC(apparentMin) + " to " + formatC(apparentMax)
         weatherDescription(code).takeIf { it.isNotBlank() }?.let { parts += it }
         if (rain.isFinite()) parts += "precipitation " + String.format(Locale.US, "%.1f mm", rain)
+        if (rainProbability.isFinite()) parts += "rain chance " + String.format(Locale.US, "%.0f%%", rainProbability)
         return if (parts.isEmpty()) "Boss, " + locationName + " ke liye " + label + " ka usable weather value nahi mila."
-        else "Boss, " + locationName + " mein " + label + ": " + parts.joinToString(", ") + "."
+        else "Boss, " + locationName + " mein " + label + ": " + parts.joinToString(", ") + ". Weather data by Open-Meteo."
     }
 
     private fun findDateIndex(times: org.json.JSONArray?, date: LocalDate): Int {
