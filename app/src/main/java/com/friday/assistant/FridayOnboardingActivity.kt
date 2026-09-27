@@ -57,7 +57,7 @@ class FridayOnboardingActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         agent = FridayAgent(applicationContext)
         val completed = getSharedPreferences("friday_onboarding", MODE_PRIVATE).getBoolean("completed", false)
-        if (completed && agent.hasApiKey()) {
+        if (completed && (agent.hasApiKey() || agent.hasOpenRouterKey())) {
             openHud()
             return
         }
