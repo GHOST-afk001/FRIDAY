@@ -244,7 +244,14 @@ class AppLauncher(private val context: Context) {
         return start(Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(clean)}")))
     }
 
-    private fun requestAssistantRole(): Boolean = try {\n        if (android.os.Build.VERSION.SDK_INT < 29) return false\n        val roles = context.getSystemService(android.app.role.RoleManager::class.java) ?: return false\n        if (!roles.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT)) return false\n        start(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))\n    } catch (_: Throwable) { false }\n\n    private fun capturePhoto(): Boolean = runCatching {
+    private fun requestAssistantRole(): Boolean = try {
+        if (android.os.Build.VERSION.SDK_INT < 29) return false
+        val roles = context.getSystemService(android.app.role.RoleManager::class.java) ?: return false
+        if (!roles.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT)) return false
+        start(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))
+    } catch (_: Throwable) { false }
+
+    private fun capturePhoto(): Boolean = runCatching {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return false
         val output = File(context.cacheDir, "friday_photo_${System.currentTimeMillis()}.jpg")
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", output)
