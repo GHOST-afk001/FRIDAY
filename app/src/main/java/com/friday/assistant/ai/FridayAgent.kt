@@ -288,7 +288,6 @@ class FridayAgent(context: Context) {
                 }
             }.getOrElse { JSONObject().put("status", "failed").put("message", "External integration failed safely.") }
         }
-        val action = result.action
         if (result.needsConfirmation && (action == null || FridaySafetyPolicy.requiresConfirmation(action))) {
             return JSONObject()
                 .put("status", "confirmation_required")
