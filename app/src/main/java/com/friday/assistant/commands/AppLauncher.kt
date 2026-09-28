@@ -215,10 +215,15 @@ class AppLauncher(private val context: Context) {
         val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.whatsapp") }
         val opened = start(intent) || start(Intent(Intent.ACTION_VIEW, uri))
         if (!opened) return false
-        Handler(Looper.getMainLooper()).postDelayed({ FridayAutomation.replyToWhatsApp(message) }, 1400L)
-        Handler(Looper.getMainLooper()).postDelayed({ FridayAutomation.replyToWhatsApp(message) }, 2400L)
-        Handler(Looper.getMainLooper()).postDelayed({ FridayAutomation.replyToWhatsApp(message) }, 3600L)
+        scheduleWhatsAppReply(message, 1400L, 0)
         return true
+    }
+
+    private fun scheduleWhatsAppReply(message: String, delayMs: Long, attempt: Int) {
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (FridayAutomation.replyToWhatsApp(message)) return@postDelayed
+            if (attempt < 2) scheduleWhatsAppReply(message, 1400L, attempt + 1)
+        }, delayMs)
     }
 
     private fun callNumber(number: String): Boolean {
