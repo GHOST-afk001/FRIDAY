@@ -24,7 +24,7 @@ class FridayCommandProcessor {
         if (isGreeting(command)) return FridayResponse("Yes Boss. Main Friday hoon. Bataiye.")
         if (command.contains("who are you") || command.contains("tum kaun") || command.contains("aap kaun")) return FridayResponse("Hi, I'm Friday, a personal AI assistant. Ready when you are, Boss.")
 
-        val normalized = command.replace(Regex("^\\s*(?:hey\\s+)?friday\\b\\s*"), "").trim()
+        val normalized = command.replace(Regex("^\\s*(?:(?:hey\\s+)?friday|baabu)\\b\\s*"), "").trim()
         val hasHindiTimeWord = Regex("(^|\\s)टाइम(\\s|$)").containsMatchIn(normalized)
         if (Regex("(^|\\s)time(\\s|$)").containsMatchIn(normalized) || normalized.contains("kitne baje") || normalized.contains("samay") || hasHindiTimeWord) return FridayResponse("Abhi ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date())} baj rahe hain, Boss.")
         if (Regex("(^|\\s)date(\\s|$)").containsMatchIn(normalized) || normalized.contains("tarikh") || normalized.contains("tariq") || normalized.contains("तारीख") || normalized.contains("डेट")) return FridayResponse("Aaj ${DateFormat.getDateInstance(DateFormat.LONG).format(Date())} hai.")
