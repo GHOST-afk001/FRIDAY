@@ -69,6 +69,12 @@ class FridayCommandProcessorTest {
         assertEquals(FridayAction.YouTube, result.action)
     }
 
+    @Test fun naturalPhotoCommandRoutesToCamera() {
+        val result = processor.process("Friday photo le lo")
+        assertTrue(result.handledLocally)
+        assertEquals(FridayAction.Camera, result.action)
+    }
+
     @Test fun calculatorIsLocal() {
         val result = processor.process("Friday calculator kholo")
         assertTrue(result.handledLocally)
