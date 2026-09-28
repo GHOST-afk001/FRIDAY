@@ -139,6 +139,49 @@ class FridayAccessibilityService : AccessibilityService() {
         }
     }
 
+    fun scroll(direction: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+        findNodeRecursive(root) { node ->
+            if (node.isVisibleToUser && node.isScrollable) {
+                candidates += node
+            }
+            false
+        }
+        val node = candidates.firstOrNull() ?: return false
+        val action = if (direction.equals("up", true)) AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD else AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+        return node.performAction(action)
+    }
+
+    fun typeText(value: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val node = findNodeRecursive(root) { it.isVisibleToUser && it.isEditable && it.isEnabled } ?: return false
+        val args = android.os.Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value)
+        }
+        return node.performAction(AccessibilityNodeInfo.ACTION_FOCUS) &&
+            node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+    }
+
+    fun swipe(direction: String): Boolean {
+        val metrics = resources.displayMetrics
+        val x = metrics.widthPixels / 2f
+        val y1 = metrics.heightPixels * 0.78f
+        val y2 = metrics.heightPixels * 0.22f
+        val path = Path().apply {
+            if (direction.equals("up", true)) {
+                moveTo(x, y1); lineTo(x, y2)
+            } else {
+                moveTo(x, y2); lineTo(x, y1)
+            }
+        }
+        return dispatchGesture(
+            GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 350)).build(),
+            null,
+            mainHandler
+        )
+    }
+
     fun tap(x: Float, y: Float): Boolean {
         val path = Path().apply { moveTo(x, y) }
         return dispatchGesture(
@@ -195,6 +238,9 @@ class FridayAccessibilityService : AccessibilityService() {
         fun openQuickSettings(): Boolean = instance?.openQuickSettings() == true
         fun setQuickSetting(labels: List<String>, desiredEnabled: Boolean): Boolean = instance?.setQuickSetting(labels, desiredEnabled) == true
         fun tap(x: Float, y: Float): Boolean = instance?.tap(x, y) == true
+        fun scroll(direction: String): Boolean = instance?.scroll(direction) == true
+        fun typeText(value: String): Boolean = instance?.typeText(value) == true
+        fun swipe(direction: String): Boolean = instance?.swipe(direction) == true
         fun replyToWhatsApp(replyText: String): Boolean {
             val service = instance ?: return false
             return if (service.replyToWhatsApp(replyText)) true else {
