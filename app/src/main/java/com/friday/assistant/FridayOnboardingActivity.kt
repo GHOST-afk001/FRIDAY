@@ -78,7 +78,7 @@ class FridayOnboardingActivity : ComponentActivity() {
     private fun openAccessibility() = runCatching { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
 
     private fun openNotificationAccess() = runCatching {
-        startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+        startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
     }
 
     private fun isNotificationAccessEnabled(): Boolean = runCatching {
