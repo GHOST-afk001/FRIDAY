@@ -6,29 +6,13 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import org.json.JSONArray
-import org.json.JSONObject
 
 private object FridayHttp {
     fun get(url: String, headers: Map<String, String> = emptyMap()): String {
         val c = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 8000
-            readTimeout = 12000
+            requestMethod = "GET"; connectTimeout = 8000; readTimeout = 12000
             headers.forEach { (k, v) -> setRequestProperty(k, v) }
         }
-        return c.useResponse()
-    }
-    fun post(url: String, body: String, headers: Map<String, String> = emptyMap()): String {
-        val c = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 8000
-            readTimeout = 12000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
-            headers.forEach { (k, v) -> setRequestProperty(k, v) }
-        }
-        c.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
         return c.useResponse()
     }
     private fun HttpURLConnection.useResponse(): String {
@@ -36,84 +20,54 @@ private object FridayHttp {
         val stream = if (code in 200..299) inputStream else errorStream
         val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
         disconnect()
-        if (code !in 200..299) error("HTTP \$code: \${text.take(300)}")
+        if (code !in 200..299) error("HTTP $code: " + text.take(300))
         return text
     }
 }
 
-class FridayEmotionService(private val store: com.friday.assistant.ai.SecureApiKeyStore) {
+/** On-device mood signals. No API, token, network call, or account. */
+class FridayLocalMoodService {
+    private val positive = setOf("happy","good","great","awesome","excited","love","lovely","khush","mast","accha","acha","pyaar")
+    private val negative = setOf("sad","upset","bad","angry","hate","hurt","lonely","depressed","dukhi","udaas","pareshan","gussa","naraz","akela")
+    private val anxious = setOf("anxious","anxiety","worried","stress","stressed","nervous","tension","dar","darr","ghabra","ghabrahat")
+    private val tired = setOf("tired","exhausted","sleepy","thak","thaka","thaki","neend")
     fun analyze(text: String): String {
-        val token = store.readNamed("huggingface").orEmpty()
-        if (token.isBlank()) return "mood analysis unavailable"
-        val model = "SamLowe/roberta-base-go_emotions"
-        val url = "https://router.huggingface.co/hf-inference/models/\${URLEncoder.encode(model, "UTF-8").replace("+", "%20")}"
-        val json = JSONObject().put("inputs", text).put("parameters", JSONObject().put("top_k", 3))
-        val raw = FridayHttp.post(url, json.toString(), mapOf("Authorization" to "Bearer \$token"))
-        val array = when {
-            raw.trimStart().startsWith("[[") -> JSONArray(raw).optJSONArray(0)
-            raw.trimStart().startsWith("[") -> JSONArray(raw)
-            else -> JSONArray()
-        }
-        if (array.length() == 0) return "mood analysis unavailable"
-        val top = array.optJSONObject(0) ?: return "mood analysis unavailable"
-        return "\${top.optString("label", "unknown")} (\${String.format("%.0f", top.optDouble("score", 0.0) * 100)}%)"
+        val words = text.lowercase().replace(Regex("[^a-z0-9\\u0900-\\u097f]+"), " ")
+            .split(Regex("\\s+")).filter { it.isNotBlank() }
+        fun hits(set: Set<String>) = words.count { word -> set.any { word == it || word.contains(it) } }
+        val scores = listOf("positive" to hits(positive), "negative" to hits(negative), "anxious/stressed" to hits(anxious), "tired" to hits(tired))
+        val top = scores.maxByOrNull { it.second } ?: return "neutral"
+        return if (top.second == 0) "neutral" else top.first + " (" + top.second + " signal" + if (top.second == 1) "" else "s" + ")"
     }
 }
 
-class FridayNewsService(private val store: com.friday.assistant.ai.SecureApiKeyStore) {
-    fun headlines(query: String? = null, country: String = "in"): String {
-        val key = store.readNamed("gnews").orEmpty()
-        if (key.isBlank()) return "GNews key is not configured."
-        val endpoint = if (query.isNullOrBlank()) "top-headlines" else "search"
-        val params = buildString {
-            append("?apikey=").append(URLEncoder.encode(key, "UTF-8"))
-            if (query.isNullOrBlank()) {
-                append("&country=").append(country).append("&lang=en")
-            } else {
-                append("&q=").append(URLEncoder.encode(query, "UTF-8")).append("&lang=en")
-            }
-            append("&max=5")
+/** Keyless news via public RSS. No GNews account or API key. */
+class FridayRssNewsService {
+    fun headlines(query: String? = null, country: String = "IN"): String {
+        val url = if (query.isNullOrBlank()) {
+            "https://news.google.com/rss?hl=en-IN&gl=" + country + "&ceid=" + country + ":en"
+        } else {
+            "https://news.google.com/rss/search?q=" + URLEncoder.encode(query.trim(), "UTF-8").replace("+", "%20") +
+                "&hl=en-IN&gl=" + country + "&ceid=" + country + ":en"
         }
-        val json = JSONObject(FridayHttp.get("https://gnews.io/api/v4/\$endpoint\$params"))
-        val articles = json.optJSONArray("articles") ?: return "No news found."
-        if (articles.length() == 0) return "No news found."
-        return buildString {
-            for (i in 0 until minOf(5, articles.length())) {
-                val a = articles.optJSONObject(i) ?: continue
-                if (isNotEmpty()) append("\\n")
-                append("\${i + 1}. ").append(a.optString("title", "Untitled"))
-                a.optJSONObject("source")?.optString("name")?.takeIf { it.isNotBlank() }?.let { append(" — ").append(it) }
+        val xml = FridayHttp.get(url)
+        val items = Regex("<item>([\\s\\S]*?)</item>", RegexOption.IGNORE_CASE).findAll(xml).take(5).mapNotNull { match ->
+            Regex("<title><!\\[CDATA\\[(.*?)]]></title>|<title>(.*?)</title>", RegexOption.IGNORE_CASE).find(match.groupValues[1])?.let {
+                (it.groups[1]?.value ?: it.groups[2]?.value).replace("&amp;", "&").replace(Regex("<[^>]+>"), "").trim()
             }
-        }
+        }.filter { it.isNotBlank() }.toList()
+        if (items.isEmpty()) return "No news found right now."
+        return items.mapIndexed { i, title -> (i + 1).toString() + ". " + title }.joinToString("\\n")
     }
 }
 
 class FridayPollinationsService(private val store: com.friday.assistant.ai.SecureApiKeyStore) {
     fun imageUrl(prompt: String): String {
-        val clean = prompt.trim()
-        require(clean.isNotBlank())
+        val clean = prompt.trim(); require(clean.isNotBlank())
         val encoded = URLEncoder.encode(clean, "UTF-8").replace("+", "%20")
         val token = store.readNamed("pollinations").orEmpty()
-        val suffix = if (token.isBlank()) "?model=flux" else "?model=flux&key=\${URLEncoder.encode(token, "UTF-8")}"
-        return "https://gen.pollinations.ai/image/\$encoded\$suffix"
-    }
-}
-
-class FridayHomeAssistantService(private val store: com.friday.assistant.ai.SecureApiKeyStore) {
-    fun call(domain: String, service: String, entityId: String? = null): Boolean {
-        val base = store.readNamed("home_assistant_url").orEmpty().trimEnd('/')
-        val token = store.readNamed("home_assistant_token").orEmpty()
-        if (base.isBlank() || token.isBlank()) return false
-        val body = JSONObject()
-        if (!entityId.isNullOrBlank()) body.put("entity_id", entityId)
-        FridayHttp.post("\$base/api/services/\${domain.trim()}/\${service.trim()}", body.toString(), mapOf("Authorization" to "Bearer \$token"))
-        return true
-    }
-    fun status(): String {
-        val base = store.readNamed("home_assistant_url").orEmpty().trimEnd('/')
-        val token = store.readNamed("home_assistant_token").orEmpty()
-        if (base.isBlank() || token.isBlank()) return "Home Assistant is not configured."
-        return JSONObject(FridayHttp.get("\$base/api/", mapOf("Authorization" to "Bearer \$token"))).optString("message", "Home Assistant online.")
+        val suffix = if (token.isBlank()) "?model=flux" else "?model=flux&key=" + URLEncoder.encode(token, "UTF-8")
+        return "https://gen.pollinations.ai/image/" + encoded + suffix
     }
 }
 
