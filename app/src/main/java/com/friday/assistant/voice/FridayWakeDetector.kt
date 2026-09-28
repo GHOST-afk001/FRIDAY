@@ -192,9 +192,9 @@ class FridayWakeDetector(
                     FridayRuntime.update("WAKE LISTENING", String.format(Locale.US, "Mic active • score %.2f • say Friday or Hey Friday", probability), true)
                 }
 
-                if (word.contains("friday", ignoreCase = true) && probability >= THRESHOLD) {
-                    if (word.equals(consecutiveWord, ignoreCase = true)) consecutiveCount++
-                    else { consecutiveWord = word; consecutiveCount = 1 }
+                if ((modelWord ?: "").contains("friday", ignoreCase = true) && probability >= THRESHOLD) {
+                    if ((modelWord ?: "").equals(consecutiveWord, ignoreCase = true)) consecutiveCount++
+                    else { consecutiveWord = modelWord ?: ""; consecutiveCount = 1 }
                 } else {
                     consecutiveWord = ""
                     consecutiveCount = 0
