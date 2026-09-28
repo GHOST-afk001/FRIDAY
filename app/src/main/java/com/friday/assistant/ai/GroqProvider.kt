@@ -49,7 +49,7 @@ class GroqProvider(context: Context) {
                     .put("required", JSONArray().put("command"))))
         val body = JSONObject()
             .put("model", model).put("messages", messages).put("tools", JSONArray().put(tool))
-            .put("tool_choice", "auto").put("temperature", 0.25).put("max_tokens", 1200)
+            .put("tool_choice", "auto").put("parallel_tool_calls", false).put("temperature", 0.25).put("max_tokens", 1200)
         val connection = (URL("https://api.groq.com/openai/v1/chat/completions").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"; connectTimeout = 12000; readTimeout = 30000; doOutput = true
             setRequestProperty("Content-Type", "application/json")
