@@ -230,7 +230,8 @@ class AppLauncher(private val context: Context) {
         val clean = number.filter { it.isDigit() || it == '+' }
         if (clean.isBlank()) return false
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
-            return start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(clean)}")))
+            FridayRuntime.update("CALL BLOCKED", "Phone call permission is required for direct calling.", false)
+            return false
         }
         return start(Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(clean)}")))
     }
