@@ -15,6 +15,9 @@ import android.provider.MediaStore
 import android.provider.Settings
 import android.os.Handler
 import android.os.Looper
+import android.content.pm.ResolveInfo
+import androidx.core.content.FileProvider
+import java.io.File
 import java.util.Calendar
 import androidx.core.content.ContextCompat
 import com.friday.assistant.automation.FridayAutomation
@@ -42,7 +45,7 @@ class AppLauncher(private val context: Context) {
             is FridayAction.SpotifySearch -> openSpotifySearch(action.query)
             FridayAction.Calculator -> openCalculator()
             FridayAction.Settings -> start(Intent(Settings.ACTION_SETTINGS))
-            FridayAction.Camera -> start(Intent(MediaStore.ACTION_IMAGE_CAPTURE))
+            FridayAction.Camera -> capturePhoto()
             FridayAction.Chrome -> openPackageOrUrl("com.android.chrome", "https://www.google.com")
             FridayAction.Messages -> openPackageOrUrl("com.google.android.apps.messaging", "sms:")
             FridayAction.WhatsApp -> openPackageOrUrl("com.whatsapp", "https://wa.me/")
@@ -242,7 +245,21 @@ class AppLauncher(private val context: Context) {
         return start(Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(clean)}")))
     }
 
-    private fun requestAssistantRole(): Boolean = try {\n        if (android.os.Build.VERSION.SDK_INT < 29) return false\n        val roles = context.getSystemService(android.app.role.RoleManager::class.java) ?: return false\n        if (!roles.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT)) return false\n        start(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))\n    } catch (_: Throwable) { false }\n\n    private fun openGeneratedImage(prompt: String): Boolean = runCatching {
+    private fun requestAssistantRole(): Boolean = try {\n        if (android.os.Build.VERSION.SDK_INT < 29) return false\n        val roles = context.getSystemService(android.app.role.RoleManager::class.java) ?: return false\n        if (!roles.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT)) return false\n        start(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))\n    } catch (_: Throwable) { false }\n\n    private fun capturePhoto(): Boolean = runCatching {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return false
+        val output = File(context.cacheDir, "friday_photo_${System.currentTimeMillis()}.jpg")
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", output)
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            context.packageManager.queryIntentActivities(this, PackageManager.MATCH_DEFAULT_ONLY).forEach {
+                context.grantUriPermission(it.activityInfo.packageName, uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }
+        start(intent)
+    }.getOrDefault(false)
+
+    private fun openGeneratedImage(prompt: String): Boolean = runCatching {
         val url = FridayPollinationsService(SecureApiKeyStore(context)).imageUrl(prompt)
         start(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }.getOrDefault(false)
