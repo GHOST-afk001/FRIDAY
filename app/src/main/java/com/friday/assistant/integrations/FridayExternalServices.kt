@@ -53,7 +53,7 @@ class FridayRssNewsService {
         val xml = FridayHttp.get(url)
         val items = Regex("<item>([\\s\\S]*?)</item>", RegexOption.IGNORE_CASE).findAll(xml).take(5).mapNotNull { match ->
             Regex("<title><!\\[CDATA\\[(.*?)]]></title>|<title>(.*?)</title>", RegexOption.IGNORE_CASE).find(match.groupValues[1])?.let {
-                (it.groups[1]?.value ?: it.groups[2]?.value).replace("&amp;", "&").replace(Regex("<[^>]+>"), "").trim()
+                (it.groups[1]?.value ?: it.groups[2]?.value.orEmpty()).replace("&amp;", "&").replace(Regex("<[^>]+>"), "").trim()
             }
         }.filter { it.isNotBlank() }.toList()
         if (items.isEmpty()) return "No news found right now."
