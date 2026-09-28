@@ -165,6 +165,15 @@ class FridayOnboardingActivity : ComponentActivity() {
         var groqKey by remember { mutableStateOf("") }
         var openRouterKey by remember { mutableStateOf("") }
         var ipToken by remember { mutableStateOf("") }
+        var hfKey by remember { mutableStateOf("") }
+        var gnewsKey by remember { mutableStateOf("") }
+        var pollinationsKey by remember { mutableStateOf("") }
+        var haUrl by remember { mutableStateOf("") }
+        var haToken by remember { mutableStateOf("") }
+        var hfSaved by remember { mutableStateOf(agent.hasHuggingFaceKey()) }
+        var gnewsSaved by remember { mutableStateOf(agent.hasGNewsKey()) }
+        var pollinationsSaved by remember { mutableStateOf(agent.hasPollinationsKey()) }
+        var haSaved by remember { mutableStateOf(agent.hasHomeAssistant()) }
         var saved by remember { mutableStateOf(agent.hasApiKey()) }
         var groqSaved by remember { mutableStateOf(agent.hasGroqKey()) }
         var openRouterSaved by remember { mutableStateOf(agent.hasOpenRouterKey()) }
@@ -181,6 +190,10 @@ class FridayOnboardingActivity : ComponentActivity() {
                 accessibility = isAccessibilityEnabled()
                 assistantSelected = isAssistantSelected()
                 notificationAccess = isNotificationAccessEnabled()
+                hfSaved = agent.hasHuggingFaceKey()
+                gnewsSaved = agent.hasGNewsKey()
+                pollinationsSaved = agent.hasPollinationsKey()
+                haSaved = agent.hasHomeAssistant()
                 delay(700)
             }
         }
@@ -225,6 +238,10 @@ class FridayOnboardingActivity : ComponentActivity() {
                             StatusRow("AUTOMATION", accessibility, if (accessibility) "ONLINE" else "PERMISSION REQUIRED")
                             StatusRow("ANDROID ASSISTANT", assistantSelected, if (assistantSelected) "ACTIVE" else "SELECT FRIDAY")
                             StatusRow("NOTIFICATION ACCESS", notificationAccess, if (notificationAccess) "ONLINE" else "OPTIONAL")
+                            StatusRow("HUGGING FACE • MOOD", hfSaved, if (hfSaved) "CONNECTED" else "OPTIONAL")
+                            StatusRow("GNEWS • NEWS", gnewsSaved, if (gnewsSaved) "CONNECTED" else "OPTIONAL")
+                            StatusRow("POLLINATIONS • IMAGES", pollinationsSaved, if (pollinationsSaved) "CONNECTED" else "OPTIONAL")
+                            StatusRow("HOME ASSISTANT", haSaved, if (haSaved) "CONNECTED" else "OPTIONAL")
 
                             if (!saved) {
                                 OutlinedTextField(
@@ -307,6 +324,66 @@ class FridayOnboardingActivity : ComponentActivity() {
                                 modifier = Modifier.fillMaxWidth()
                             ) { Text("SAVE IPINFO TOKEN") }
 
+                            OutlinedTextField(
+                                value = hfKey,
+                                onValueChange = { hfKey = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Hugging Face token (mood)") },
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            OutlinedButton(onClick = {
+                                if (hfKey.isNotBlank()) { agent.configureHuggingFaceKey(hfKey.trim()); hfKey = ""; hfSaved = agent.hasHuggingFaceKey() }
+                            }, modifier = Modifier.fillMaxWidth()) { Text("SAVE HUGGING FACE") }
+
+                            OutlinedTextField(
+                                value = gnewsKey,
+                                onValueChange = { gnewsKey = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("GNews API key (news)") },
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            OutlinedButton(onClick = {
+                                if (gnewsKey.isNotBlank()) { agent.configureGNewsKey(gnewsKey.trim()); gnewsKey = ""; gnewsSaved = agent.hasGNewsKey() }
+                            }, modifier = Modifier.fillMaxWidth()) { Text("SAVE GNEWS KEY") }
+
+                            OutlinedTextField(
+                                value = pollinationsKey,
+                                onValueChange = { pollinationsKey = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Pollinations key (optional)") },
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            OutlinedButton(onClick = {
+                                if (pollinationsKey.isNotBlank()) { agent.configurePollinationsKey(pollinationsKey.trim()); pollinationsKey = ""; pollinationsSaved = agent.hasPollinationsKey() }
+                            }, modifier = Modifier.fillMaxWidth()) { Text("SAVE POLLINATIONS KEY") }
+
+                            OutlinedTextField(
+                                value = haUrl,
+                                onValueChange = { haUrl = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Home Assistant URL") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            OutlinedTextField(
+                                value = haToken,
+                                onValueChange = { haToken = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Home Assistant token") },
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            OutlinedButton(onClick = {
+                                if (haUrl.isNotBlank() && haToken.isNotBlank()) { agent.configureHomeAssistant(haUrl.trim(), haToken.trim()); haUrl = ""; haToken = ""; haSaved = agent.hasHomeAssistant() }
+                            }, modifier = Modifier.fillMaxWidth()) { Text("CONNECT HOME ASSISTANT") }
+
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = ::openAppInfo, modifier = Modifier.weight(1f)) { Text("APP INFO") }
                                 OutlinedButton(onClick = ::openAccessibility, modifier = Modifier.weight(1f)) { Text("ACCESS") }
@@ -331,7 +408,7 @@ class FridayOnboardingActivity : ComponentActivity() {
                     }
                     Spacer(Modifier.height(5.dp))
                     Text(
-                        if (assistantSelected) "HANDS-FREE READY • SAY “HEY FRIDAY”" else "SELECT FRIDAY AS ASSISTANT FOR HANDS-FREE WAKE",
+                        if (assistantSelected) "HANDS-FREE READY • SAY “FRIDAY” OR “HEY FRIDAY”" else "SELECT FRIDAY AS ASSISTANT FOR HANDS-FREE WAKE",
                         color = if (assistantSelected) Color(0xFF4CFF9A) else Color(0xFF607985),
                         fontSize = 8.sp,
                         fontWeight = FontWeight.Bold,
