@@ -89,6 +89,7 @@ class OpenRouterProvider(context: Context) {
                 .put("messages", messages)
                 .put("tools", tools)
                 .put("tool_choice", "auto")
+                .put("parallel_tool_calls", false)
                 .put("temperature", 0.35)
                 .put("max_tokens", 1200)
 
