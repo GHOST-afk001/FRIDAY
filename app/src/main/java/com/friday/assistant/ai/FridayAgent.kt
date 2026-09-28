@@ -254,6 +254,31 @@ class FridayAgent(context: Context) {
         }
     }
 
+    private fun executeGeminiTool(name: String, args: JSONObject): JSONObject {
+        if (name != "android_command") return JSONObject().put("status", "error").put("error", "Unsupported Android tool: $name")
+        val command = args.optString("command").trim()
+        if (command.isBlank()) return JSONObject().put("status", "error").put("error", "No Android command was supplied")
+        val localResult = local.process(command)
+        val result = if (localResult.handledLocally) localResult else UniversalCommandRouter.route(command)
+        if (result == null || !result.handledLocally) return JSONObject().put("status", "unsupported").put("message", "This Android command is not supported by the current local action layer.")
+        val action = result.action
+        if (action is FridayAction.News || action is FridayAction.AnalyzeMood) {
+            return runCatching {
+                when (action) {
+                    is FridayAction.News -> JSONObject().put("status", "success").put("message", news.headlines(action.query))
+                    is FridayAction.AnalyzeMood -> JSONObject().put("status", "success").put("message", "Detected mood: " + emotion.analyze(action.text))
+                    else -> JSONObject().put("status", "failed")
+                }
+            }.getOrElse { JSONObject().put("status", "failed").put("message", "Keyless integration failed safely.") }
+        }
+        if (result.needsConfirmation && (action == null || FridaySafetyPolicy.requiresConfirmation(action))) return JSONObject().put("status", "confirmation_required").put("message", result.text)
+        if (action == null) return JSONObject().put("status", "handled").put("message", result.text)
+        val launched = runCatching { launcher.launch(action) }.getOrDefault(false)
+        FridayRuntime.update(if (launched) "VERIFIED" else "ACTION FAILED", if (launched) result.text.take(160) else "Android executor could not complete the requested action", launched)
+        return if (launched) JSONObject().put("status", "success").put("message", result.text)
+        else JSONObject().put("status", "failed").put("message", "The Android executor could not complete this action on the phone.")
+    }
+
     private fun executeExternal(action: FridayAction, input: String, callback: (String, Boolean) -> Unit) {
         when (action) {
             is FridayAction.News -> callback(news.headlines(action.query), true)
