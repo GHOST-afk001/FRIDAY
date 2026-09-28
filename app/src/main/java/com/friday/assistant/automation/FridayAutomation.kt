@@ -7,6 +7,9 @@ object FridayAutomation {
     fun openQuickSettings(): Boolean = FridayAccessibilityService.openQuickSettings()
     fun setQuickSetting(labels: List<String>, desiredEnabled: Boolean): Boolean = FridayAccessibilityService.setQuickSetting(labels, desiredEnabled)
     fun clickVisibleText(text: String): Boolean = FridayAccessibilityService.clickText(text)
+    fun scroll(direction: String): Boolean = FridayAccessibilityService.scroll(direction)
+    fun typeText(value: String): Boolean = FridayAccessibilityService.typeText(value)
+    fun swipe(direction: String): Boolean = FridayAccessibilityService.swipe(direction)
 
     fun clickSend(): Boolean = FridayAccessibilityService.clickText("Send") || FridayAccessibilityService.clickText("भेजें") || FridayAccessibilityService.clickDescription("Send")
 
@@ -29,6 +32,19 @@ object FridayAutomation {
                 if (target.isBlank()) return null
                 if (FridayAccessibilityService.clickText(target)) "Clicked $target." else "I couldn't find a visible control named $target."
             }
+            lower.startsWith("type ") || lower.startsWith("text ") -> {
+                val value = text.substringAfter(' ').trim()
+                if (value.isBlank()) return null
+                if (FridayAccessibilityService.typeText(value)) "Typed the requested text." else "I couldn't find an editable field."
+            }
+            lower == "scroll up" || lower == "upar scroll karo" ->
+                if (FridayAccessibilityService.scroll("up")) "Scrolled up." else "I couldn't scroll the current screen."
+            lower == "scroll down" || lower == "neeche scroll karo" ->
+                if (FridayAccessibilityService.scroll("down")) "Scrolled down." else "I couldn't scroll the current screen."
+            lower == "swipe up" ->
+                if (FridayAccessibilityService.swipe("up")) "Swiped up." else "I couldn't perform that swipe."
+            lower == "swipe down" ->
+                if (FridayAccessibilityService.swipe("down")) "Swiped down." else "I couldn't perform that swipe."
             lower.startsWith("tap ") -> {
                 val parts = text.substringAfter("tap ").trim().split(Regex("\\s+"))
                 if (parts.size != 2) return null
