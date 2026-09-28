@@ -15,6 +15,7 @@ import android.provider.MediaStore
 import android.provider.Settings
 import android.os.Handler
 import android.os.Looper
+import java.util.Calendar
 import androidx.core.content.ContextCompat
 import com.friday.assistant.automation.FridayAutomation
 import com.friday.assistant.runtime.FridayRuntime
@@ -49,7 +50,7 @@ class AppLauncher(private val context: Context) {
             FridayAction.VolumeDown -> adjustVolume(AudioManager.ADJUST_LOWER)
             is FridayAction.Timer -> start(Intent(AlarmClock.ACTION_SET_TIMER).apply { putExtra(AlarmClock.EXTRA_LENGTH, action.seconds); putExtra(AlarmClock.EXTRA_SKIP_UI, true) })
             is FridayAction.Alarm -> start(Intent(AlarmClock.ACTION_SET_ALARM).apply { putExtra(AlarmClock.EXTRA_HOUR, action.hour); putExtra(AlarmClock.EXTRA_MINUTES, action.minute); putExtra(AlarmClock.EXTRA_SKIP_UI, true) })
-            is FridayAction.AlarmAfter -> start(Intent(AlarmClock.ACTION_SET_TIMER).apply { putExtra(AlarmClock.EXTRA_LENGTH, action.seconds); putExtra(AlarmClock.EXTRA_SKIP_UI, true) })
+            is FridayAction.AlarmAfter -> setAlarmAfter(action.seconds)
             is FridayAction.Weather -> false
             is FridayAction.MapQuery -> {
                 val uri = if (action.navigation) Uri.parse("google.navigation:q=${Uri.encode(action.query)}") else Uri.parse("geo:0,0?q=${Uri.encode(action.query)}")
@@ -129,6 +130,16 @@ class AppLauncher(private val context: Context) {
         } catch (_: Throwable) { false }
     }
 
+    private fun setAlarmAfter(seconds: Int): Boolean {
+        if (seconds <= 0) return false
+        val target = Calendar.getInstance().apply { add(Calendar.SECOND, seconds) }
+        return start(Intent(AlarmClock.ACTION_SET_ALARM).apply {
+            putExtra(AlarmClock.EXTRA_HOUR, target.get(Calendar.HOUR_OF_DAY))
+            putExtra(AlarmClock.EXTRA_MINUTES, target.get(Calendar.MINUTE))
+            putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+        })
+    }
+
     private fun toggleQuickSetting(kind: String, enabled: Boolean): Boolean {
         if (FridayAutomation.isConnected()) {
             val labels = when (kind) {
@@ -137,6 +148,10 @@ class AppLauncher(private val context: Context) {
                 else -> listOf("Power saving", "Power saving mode", "Battery saver", "Power Saver", "पावर सेविंग", "बैटरी सेवर")
             }
             if (FridayAutomation.openQuickSettings()) {
+                if (FridayAutomation.setQuickSetting(labels, enabled)) return true
+                Thread.sleep(180)
+                if (FridayAutomation.setQuickSetting(labels, enabled)) return true
+                Thread.sleep(280)
                 if (FridayAutomation.setQuickSetting(labels, enabled)) return true
             }
         }
