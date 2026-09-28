@@ -36,7 +36,7 @@ class FridayCommandProcessor {
         parseNews(normalized)?.let { return FridayResponse("News check kar rahi hoon, Boss.", it) }
         parseImageGeneration(normalized)?.let { return FridayResponse("Image generate kar rahi hoon, Boss.", it) }
         parseMood(normalized)?.let { return FridayResponse("Mood analyze kar rahi hoon, Boss.", it) }
-        parseHomeAssistant(normalized)?.let { return it }
+        parseSmartHome(normalized)?.let { return it }
         parseTermux(normalized)?.let { return it }
 
 
@@ -108,9 +108,9 @@ class FridayCommandProcessor {
         return FridayAction.AnalyzeMood(n)
     }
 
-    private fun parseHomeAssistant(c: String): FridayResponse? {
-        val m = Regex("^(?:home assistant|homeassistant)\\s+(?:call|run|execute)\\s+([a-zA-Z_]+)\\s+([a-zA-Z_]+)(?:\\s+(?:for|entity)\\s+([a-zA-Z0-9_.-]+))?$", RegexOption.IGNORE_CASE).find(c.trim()) ?: return null
-        return FridayResponse("Home Assistant action execute kar rahi hoon, Boss.", FridayAction.HomeAssistant(m.groupValues[1], m.groupValues[2], m.groupValues.getOrNull(3)?.takeIf { it.isNotBlank() }))
+    private fun parseSmartHome(c: String): FridayResponse? {
+        val m = Regex("^(?:smart home|smarthome|home automation)\\s+(.+)$", RegexOption.IGNORE_CASE).find(c.trim()) ?: return null
+        return FridayResponse("Local smart-home automation bridge ko run karne ke liye confirmation chahiye.", FridayAction.TermuxApi(m.groupValues[1].trim()), needsConfirmation = true)
     }
 
     private fun parseTermux(c: String): FridayResponse? {
