@@ -40,8 +40,20 @@ class ActionPolicyValidatorTest {
     }
 
     @Test
-    fun accessibilityControlRequiresConfirmation() {
+    fun ordinaryAccessibilityControlIsApproved() {
         val result = policy.validate(FridayAction.AccessibilityCommand("home"))
+        assertIs<ActionPolicyValidator.Outcome.Approved>(result)
+    }
+
+    @Test
+    fun typingIsApprovedWithoutRepeatedConfirmation() {
+        val result = policy.validate(FridayAction.AccessibilityCommand("type hello boss"))
+        assertIs<ActionPolicyValidator.Outcome.Approved>(result)
+    }
+
+    @Test
+    fun sendClickRequiresConfirmation() {
+        val result = policy.validate(FridayAction.AccessibilityCommand("click send"))
         assertIs<ActionPolicyValidator.Outcome.RequiresConfirmation>(result)
     }
 
