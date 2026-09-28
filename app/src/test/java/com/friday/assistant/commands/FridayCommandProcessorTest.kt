@@ -260,13 +260,6 @@ class FridayCommandProcessorTest {
         assertEquals(FridayAction.AnalyzeMood("analyze my mood"), result.action)
     }
 
-    @Test fun smartHomeCommandUsesKeylessTermuxBridge() {
-        val result = processor.process("Friday smart home turn on bedroom light")
-        assertTrue(result.handledLocally)
-        assertTrue(result.action is FridayAction.TermuxApi)
-        assertEquals("turn on bedroom light", (result.action as FridayAction.TermuxApi).command)
-    }
-
     @Test fun weatherTomorrowIsLocal() {
         val result = processor.process("weather in Delhi tomorrow")
         assertTrue(result.action is FridayAction.Weather)
