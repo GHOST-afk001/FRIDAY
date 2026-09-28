@@ -61,7 +61,12 @@ class FridayCommandProcessor {
         if (normalized.contains("youtube")) return FridayResponse("YouTube khol rahi hoon.", FridayAction.YouTube)
         if (normalized.contains("calculator") || normalized.contains("कैलकुलेटर")) return FridayResponse("Calculator khol rahi hoon.", FridayAction.Calculator)
         if (normalized.contains("settings") || normalized.contains("सेटिंग")) return FridayResponse("Settings khol rahi hoon.", FridayAction.Settings)
-        if (normalized.contains("camera") || normalized.contains("कैमरा")) return FridayResponse("Camera khol rahi hoon.", FridayAction.Camera)
+        if (normalized.contains("camera") || normalized.contains("कैमरा") ||
+            normalized.contains("take a photo") || normalized.contains("take photo") ||
+            normalized.contains("photo le") || normalized.contains("photo lo") ||
+            normalized.contains("photo kheecho") || normalized.contains("photo click")) {
+            return FridayResponse("Camera khol rahi hoon, Boss.", FridayAction.Camera)
+        }
         if (normalized.contains("chrome")) return FridayResponse("Chrome khol rahi hoon.", FridayAction.Chrome)
         if (normalized.contains("whatsapp")) return FridayResponse("WhatsApp khol rahi hoon.", FridayAction.WhatsApp)
         if (normalized.contains("instagram")) return FridayResponse("Instagram khol rahi hoon.", FridayAction.Instagram)
