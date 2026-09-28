@@ -169,7 +169,6 @@ class FridayOnboardingActivity : ComponentActivity() {
         var haUrl by remember { mutableStateOf("") }
         var haToken by remember { mutableStateOf("") }
         var pollinationsSaved by remember { mutableStateOf(agent.hasPollinationsKey()) }
-        var haSaved by remember { mutableStateOf(agent.hasHomeAssistant()) }
         var saved by remember { mutableStateOf(agent.hasApiKey()) }
         var groqSaved by remember { mutableStateOf(agent.hasGroqKey()) }
         var openRouterSaved by remember { mutableStateOf(agent.hasOpenRouterKey()) }
