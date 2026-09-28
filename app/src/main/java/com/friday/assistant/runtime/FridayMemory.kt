@@ -121,16 +121,47 @@ class FridayMemory(context: Context) {
             Regex("""(?i)(?:AIza[0-9A-Za-z_-]{20,}|gsk_[0-9A-Za-z_-]{20,}|sk-[0-9A-Za-z_-]{20,}|api[_-]?key\s*[=:])""").containsMatchIn(value)
     }
 
+    fun setMode(mode: String) {
+        val clean = mode.trim().lowercase(Locale.ROOT).take(30)
+        if (clean.isBlank()) return
+        prefs.edit().putString(KEY_MODE, clean).apply()
+    }
+
+    fun mode(): String = prefs.getString(KEY_MODE, "normal").orEmpty().ifBlank { "normal" }
+
+    fun addNote(note: String): Boolean {
+        val clean = note.replace(Regex("\\s+"), " ").trim().take(MAX_NOTE)
+        if (clean.isBlank() || looksLikeSecret(clean)) return false
+        synchronized(lock) {
+            val notes = readJsonArray(KEY_NOTES)
+            notes.put(JSONObject().put("text", clean).put("time", System.currentTimeMillis()))
+            while (notes.length() > MAX_NOTES) notes.remove(0)
+            prefs.edit().putString(KEY_NOTES, notes.toString()).apply()
+        }
+        return true
+    }
+
+    fun notes(): List<String> = synchronized(lock) {
+        val notes = readJsonArray(KEY_NOTES)
+        (0 until notes.length()).mapNotNull { notes.optJSONObject(it)?.optString("text")?.takeIf(String::isNotBlank) }
+    }
+
+    fun clearNotes() { prefs.edit().remove(KEY_NOTES).apply() }
+
     companion object {
         private const val PREFS = "friday_persistent_memory"
         private const val KEY_OWNER_NAME = "owner_name"
         private const val KEY_FACTS = "facts"
         private const val KEY_HISTORY = "history"
+        private const val KEY_MODE = "mode"
+        private const val KEY_NOTES = "notes"
         private const val DEFAULT_OWNER_NAME = "Boss"
         private const val MAX_FACTS = 80
         private const val MAX_HISTORY = 120
         private const val MAX_FACT = 500
         private const val MAX_MESSAGE = 1200
         private const val MAX_CONTEXT = 18_000
+        private const val MAX_NOTES = 100
+        private const val MAX_NOTE = 800
     }
 }
