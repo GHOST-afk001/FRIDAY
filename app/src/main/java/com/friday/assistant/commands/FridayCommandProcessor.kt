@@ -115,8 +115,14 @@ class FridayCommandProcessor {
             normalized in setOf("go back", "back", "peeche jao", "वापस जाओ") -> "back"
             normalized in setOf("open recents", "recent apps", "recent kholo", "recent apps kholo", "रीसेंट खोलो") -> "recents"
             normalized in setOf("open notifications", "notifications kholo", "notification kholo", "नोटिफिकेशन खोलो") -> "notifications"
-            normalized.startsWith("click ") && normalized.length > 6 -> "click:${normalized.substringAfter("click ").trim()}"
+            normalized.startsWith("click ") && normalized.length > 6 -> "click ${normalized.substringAfter("click ").trim()}"
             normalized.startsWith("tap ") && normalized.length > 4 -> "tap ${normalized.substringAfter("tap ").trim()}"
+            normalized == "scroll up" || normalized == "upar scroll karo" -> "scroll up"
+            normalized == "scroll down" || normalized == "neeche scroll karo" -> "scroll down"
+            normalized == "swipe up" -> "swipe up"
+            normalized == "swipe down" -> "swipe down"
+            normalized.startsWith("type ") && normalized.length > 5 -> "type ${normalized.substringAfter("type ").trim()}"
+            normalized.startsWith("text ") && normalized.length > 5 -> "type ${normalized.substringAfter("text ").trim()}"
             else -> return null
         }
         return FridayResponse("Ye automation action karne se pehle confirmation chahiye.", FridayAction.AccessibilityCommand(command), needsConfirmation = true)
