@@ -9,6 +9,7 @@ import com.friday.assistant.commands.UniversalCommandRouter
 import com.friday.assistant.runtime.FridayMemory
 import com.friday.assistant.runtime.FridayCapabilities
 import com.friday.assistant.runtime.FridayBehaviorEngine
+import com.friday.assistant.runtime.FridaySafetyPolicy
 import com.friday.assistant.runtime.FridayRoutineStore
 import com.friday.assistant.runtime.FridayNotifications
 import com.friday.assistant.runtime.FridayNotificationReply
@@ -258,13 +259,13 @@ class FridayAgent(context: Context) {
                 .put("message", "This Android command is not supported by the current local action layer.")
         }
 
-        if (result.needsConfirmation) {
+        val action = result.action
+        if (result.needsConfirmation && (action == null || FridaySafetyPolicy.requiresConfirmation(action))) {
             return JSONObject()
                 .put("status", "confirmation_required")
                 .put("message", result.text)
         }
 
-        val action = result.action
         if (action == null) {
             return JSONObject()
                 .put("status", "handled")
@@ -304,7 +305,8 @@ class FridayAgent(context: Context) {
             }
             return
         }
-        if (action != null && !result.needsConfirmation) {
+        val requiresConfirmation = result.needsConfirmation && (action == null || FridaySafetyPolicy.requiresConfirmation(action))
+        if (action != null && !requiresConfirmation) {
             FridayRuntime.update("EXECUTING", "Running the requested Android action", true)
             val launched = runCatching { launcher.launch(action) }.getOrDefault(false)
             val answer = if (launched) result.text else "I couldn't complete that action on this phone, Boss."
