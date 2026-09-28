@@ -83,7 +83,8 @@ class FridayAgent(context: Context) {
             activeRequest?.cancel()
             activeRequest = brainScope.launch {
                 val answer = runCatching { handleCountryOrLocation(input) }
-                    .getOrElse { "Boss, information service abhi available nahi hai. Main guess nahi karungi." }
+                    .getOrNull()
+                    ?: "Boss, information service abhi available nahi hai. Main guess nahi karungi."
                 if (closed || requestGeneration.get() != generation) return@launch
                 remember("user", input)
                 remember("assistant", answer)
