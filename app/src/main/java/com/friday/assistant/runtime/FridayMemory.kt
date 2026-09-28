@@ -92,9 +92,15 @@ class FridayMemory(context: Context) {
         return buildString {
             append("Persistent FRIDAY memory:\n")
             append("- Owner name: ").append(name).append("\n")
+            append("- Current mode: ").append(mode()).append("\n")
             if (facts.isNotEmpty()) {
                 append("- Remembered facts/preferences:\n")
                 facts.forEach { append("  - ").append(it).append("\n") }
+            }
+            val savedNotes = notes().takeLast(8)
+            if (savedNotes.isNotEmpty()) {
+                append("- Saved notes:\n")
+                savedNotes.forEach { append("  - ").append(it).append("\n") }
             }
             if (recent.isNotEmpty()) {
                 append("- Recent conversation context:\n")
