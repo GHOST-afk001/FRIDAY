@@ -78,8 +78,21 @@ class FridayAgent(context: Context) {
             return
         }
 
-        handleCountryOrLocation(input)?.let { answer ->
-            remember("user", input); remember("assistant", answer); callback(answer, true); return
+        if (isCountryOrLocationRequest(input)) {
+            val generation = requestGeneration.incrementAndGet()
+            activeRequest?.cancel()
+            activeRequest = brainScope.launch {
+                val answer = runCatching { handleCountryOrLocation(input) }
+                    .getOrElse { "Boss, information service abhi available nahi hai. Main guess nahi karungi." }
+                if (closed || requestGeneration.get() != generation) return@launch
+                remember("user", input)
+                remember("assistant", answer)
+                withContext(Dispatchers.Main.immediate) {
+                    if (!closed && requestGeneration.get() == generation) callback(answer, true)
+                }
+                if (requestGeneration.get() == generation) activeRequest = null
+            }
+            return
         }
 
         handleIdentity(input)?.let { answer ->
@@ -290,6 +303,13 @@ class FridayAgent(context: Context) {
         withContext(Dispatchers.Main.immediate) {
             if (!closed && requestGeneration.get() == generation) callback(answer, false)
         }
+    }
+
+    private fun isCountryOrLocationRequest(input: String): Boolean {
+        val lower = input.trim().lowercase(Locale.ROOT)
+        if (lower.contains("where am i") || lower.contains("meri location") || lower.contains("my location")) return true
+        return Regex("^(?:tell me about|information about|info about|details about|facts about)\\s+(.+)$", RegexOption.IGNORE_CASE).matches(input.trim()) ||
+            Regex("^(.+?)\\s+(?:country|desh)\\s+(?:info|information|details)$", RegexOption.IGNORE_CASE).matches(input.trim())
     }
 
     private fun handleCountryOrLocation(input: String): String? {
