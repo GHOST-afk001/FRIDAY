@@ -214,4 +214,23 @@ class FridayCommandProcessorTest {
         assertEquals(FridayAction.MediaNext, result.action)
     }
 
+
+    @Test fun wifiConnectionPhraseDoesNotAccidentallyTurnWifiOn() {
+        val result = processor.process("wifi connection status batao")
+        assertFalse(result.action is FridayAction.Wifi)
+    }
+
+    @Test fun powerSavingOnIsParsed() {
+        val result = processor.process("battery saver on")
+        assertTrue(result.action is FridayAction.PowerSaving)
+        assertEquals(true, (result.action as FridayAction.PowerSaving).enabled)
+    }
+
+    @Test fun weatherTomorrowIsLocal() {
+        val result = processor.process("weather in Delhi tomorrow")
+        assertTrue(result.action is FridayAction.Weather)
+        assertEquals(java.time.LocalDate.now().plusDays(1).toString(), (result.action as FridayAction.Weather).dateIso)
+        assertEquals("delhi", (result.action as FridayAction.Weather).location)
+    }
+
 }
