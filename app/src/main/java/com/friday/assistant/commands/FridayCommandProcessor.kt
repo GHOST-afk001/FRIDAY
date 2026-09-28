@@ -33,6 +33,12 @@ class FridayCommandProcessor {
         if (isEmergencySosCommand(normalized)) return FridayResponse("Emergency dialer mein 112 open karne ke liye confirmation chahiye.", FridayAction.EmergencySos, needsConfirmation = true)
 
         parseWeather(normalized)?.let { return FridayResponse("Weather check kar rahi hoon, Boss.", it) }
+        parseNews(normalized)?.let { return FridayResponse("News check kar rahi hoon, Boss.", it) }
+        parseImageGeneration(normalized)?.let { return FridayResponse("Image generate kar rahi hoon, Boss.", it) }
+        parseMood(normalized)?.let { return FridayResponse("Mood analyze kar rahi hoon, Boss.", it) }
+        parseHomeAssistant(normalized)?.let { return it }
+        parseTermux(normalized)?.let { return it }
+
 
         parseAccessibilityCommand(normalized)?.let { return it }
 
@@ -83,6 +89,34 @@ class FridayCommandProcessor {
         return FridayResponse("", handledLocally = false)
     }
 
+
+    private fun parseNews(c: String): FridayAction.News? {
+        val n = c.trim()
+        if (!(n.contains("news") || n.contains("khabar") || n.contains("headlines"))) return null
+        val query = Regex("^(?:news|khabar|headlines)(?:\\s+(?:about|on|for|regarding|par|ki)\\s+(.+))?$", RegexOption.IGNORE_CASE).find(n)?.groupValues?.getOrNull(1)?.trim()
+        return FridayAction.News(query?.takeIf { it.isNotBlank() })
+    }
+
+    private fun parseImageGeneration(c: String): FridayAction.GenerateImage? {
+        val m = Regex("^(?:generate|create|make|draw|banao|bana do)(?:\\s+(?:an|a|the))?\\s+(?:image|picture|photo|tasveer)\\s*(?:of|for|ki|ka|ke)?\\s*(.+)$", RegexOption.IGNORE_CASE).find(c.trim()) ?: return null
+        return m.groupValues[1].trim().takeIf { it.isNotBlank() }?.let { FridayAction.GenerateImage(it) }
+    }
+
+    private fun parseMood(c: String): FridayAction.AnalyzeMood? {
+        val n = c.trim()
+        if (!(n.contains("analyze my mood") || n.contains("analyse my mood") || n.contains("mera mood") || n.contains("my emotion"))) return null
+        return FridayAction.AnalyzeMood(n)
+    }
+
+    private fun parseHomeAssistant(c: String): FridayResponse? {
+        val m = Regex("^(?:home assistant|homeassistant)\\s+(?:call|run|execute)\\s+([a-zA-Z_]+)\\s+([a-zA-Z_]+)(?:\\s+(?:for|entity)\\s+([a-zA-Z0-9_.-]+))?$", RegexOption.IGNORE_CASE).find(c.trim()) ?: return null
+        return FridayResponse("Home Assistant action execute karne ke liye confirmation chahiye.", FridayAction.HomeAssistant(m.groupValues[1], m.groupValues[2], m.groupValues.getOrNull(3)?.takeIf { it.isNotBlank() }), needsConfirmation = true)
+    }
+
+    private fun parseTermux(c: String): FridayResponse? {
+        val m = Regex("^(?:termux|termux api)\\s+(.+)$", RegexOption.IGNORE_CASE).find(c.trim()) ?: return null
+        return FridayResponse("Termux API command run karne ke liye confirmation chahiye.", FridayAction.TermuxApi(m.groupValues[1].trim()), needsConfirmation = true)
+    }
 
     private fun parseWeather(c: String): FridayAction.Weather? {
         val n = c.trim().replace(Regex("\\s+"), " ")
