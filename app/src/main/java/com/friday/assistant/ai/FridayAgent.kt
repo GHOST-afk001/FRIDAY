@@ -19,7 +19,6 @@ import com.friday.assistant.integrations.RestCountriesService
 import com.friday.assistant.integrations.IpInfoService
 import com.friday.assistant.integrations.FridayLocalMoodService
 import com.friday.assistant.integrations.FridayRssNewsService
-import com.friday.assistant.integrations.FridayPollinationsService
 import com.friday.assistant.ai.SecureApiKeyStore
 import java.time.LocalDate
 import kotlinx.coroutines.CoroutineScope
