@@ -166,8 +166,6 @@ class FridayOnboardingActivity : ComponentActivity() {
         var openRouterKey by remember { mutableStateOf("") }
         var ipToken by remember { mutableStateOf("") }
         var pollinationsKey by remember { mutableStateOf("") }
-        var haUrl by remember { mutableStateOf("") }
-        var haToken by remember { mutableStateOf("") }
         var pollinationsSaved by remember { mutableStateOf(agent.hasPollinationsKey()) }
         var saved by remember { mutableStateOf(agent.hasApiKey()) }
         var groqSaved by remember { mutableStateOf(agent.hasGroqKey()) }
