@@ -248,6 +248,25 @@ class FridayCommandProcessorTest {
         assertEquals(true, (result.action as FridayAction.PowerSaving).enabled)
     }
 
+    @Test fun newsCommandUsesKeylessRssAction() {
+        val result = processor.process("Friday news about India")
+        assertTrue(result.handledLocally)
+        assertEquals(FridayAction.News("india"), result.action)
+    }
+
+    @Test fun moodCommandUsesLocalKeylessAnalyzer() {
+        val result = processor.process("Friday analyze my mood")
+        assertTrue(result.handledLocally)
+        assertEquals(FridayAction.AnalyzeMood("analyze my mood"), result.action)
+    }
+
+    @Test fun smartHomeCommandUsesKeylessTermuxBridge() {
+        val result = processor.process("Friday smart home turn on bedroom light")
+        assertTrue(result.handledLocally)
+        assertTrue(result.action is FridayAction.TermuxApi)
+        assertEquals("turn on bedroom light", (result.action as FridayAction.TermuxApi).command)
+    }
+
     @Test fun weatherTomorrowIsLocal() {
         val result = processor.process("weather in Delhi tomorrow")
         assertTrue(result.action is FridayAction.Weather)
