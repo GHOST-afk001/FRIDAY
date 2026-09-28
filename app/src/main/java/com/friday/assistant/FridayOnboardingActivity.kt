@@ -77,6 +77,17 @@ class FridayOnboardingActivity : ComponentActivity() {
 
     private fun openAccessibility() = runCatching { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
 
+    private fun openNotificationAccess() = runCatching {
+        startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+    }
+
+    private fun isNotificationAccessEnabled(): Boolean = runCatching {
+        val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners").orEmpty()
+        enabled.split(':').any {
+            it.equals(ComponentName(this, com.friday.assistant.runtime.FridayNotificationListenerService::class.java).flattenToString(), true)
+        }
+    }.getOrDefault(false)
+
     private fun openAssistantRole() = runCatching {
         if (android.os.Build.VERSION.SDK_INT >= 29) {
             val roles = getSystemService(android.app.role.RoleManager::class.java)
@@ -117,6 +128,9 @@ class FridayOnboardingActivity : ComponentActivity() {
             if (android.os.Build.VERSION.SDK_INT >= 33 &&
                 checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
             ) add(Manifest.permission.POST_NOTIFICATIONS)
+            if (checkSelfPermission(Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) add(Manifest.permission.CAMERA)
+            if (checkSelfPermission(Manifest.permission.READ_CONTACTS) != android.content.pm.PackageManager.PERMISSION_GRANTED) add(Manifest.permission.READ_CONTACTS)
+            if (checkSelfPermission(Manifest.permission.CALL_PHONE) != android.content.pm.PackageManager.PERMISSION_GRANTED) add(Manifest.permission.CALL_PHONE)
         }
         if (requiredPermissions.isNotEmpty()) {
             requestPermissions(requiredPermissions.toTypedArray(), PERMISSION_REQUEST_CODE)
@@ -156,6 +170,7 @@ class FridayOnboardingActivity : ComponentActivity() {
         var openRouterSaved by remember { mutableStateOf(agent.hasOpenRouterKey()) }
         var accessibility by remember { mutableStateOf(isAccessibilityEnabled()) }
         var assistantSelected by remember { mutableStateOf(isAssistantSelected()) }
+        var notificationAccess by remember { mutableStateOf(isNotificationAccessEnabled()) }
         val orbState by FridayStateFlow.state.collectAsState()
 
         LaunchedEffect(Unit) {
@@ -165,6 +180,7 @@ class FridayOnboardingActivity : ComponentActivity() {
                 openRouterSaved = agent.hasOpenRouterKey()
                 accessibility = isAccessibilityEnabled()
                 assistantSelected = isAssistantSelected()
+                notificationAccess = isNotificationAccessEnabled()
                 delay(700)
             }
         }
@@ -208,6 +224,7 @@ class FridayOnboardingActivity : ComponentActivity() {
                             StatusRow("REST COUNTRIES", true, "NO KEY REQUIRED")
                             StatusRow("AUTOMATION", accessibility, if (accessibility) "ONLINE" else "PERMISSION REQUIRED")
                             StatusRow("ANDROID ASSISTANT", assistantSelected, if (assistantSelected) "ACTIVE" else "SELECT FRIDAY")
+                            StatusRow("NOTIFICATION ACCESS", notificationAccess, if (notificationAccess) "ONLINE" else "OPTIONAL")
 
                             if (!saved) {
                                 OutlinedTextField(
@@ -293,6 +310,9 @@ class FridayOnboardingActivity : ComponentActivity() {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = ::openAppInfo, modifier = Modifier.weight(1f)) { Text("APP INFO") }
                                 OutlinedButton(onClick = ::openAccessibility, modifier = Modifier.weight(1f)) { Text("ACCESS") }
+                            }
+                            OutlinedButton(onClick = ::openNotificationAccess, modifier = Modifier.fillMaxWidth()) {
+                                Text(if (notificationAccess) "NOTIFICATION ACCESS ACTIVE" else "ENABLE NOTIFICATION ACCESS")
                             }
                             OutlinedButton(onClick = ::openAssistantRole, modifier = Modifier.fillMaxWidth()) {
                                 Text(if (assistantSelected) "ANDROID ASSISTANT ACTIVE" else "SELECT FRIDAY AS ASSISTANT")
