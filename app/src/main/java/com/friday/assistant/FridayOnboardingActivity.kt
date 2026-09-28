@@ -138,7 +138,9 @@ class FridayOnboardingActivity : ComponentActivity() {
         }
     }
 
-    companion object { private const val PERMISSION_REQUEST_CODE = 7041 }\n\n    override fun onDestroy() {
+    companion object { private const val PERMISSION_REQUEST_CODE = 7041 }
+
+    override fun onDestroy() {
         if (::agent.isInitialized) agent.close()
         super.onDestroy()
     }
