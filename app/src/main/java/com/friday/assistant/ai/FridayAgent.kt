@@ -46,7 +46,6 @@ class FridayAgent(context: Context) {
     private val keyStore = SecureApiKeyStore(appContext)
     private val emotion = FridayLocalMoodService()
     private val news = FridayRssNewsService()
-    private val pollinations = FridayPollinationsService(keyStore)
     private val memory = FridayMemory(appContext)
     private val capabilities = FridayCapabilities(appContext)
     private val behavior = FridayBehaviorEngine()
@@ -57,10 +56,6 @@ class FridayAgent(context: Context) {
     @Volatile private var activeRequest: Job? = null
     init {
         // Remove credentials for integrations intentionally retired from FRIDAY.
-        keyStore.clearNamed("huggingface")
-        keyStore.clearNamed("gnews")
-        keyStore.clearNamed("home_assistant_url")
-        keyStore.clearNamed("home_assistant_token")
     }
 
     fun configureApiKey(key: String) { if (!closed) gemini.setApiKey(key) }
