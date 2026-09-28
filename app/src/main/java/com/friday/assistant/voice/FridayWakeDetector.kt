@@ -119,7 +119,7 @@ class FridayWakeDetector(
             localRecorder.startRecording()
             if (localRecorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) error("AudioRecord failed to start")
 
-            FridayRuntime.update("WAKE LISTENING", "Microphone active • listening for Hey Friday", true)
+            FridayRuntime.update("WAKE LISTENING", "Microphone active • listening for Friday / Hey Friday", true)
             Log.i(TAG, "Wake microphone started: ${SAMPLE_RATE}Hz mono, buffer=$needed")
 
             val ring = ShortArray(needed)
@@ -181,7 +181,7 @@ class FridayWakeDetector(
                 peakSinceLog = max(peakSinceLog, probability)
                 val now = SystemClock.elapsedRealtime()
                 if (now - scoreLogAt >= 1000L) {
-                    Log.d(TAG, String.format(Locale.US, "Wake score=%.3f rms=%.4f peak=%d word=%s", peakSinceLog, rms, peak, word))
+                    Log.d(TAG, String.format(Locale.US, "Wake score=%.3f rms=%.4f peak=%d word=%s", peakSinceLog, rms, peak, modelWord ?: "-"))
                     scoreLogAt = now
                     peakSinceLog = 0f
                 }
@@ -189,7 +189,7 @@ class FridayWakeDetector(
                 // Keep the HUD visibly alive while wake inference is running, but do not replace
                 // the persistent WAKE LISTENING stage with noisy score updates.
                 if (now - scoreLogAt < 50L) {
-                    FridayRuntime.update("WAKE LISTENING", String.format(Locale.US, "Mic active • score %.2f • say Hey Friday", probability), true)
+                    FridayRuntime.update("WAKE LISTENING", String.format(Locale.US, "Mic active • score %.2f • say Friday or Hey Friday", probability), true)
                 }
 
                 if (word.contains("friday", ignoreCase = true) && probability >= THRESHOLD) {
@@ -206,7 +206,7 @@ class FridayWakeDetector(
                         consecutiveWord = ""
                         consecutiveCount = 0
                         FridayStateFlow.updateAmplitude(1f)
-                        FridayRuntime.update("WAKE DETECTED", String.format(Locale.US, "Hey Friday detected • %.0f%% confidence", probability * 100f), true)
+                        FridayRuntime.update("WAKE DETECTED", String.format(Locale.US, "Friday wake detected • %.0f%% confidence", probability * 100f), true)
                         onWake(probability, frame.copyOf())
                     }
                 }
