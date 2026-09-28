@@ -21,7 +21,6 @@ import java.util.Calendar
 import androidx.core.content.ContextCompat
 import com.friday.assistant.automation.FridayAutomation
 import com.friday.assistant.runtime.FridayRuntime
-import com.friday.assistant.integrations.FridayTermuxService
 
 class AppLauncher(private val context: Context) {
     fun launch(action: FridayAction): Boolean = try {
@@ -86,7 +85,6 @@ class AppLauncher(private val context: Context) {
             FridayAction.EmergencySos -> start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:112")))
             FridayAction.RequestAssistantRole -> requestAssistantRole()
             is FridayAction.GenerateImage -> openGeneratedImage(action.prompt)
-            is FridayAction.TermuxApi -> FridayTermuxService(context).run(action.command)
             is FridayAction.News, is FridayAction.AnalyzeMood -> false
         }
     } catch (_: SecurityException) { false } catch (_: Exception) { false }
