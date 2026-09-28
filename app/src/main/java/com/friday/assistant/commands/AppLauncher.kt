@@ -89,7 +89,7 @@ class AppLauncher(private val context: Context) {
             FridayAction.RequestAssistantRole -> requestAssistantRole()
             is FridayAction.GenerateImage -> openGeneratedImage(action.prompt)
             is FridayAction.TermuxApi -> FridayTermuxService(context).run(action.command)
-            is FridayAction.News, is FridayAction.AnalyzeMood, is FridayAction.HomeAssistant -> false
+            is FridayAction.News, is FridayAction.AnalyzeMood -> false
         }
     } catch (_: SecurityException) { false } catch (_: Exception) { false }
 
