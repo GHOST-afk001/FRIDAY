@@ -141,7 +141,7 @@ class FridayCommandProcessorTest {
         val result = processor.process("click Send")
         assertTrue(result.handledLocally)
         assertTrue(result.needsConfirmation)
-        assertEquals(FridayAction.AccessibilityCommand("click:send"), result.action)
+        assertEquals(FridayAction.AccessibilityCommand("click send"), result.action)
     }
 
     @Test fun accessibilityTapCommandIsGated() {
@@ -178,6 +178,22 @@ class FridayCommandProcessorTest {
     @Test fun compoundParserDoesNotSplitUnknownNaturalLanguage() {
         val result = processor.process("tell me something about alarm and messages")
         assertFalse(result.handledLocally)
+    }
+
+    @Test fun scrollCommandsAreLocalAndGated() {
+        val up = processor.process("scroll up")
+        assertEquals(FridayAction.AccessibilityCommand("scroll up"), up.action)
+        assertTrue(up.needsConfirmation)
+
+        val down = processor.process("scroll down")
+        assertEquals(FridayAction.AccessibilityCommand("scroll down"), down.action)
+        assertTrue(down.needsConfirmation)
+    }
+
+    @Test fun typeTextCommandIsLocalAndGated() {
+        val result = processor.process("type hello boss")
+        assertEquals(FridayAction.AccessibilityCommand("type hello boss"), result.action)
+        assertTrue(result.needsConfirmation)
     }
 
     @Test fun unknownTaskHandsOffToAi() {
