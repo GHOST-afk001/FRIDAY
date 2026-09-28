@@ -21,8 +21,6 @@ import java.util.Calendar
 import androidx.core.content.ContextCompat
 import com.friday.assistant.automation.FridayAutomation
 import com.friday.assistant.runtime.FridayRuntime
-import com.friday.assistant.ai.SecureApiKeyStore
-import com.friday.assistant.integrations.FridayPollinationsService
 import com.friday.assistant.integrations.FridayTermuxService
 
 class AppLauncher(private val context: Context) {
@@ -265,18 +263,6 @@ class AppLauncher(private val context: Context) {
         }
         start(intent)
     }.getOrDefault(false)
-
-    private fun openGeneratedImage(prompt: String): Boolean = runCatching {
-        val url = FridayPollinationsService(SecureApiKeyStore(context)).imageUrl(prompt)
-        start(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-    }.getOrDefault(false)
-
-    private fun openCalculator(): Boolean {
-        val selector = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_CALCULATOR)
-        if (start(selector)) return true
-        val known = listOf("com.sec.android.app.popupcalculator", "com.samsung.android.calculator", "com.google.android.calculator")
-        return known.firstOrNull { context.packageManager.getLaunchIntentForPackage(it) != null }?.let { start(context.packageManager.getLaunchIntentForPackage(it)!!) } ?: false
-    }
 
     private fun adjustVolume(direction: Int): Boolean {
         val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
