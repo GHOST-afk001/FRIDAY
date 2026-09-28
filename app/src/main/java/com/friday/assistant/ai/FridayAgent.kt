@@ -8,6 +8,7 @@ import com.friday.assistant.commands.FridayResponse
 import com.friday.assistant.commands.UniversalCommandRouter
 import com.friday.assistant.runtime.FridayMemory
 import com.friday.assistant.runtime.FridayCapabilities
+import com.friday.assistant.runtime.FridayBehaviorEngine
 import com.friday.assistant.runtime.FridayRoutineStore
 import com.friday.assistant.runtime.FridayNotifications
 import com.friday.assistant.runtime.FridayNotificationReply
@@ -40,6 +41,7 @@ class FridayAgent(context: Context) {
     private val ipInfo = IpInfoService(appContext)
     private val memory = FridayMemory(appContext)
     private val capabilities = FridayCapabilities(appContext)
+    private val behavior = FridayBehaviorEngine()
     private val routines = FridayRoutineStore(appContext)
     private val brainScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val requestGeneration = AtomicLong(0L)
@@ -148,9 +150,13 @@ class FridayAgent(context: Context) {
                 if (closed || !isActive || requestGeneration.get() != myGeneration) return@launch
                 FridayRuntime.update("AI THINKING", "Gemini is reasoning and can request Android actions", true)
 
+                val behaviorState = behavior.analyze(input, memory.mode())
                 val enrichedInput = buildString {
                     append(memory.contextForBrain()).append("\n")
                     append("Current notification context: ").append(FridayNotifications.describe()).append("\n")
+                    append(behaviorState.systemPrompt).append("\n")
+                    append("Execution style: explicit user requests authorize ordinary, reversible phone actions; do not repeatedly ask for confirmation for those actions. ")
+                    append("Calls, SMS, emergency actions, purchases/payments, destructive actions, and risky external submissions still require explicit confirmation. ")
                     append("Use your Android tool when the owner's request requires a phone action. ")
                     append("If the request is ordinary conversation or explanation, answer directly. ")
                     append("Never claim a device action succeeded unless the Android tool reports success.")
