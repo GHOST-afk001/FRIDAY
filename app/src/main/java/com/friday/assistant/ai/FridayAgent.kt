@@ -7,6 +7,7 @@ import com.friday.assistant.commands.FridayAction
 import com.friday.assistant.commands.FridayResponse
 import com.friday.assistant.commands.UniversalCommandRouter
 import com.friday.assistant.runtime.FridayMemory
+import com.friday.assistant.runtime.FridayCapabilities
 import com.friday.assistant.runtime.FridayNotifications
 import com.friday.assistant.runtime.FridayNotificationReply
 import com.friday.assistant.runtime.FridayRuntime
@@ -37,6 +38,7 @@ class FridayAgent(context: Context) {
     private val countries = RestCountriesService()
     private val ipInfo = IpInfoService(appContext)
     private val memory = FridayMemory(appContext)
+    private val capabilities = FridayCapabilities(appContext)
     private val brainScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val requestGeneration = AtomicLong(0L)
     @Volatile private var closed = false
@@ -68,6 +70,11 @@ class FridayAgent(context: Context) {
             remember("user", input)
             remember("assistant", answer)
             callback(answer, true)
+            return
+        }
+
+        capabilities.handle(input)?.let { result ->
+            executeLocal(result, input, callback)
             return
         }
 
