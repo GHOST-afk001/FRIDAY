@@ -8,6 +8,7 @@ import com.friday.assistant.commands.FridayResponse
 import com.friday.assistant.commands.UniversalCommandRouter
 import com.friday.assistant.runtime.FridayMemory
 import com.friday.assistant.runtime.FridayCapabilities
+import com.friday.assistant.runtime.FridayRoutineStore
 import com.friday.assistant.runtime.FridayNotifications
 import com.friday.assistant.runtime.FridayNotificationReply
 import com.friday.assistant.runtime.FridayRuntime
@@ -39,6 +40,7 @@ class FridayAgent(context: Context) {
     private val ipInfo = IpInfoService(appContext)
     private val memory = FridayMemory(appContext)
     private val capabilities = FridayCapabilities(appContext)
+    private val routines = FridayRoutineStore(appContext)
     private val brainScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val requestGeneration = AtomicLong(0L)
     @Volatile private var closed = false
@@ -67,6 +69,13 @@ class FridayAgent(context: Context) {
         }
 
         handleNotificationReply(input)?.let { answer ->
+            remember("user", input)
+            remember("assistant", answer)
+            callback(answer, true)
+            return
+        }
+
+        handleRoutineCommand(input)?.let { answer ->
             remember("user", input)
             remember("assistant", answer)
             callback(answer, true)
@@ -353,6 +362,44 @@ class FridayAgent(context: Context) {
         openRouter.cancel()
         brainScope.cancel()
         FridayRuntime.update("IDLE", "FRIDAY brain stopped", true)
+    }
+
+    private fun handleRoutineCommand(input: String): String? {
+        val raw = input.trim()
+        val create = Regex("^(?:create|make|save)\\s+(?:a\\s+)?routine\\s+(.+?)\\s*[:=-]\\s*(.+)$", RegexOption.IGNORE_CASE).find(raw)
+        if (create != null) {
+            val name = create.groupValues[1].trim()
+            val commands = create.groupValues[2].split(Regex("\\s*(?:;|then)\\s*"), limit = 12).map { it.trim() }.filter { it.isNotBlank() }
+            return if (routines.save(name, commands)) "Routine $name save kar di, Boss." else "Boss, routine save nahi ho paayi."
+        }
+        val run = Regex("^(?:run|start|execute|chalao|chala do)\\s+(?:routine\\s+)?(.+)$", RegexOption.IGNORE_CASE).find(raw)
+        if (run != null && raw.lowercase(Locale.ROOT).contains("routine")) {
+            val name = run.groupValues[1].trim()
+            val commands = routines.get(name)
+            if (commands.isEmpty()) return "Boss, $name naam ki koi routine nahi mili."
+            var completed = 0
+            for (command in commands) {
+                val result = local.process(command)
+                if (result.needsConfirmation) return "Boss, routine $name step ${completed + 1} par confirmation required hai: ${result.text}"
+                val action = result.action ?: continue
+                if (action is FridayAction.Weather) return "Boss, routine $name weather step par ruk gayi; weather ko routine ke andar abhi execute nahi karungi."
+                if (!runCatching { launcher.launch(action) }.getOrDefault(false)) {
+                    return "Boss, routine $name step ${completed + 1} complete nahi ho paaya."
+                }
+                completed++
+            }
+            return "Done Boss. Routine $name ke $completed steps complete ho gaye."
+        }
+        if (raw.lowercase(Locale.ROOT) in setOf("list routines", "show routines", "meri routines", "routines dikhao")) {
+            val names = routines.names()
+            return if (names.isEmpty()) "Boss, abhi koi routine saved nahi hai." else "Saved routines: " + names.joinToString(", ")
+        }
+        val delete = Regex("^(?:delete|remove)\\s+routine\\s+(.+)$", RegexOption.IGNORE_CASE).find(raw)
+        if (delete != null) {
+            routines.delete(delete.groupValues[1])
+            return "Boss, routine ${delete.groupValues[1].trim()} delete kar di."
+        }
+        return null
     }
 
     private fun handleNotificationReply(input: String): String? {
