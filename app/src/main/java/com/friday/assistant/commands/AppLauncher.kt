@@ -244,7 +244,7 @@ class AppLauncher(private val context: Context) {
         return start(Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(clean)}")))
     }
 
-    private fun requestAssistantRole(): Boolean = try {
+    private fun requestAssistantRole(): Boolean { return try {
         if (android.os.Build.VERSION.SDK_INT < 29) return false
         val roles = context.getSystemService(android.app.role.RoleManager::class.java) ?: return false
         if (!roles.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT)) return false
