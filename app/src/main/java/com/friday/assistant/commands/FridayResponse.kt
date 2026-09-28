@@ -47,7 +47,6 @@ sealed interface FridayAction {
     data class News(val query: String? = null) : FridayAction
     data class GenerateImage(val prompt: String) : FridayAction
     data class AnalyzeMood(val text: String) : FridayAction
-    data class HomeAssistant(val domain: String, val service: String, val entityId: String? = null) : FridayAction
     data class TermuxApi(val command: String) : FridayAction
     data class Sequence(val actions: List<FridayAction>) : FridayAction {
         init { require(actions.isNotEmpty()) }
