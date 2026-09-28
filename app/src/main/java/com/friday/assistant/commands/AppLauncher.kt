@@ -19,6 +19,9 @@ import java.util.Calendar
 import androidx.core.content.ContextCompat
 import com.friday.assistant.automation.FridayAutomation
 import com.friday.assistant.runtime.FridayRuntime
+import com.friday.assistant.ai.SecureApiKeyStore
+import com.friday.assistant.integrations.FridayPollinationsService
+import com.friday.assistant.integrations.FridayTermuxService
 
 class AppLauncher(private val context: Context) {
     fun launch(action: FridayAction): Boolean = try {
@@ -82,6 +85,9 @@ class AppLauncher(private val context: Context) {
             }
             FridayAction.EmergencySos -> start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:112")))
             FridayAction.RequestAssistantRole -> requestAssistantRole()
+            is FridayAction.GenerateImage -> openGeneratedImage(action.prompt)
+            is FridayAction.TermuxApi -> FridayTermuxService(context).run(action.command)
+            is FridayAction.News, is FridayAction.AnalyzeMood, is FridayAction.HomeAssistant -> false
         }
     } catch (_: SecurityException) { false } catch (_: Exception) { false }
 
@@ -236,7 +242,12 @@ class AppLauncher(private val context: Context) {
         return start(Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(clean)}")))
     }
 
-    private fun requestAssistantRole(): Boolean = try {\n        if (android.os.Build.VERSION.SDK_INT < 29) return false\n        val roles = context.getSystemService(android.app.role.RoleManager::class.java) ?: return false\n        if (!roles.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT)) return false\n        start(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))\n    } catch (_: Throwable) { false }\n\n    private fun openCalculator(): Boolean {
+    private fun requestAssistantRole(): Boolean = try {\n        if (android.os.Build.VERSION.SDK_INT < 29) return false\n        val roles = context.getSystemService(android.app.role.RoleManager::class.java) ?: return false\n        if (!roles.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT)) return false\n        start(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))\n    } catch (_: Throwable) { false }\n\n    private fun openGeneratedImage(prompt: String): Boolean = runCatching {
+        val url = FridayPollinationsService(SecureApiKeyStore(context)).imageUrl(prompt)
+        start(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }.getOrDefault(false)
+
+    private fun openCalculator(): Boolean {
         val selector = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_CALCULATOR)
         if (start(selector)) return true
         val known = listOf("com.sec.android.app.popupcalculator", "com.samsung.android.calculator", "com.google.android.calculator")
