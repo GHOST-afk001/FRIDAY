@@ -149,10 +149,6 @@ class AppLauncher(private val context: Context) {
             }
             if (FridayAutomation.openQuickSettings()) {
                 if (FridayAutomation.setQuickSetting(labels, enabled)) return true
-                Thread.sleep(180)
-                if (FridayAutomation.setQuickSetting(labels, enabled)) return true
-                Thread.sleep(280)
-                if (FridayAutomation.setQuickSetting(labels, enabled)) return true
             }
         }
         val intent = when (kind) {
