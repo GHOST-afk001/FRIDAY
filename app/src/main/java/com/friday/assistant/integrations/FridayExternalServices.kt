@@ -128,7 +128,7 @@ class FridayTermuxService(private val context: Context) {
         val intent = Intent("com.termux.RUN_COMMAND").apply {
             setClassName("com.termux", "com.termux.app.RunCommandService")
             putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/termux-api")
-            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf(method) + if (args == null) emptyArray() else arrayOf(args))
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf(method) + (args?.split(Regex("\\s+"))?.toTypedArray() ?: emptyArray()))
             putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
             putExtra("com.termux.RUN_COMMAND_SESSION_ACTION", "0")
         }
