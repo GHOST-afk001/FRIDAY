@@ -49,13 +49,27 @@ class ActionPolicyValidator {
             val command = action.command.trim()
             when {
                 command.isBlank() -> Outcome.Rejected("I need an automation command before controlling another app.")
-                else -> Outcome.RequiresConfirmation(
+                requiresRiskyUiConfirmation(command) -> Outcome.RequiresConfirmation(
                     action,
-                    "I need your confirmation before controlling another app's visible UI."
+                    "Please confirm before I perform that sensitive UI action."
                 )
+                else -> Outcome.Approved(action)
             }
         }
         else -> Outcome.Approved(action)
+    }
+
+    private fun requiresRiskyUiConfirmation(command: String): Boolean {
+        val c = command.trim().lowercase()
+        if (c.startsWith("whatsapp_message|")) return true
+        if (c.startsWith("type ") || c.startsWith("text ") || c.startsWith("scroll ") || c.startsWith("swipe ")) return false
+        if (c == "back" || c == "home" || c == "recents" || c == "open notifications") return false
+        if (c.startsWith("click ") || c.startsWith("tap ")) {
+            val target = c.substringAfter(' ').trim()
+            return listOf("send", "submit", "purchase", "buy", "pay", "delete", "remove", "confirm", "transfer", "order", "post", "publish", "logout")
+                .any { word -> Regex("(?<![a-z0-9])" + Regex.escape(word) + "(?![a-z0-9])").containsMatchIn(target) }
+        }
+        return false
     }
 
     private fun validateSequence(sequence: FridayAction.Sequence): Outcome {
