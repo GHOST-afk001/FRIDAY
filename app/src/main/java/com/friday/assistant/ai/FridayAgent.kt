@@ -388,8 +388,11 @@ class FridayAgent(context: Context) {
             var completed = 0
             for (command in commands) {
                 val result = local.process(command)
-                if (result.needsConfirmation) return "Boss, routine $name step ${completed + 1} par confirmation required hai: ${result.text}"
-                val action = result.action ?: continue
+                val action = result.action
+                if (result.needsConfirmation && (action == null || FridaySafetyPolicy.requiresConfirmation(action))) {
+                    return "Boss, routine $name step ${completed + 1} par confirmation required hai: ${result.text}"
+                }
+                if (action == null) continue
                 if (action is FridayAction.Weather) return "Boss, routine $name weather step par ruk gayi; weather ko routine ke andar abhi execute nahi karungi."
                 if (!runCatching { launcher.launch(action) }.getOrDefault(false)) {
                     return "Boss, routine $name step ${completed + 1} complete nahi ho paaya."
