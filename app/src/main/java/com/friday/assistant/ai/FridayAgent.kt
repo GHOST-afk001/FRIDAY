@@ -280,6 +280,20 @@ class FridayAgent(context: Context) {
         }
 
         val action = result.action
+        if (action is FridayAction.News || action is FridayAction.AnalyzeMood || action is FridayAction.HomeAssistant) {
+            return runCatching {
+                when (action) {
+                    is FridayAction.News -> JSONObject().put("status", "success").put("message", news.headlines(action.query))
+                    is FridayAction.AnalyzeMood -> JSONObject().put("status", "success").put("message", "Detected mood: ${emotion.analyze(action.text)}")
+                    is FridayAction.HomeAssistant -> JSONObject().put(
+                        "status",
+                        if (homeAssistant.call(action.domain, action.service, action.entityId)) "success" else "failed"
+                    ).put("message", "Home Assistant request processed.")
+                    else -> JSONObject().put("status", "failed").put("message", "Unsupported external integration")
+                }
+            }.getOrElse { JSONObject().put("status", "failed").put("message", "External integration failed safely.") }
+        }
+        val action = result.action
         if (result.needsConfirmation && (action == null || FridaySafetyPolicy.requiresConfirmation(action))) {
             return JSONObject()
                 .put("status", "confirmation_required")
