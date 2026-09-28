@@ -250,6 +250,7 @@ class AppLauncher(private val context: Context) {
         if (!roles.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT)) return false
         start(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))
     } catch (_: Throwable) { false }
+    }
 
     private fun capturePhoto(): Boolean = runCatching {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return false
