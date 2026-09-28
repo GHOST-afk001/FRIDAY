@@ -36,9 +36,6 @@ class FridayCommandProcessor {
         parseNews(normalized)?.let { return FridayResponse("News check kar rahi hoon, Boss.", it) }
         parseImageGeneration(normalized)?.let { return FridayResponse("Image generate kar rahi hoon, Boss.", it) }
         parseMood(normalized)?.let { return FridayResponse("Mood analyze kar rahi hoon, Boss.", it) }
-        parseSmartHome(normalized)?.let { return it }
-        parseTermux(normalized)?.let { return it }
-
 
         parseAccessibilityCommand(normalized)?.let { return it }
 
@@ -106,16 +103,6 @@ class FridayCommandProcessor {
         val n = c.trim()
         if (!(n.contains("analyze my mood") || n.contains("analyse my mood") || n.contains("mera mood") || n.contains("my emotion"))) return null
         return FridayAction.AnalyzeMood(n)
-    }
-
-    private fun parseSmartHome(c: String): FridayResponse? {
-        val m = Regex("^(?:smart home|smarthome|home automation)\\s+(.+)$", RegexOption.IGNORE_CASE).find(c.trim()) ?: return null
-        return FridayResponse("Local smart-home automation bridge ko run karne ke liye confirmation chahiye.", FridayAction.TermuxApi(m.groupValues[1].trim()), needsConfirmation = true)
-    }
-
-    private fun parseTermux(c: String): FridayResponse? {
-        val m = Regex("^(?:termux|termux api)\\s+(.+)$", RegexOption.IGNORE_CASE).find(c.trim()) ?: return null
-        return FridayResponse("Termux API command run karne ke liye confirmation chahiye.", FridayAction.TermuxApi(m.groupValues[1].trim()), needsConfirmation = true)
     }
 
     private fun parseWeather(c: String): FridayAction.Weather? {
