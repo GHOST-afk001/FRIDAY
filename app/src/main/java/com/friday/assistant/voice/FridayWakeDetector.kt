@@ -173,7 +173,7 @@ class FridayWakeDetector(
 
                 val result = process.invoke(engine, frame) ?: continue
                 if (!running.get()) continue
-                val word = result.javaClass.getField("wakeWord").get(result) as? String ?: ""
+                val modelWord = result.javaClass.getField("wakeWord").get(result) as? String
                 val probability = result.javaClass.getField("probability").getFloat(result)
                 // The bundled model recommends 3 windows. Two strong windows are enough for
                 // a phone-mic wake because each window is already ~1 second of audio.
