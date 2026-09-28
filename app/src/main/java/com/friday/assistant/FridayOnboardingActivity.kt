@@ -227,7 +227,6 @@ class FridayOnboardingActivity : ComponentActivity() {
                             StatusRow("REST COUNTRIES", true, "NO KEY REQUIRED")
                             StatusRow("LOCAL MOOD ANALYZER", true, "NO KEY REQUIRED")
                             StatusRow("RSS NEWS", true, "NO KEY REQUIRED")
-                            StatusRow("TERMUX SMART HOME", true, "NO API KEY")
                             StatusRow("AUTOMATION", accessibility, if (accessibility) "ONLINE" else "PERMISSION REQUIRED")
                             StatusRow("ANDROID ASSISTANT", assistantSelected, if (assistantSelected) "ACTIVE" else "SELECT FRIDAY")
                             StatusRow("NOTIFICATION ACCESS", notificationAccess, if (notificationAccess) "ONLINE" else "OPTIONAL")
