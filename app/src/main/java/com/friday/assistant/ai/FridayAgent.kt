@@ -17,6 +17,11 @@ import com.friday.assistant.runtime.FridayRuntime
 import com.friday.assistant.weather.FridayWeatherService
 import com.friday.assistant.integrations.RestCountriesService
 import com.friday.assistant.integrations.IpInfoService
+import com.friday.assistant.integrations.FridayEmotionService
+import com.friday.assistant.integrations.FridayNewsService
+import com.friday.assistant.integrations.FridayHomeAssistantService
+import com.friday.assistant.integrations.FridayPollinationsService
+import com.friday.assistant.ai.SecureApiKeyStore
 import java.time.LocalDate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +45,11 @@ class FridayAgent(context: Context) {
     private val openRouter = OpenRouterProvider(appContext)
     private val countries = RestCountriesService()
     private val ipInfo = IpInfoService(appContext)
+    private val keyStore = SecureApiKeyStore(appContext)
+    private val emotion = FridayEmotionService(keyStore)
+    private val news = FridayNewsService(keyStore)
+    private val homeAssistant = FridayHomeAssistantService(keyStore)
+    private val pollinations = FridayPollinationsService(keyStore)
     private val memory = FridayMemory(appContext)
     private val capabilities = FridayCapabilities(appContext)
     private val behavior = FridayBehaviorEngine()
@@ -58,6 +68,14 @@ class FridayAgent(context: Context) {
     fun hasOpenRouterKey() = !closed && openRouter.isConfigured()
     fun clearApiKey() { if (!closed) gemini.clearApiKey() }
     fun clearGroqKey() { if (!closed) groq.clearApiKey() }
+    fun configureHuggingFaceKey(key: String) { if (!closed) keyStore.saveNamed("huggingface", key) }
+    fun hasHuggingFaceKey() = !closed && !keyStore.readNamed("huggingface").isNullOrBlank()
+    fun configureGNewsKey(key: String) { if (!closed) keyStore.saveNamed("gnews", key) }
+    fun hasGNewsKey() = !closed && !keyStore.readNamed("gnews").isNullOrBlank()
+    fun configurePollinationsKey(key: String) { if (!closed) keyStore.saveNamed("pollinations", key) }
+    fun hasPollinationsKey() = !closed && !keyStore.readNamed("pollinations").isNullOrBlank()
+    fun configureHomeAssistant(url: String, token: String) { if (!closed) { keyStore.saveNamed("home_assistant_url", url); keyStore.saveNamed("home_assistant_token", token) } }
+    fun hasHomeAssistant() = !closed && !keyStore.readNamed("home_assistant_url").isNullOrBlank() && !keyStore.readNamed("home_assistant_token").isNullOrBlank()
 
     fun handle(input: String, callback: (String, Boolean) -> Unit) {
         if (closed) return
@@ -152,10 +170,12 @@ class FridayAgent(context: Context) {
                 FridayRuntime.update("AI THINKING", "Gemini is reasoning and can request Android actions", true)
 
                 val behaviorState = behavior.analyze(input, memory.mode())
+                val moodContext = if (hasHuggingFaceKey()) runCatching { emotion.analyze(input) }.getOrDefault("") else ""
                 val enrichedInput = buildString {
                     append(memory.contextForBrain()).append("\n")
                     append("Current notification context: ").append(FridayNotifications.describe()).append("\n")
                     append(behaviorState.systemPrompt).append("\n")
+                    if (moodContext.isNotBlank()) append("Detected emotional context (use gently, never overstate): ").append(moodContext).append("\n")
                     append("Execution style: explicit user requests authorize ordinary, reversible phone actions; do not repeatedly ask for confirmation for those actions. ")
                     append("Calls, SMS, emergency actions, purchases/payments, destructive actions, and risky external submissions still require explicit confirmation. ")
                     append("Use your Android tool when the owner's request requires a phone action. ")
@@ -285,9 +305,38 @@ class FridayAgent(context: Context) {
         }
     }
 
+    private fun executeExternal(action: FridayAction, input: String, callback: (String, Boolean) -> Unit) {
+        brainScope.launch {
+            val answer = runCatching {
+                when (action) {
+                    is FridayAction.News -> news.headlines(action.query)
+                    is FridayAction.AnalyzeMood -> "Aapka detected mood: ${emotion.analyze(action.text)}"
+                    is FridayAction.HomeAssistant -> if (homeAssistant.call(action.domain, action.service, action.entityId)) "Home Assistant action complete ho gayi, Boss." else "Boss, Home Assistant configured nahi hai ya action fail hui."
+                    else -> return@runCatching null
+                }
+            }.getOrElse { "Boss, external integration abhi available nahi hai. Main guess nahi karungi." }
+            if (answer == null) return@launch
+            remember("assistant", answer)
+            withContext(Dispatchers.Main.immediate) {
+                if (!closed) {
+                    FridayRuntime.update("INTEGRATION READY", answer.take(180), true)
+                    callback(answer, true)
+                }
+            }
+        }
+    }
+
     private fun executeLocal(result: FridayResponse, input: String, callback: (String, Boolean) -> Unit) {
         remember("user", input)
         val action = result.action
+        if (action is FridayAction.News || action is FridayAction.AnalyzeMood || action is FridayAction.HomeAssistant) {
+            if (result.needsConfirmation) {
+                val answer = result.text
+                remember("assistant", answer)
+                callback(answer, true)
+            } else executeExternal(action, input, callback)
+            return
+        }
         if (action is FridayAction.Weather) {
             FridayRuntime.update("WEATHER", "Fetching Open-Meteo weather data", true)
             brainScope.launch {
