@@ -110,7 +110,7 @@ class FridayCommandProcessor {
 
     private fun parseHomeAssistant(c: String): FridayResponse? {
         val m = Regex("^(?:home assistant|homeassistant)\\s+(?:call|run|execute)\\s+([a-zA-Z_]+)\\s+([a-zA-Z_]+)(?:\\s+(?:for|entity)\\s+([a-zA-Z0-9_.-]+))?$", RegexOption.IGNORE_CASE).find(c.trim()) ?: return null
-        return FridayResponse("Home Assistant action execute karne ke liye confirmation chahiye.", FridayAction.HomeAssistant(m.groupValues[1], m.groupValues[2], m.groupValues.getOrNull(3)?.takeIf { it.isNotBlank() }), needsConfirmation = true)
+        return FridayResponse("Home Assistant action execute kar rahi hoon, Boss.", FridayAction.HomeAssistant(m.groupValues[1], m.groupValues[2], m.groupValues.getOrNull(3)?.takeIf { it.isNotBlank() }))
     }
 
     private fun parseTermux(c: String): FridayResponse? {
