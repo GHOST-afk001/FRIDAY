@@ -148,8 +148,8 @@ class FridayCommandProcessor {
     private fun parseWifiCommand(c: String): FridayResponse? {
         if (!(c.contains("wifi") || c.contains("wi-fi") || c.contains("वाईफाई"))) return null
         val enabled = when {
-            c.contains("off") || c.contains("बंद") || c.contains("band") || c.contains("disable") || c.contains("ऑफ") -> false
-            c.contains("on") || c.contains("चालू") || c.contains("chalu") || c.contains("enable") || c.contains("ऑन") -> true
+            hasCommandWord(c, "off", "बंद", "band", "disable", "ऑफ") -> false
+            hasCommandWord(c, "on", "चालू", "chalu", "enable", "ऑन") -> true
             else -> return null
         }
         return FridayResponse(if (enabled) "Wi-Fi on kar rahi hoon." else "Wi-Fi off kar rahi hoon.", FridayAction.Wifi(enabled))
@@ -158,8 +158,8 @@ class FridayCommandProcessor {
     private fun parseMobileDataCommand(c: String): FridayResponse? {
         if (!(c.contains("mobile data") || c.contains("mobile internet") || c.contains("data"))) return null
         val enabled = when {
-            c.contains("off") || c.contains("बंद") || c.contains("band") || c.contains("disable") || c.contains("ऑफ") -> false
-            c.contains("on") || c.contains("चालू") || c.contains("chalu") || c.contains("enable") || c.contains("ऑन") -> true
+            hasCommandWord(c, "off", "बंद", "band", "disable", "ऑफ") -> false
+            hasCommandWord(c, "on", "चालू", "chalu", "enable", "ऑन") -> true
             else -> return null
         }
         return FridayResponse(if (enabled) "Mobile data on kar rahi hoon." else "Mobile data off kar rahi hoon.", FridayAction.MobileData(enabled))
@@ -168,8 +168,8 @@ class FridayCommandProcessor {
     private fun parsePowerSavingCommand(c: String): FridayResponse? {
         if (!(c.contains("power saving") || c.contains("battery saver") || c.contains("power saver") || c.contains("battery saving"))) return null
         val enabled = when {
-            c.contains("off") || c.contains("बंद") || c.contains("disable") || c.contains("band") || c.contains("ऑफ") -> false
-            c.contains("on") || c.contains("चालू") || c.contains("enable") || c.contains("chalu") || c.contains("ऑन") -> true
+            hasCommandWord(c, "off", "बंद", "disable", "band", "ऑफ") -> false
+            hasCommandWord(c, "on", "चालू", "enable", "chalu", "ऑन") -> true
             else -> return null
         }
         return FridayResponse(if (enabled) "Power saving on kar rahi hoon." else "Power saving off kar rahi hoon.", FridayAction.PowerSaving(enabled))
@@ -264,6 +264,13 @@ class FridayCommandProcessor {
         )
         val source = if (normalizedRaw.isNotBlank()) normalizedRaw else c
         return forms.firstNotNullOfOrNull { it.find(source)?.groupValues?.let { g -> g[1].trim() to g[2].trim() } }
+    }
+
+    private fun hasCommandWord(input: String, vararg words: String): Boolean {
+        return words.any { word ->
+            if (word.any { it.code > 127 }) input.contains(word)
+            else Regex("(?<![A-Za-z0-9])" + Regex.escape(word) + "(?![A-Za-z0-9])", RegexOption.IGNORE_CASE).containsMatchIn(input)
+        }
     }
 
     private fun prettyDuration(seconds: Int): String = when {
