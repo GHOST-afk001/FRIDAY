@@ -1,5 +1,6 @@
 package com.friday.assistant
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
@@ -109,11 +110,35 @@ class FridayOnboardingActivity : ComponentActivity() {
             Toast.makeText(this, "Connect at least one AI brain first.", Toast.LENGTH_SHORT).show()
             return
         }
+        val requiredPermissions = buildList {
+            if (android.os.Build.VERSION.SDK_INT >= 23 &&
+                checkSelfPermission(Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) add(Manifest.permission.RECORD_AUDIO)
+            if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (requiredPermissions.isNotEmpty()) {
+            requestPermissions(requiredPermissions.toTypedArray(), PERMISSION_REQUEST_CODE)
+            Toast.makeText(this, "FRIDAY ko microphone permission chahiye for hands-free wake.", Toast.LENGTH_LONG).show()
+            return
+        }
         getSharedPreferences("friday_onboarding", MODE_PRIVATE).edit().putBoolean("completed", true).apply()
         openHud()
     }
 
-    override fun onDestroy() {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            if (grantResults.isNotEmpty() && grantResults.all { it == android.content.pm.PackageManager.PERMISSION_GRANTED }) {
+                Toast.makeText(this, "Permissions ready. Ab FRIDAY start kar sakte hain.", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Microphone permission ke bina hands-free wake available nahi hoga.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    companion object { private const val PERMISSION_REQUEST_CODE = 7041 }\n\n    override fun onDestroy() {
         if (::agent.isInitialized) agent.close()
         super.onDestroy()
     }
