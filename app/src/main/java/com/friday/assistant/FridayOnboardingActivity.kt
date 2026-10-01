@@ -60,7 +60,7 @@ class FridayOnboardingActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         agent = FridayAgent(applicationContext)
         val completed = getSharedPreferences("friday_onboarding", MODE_PRIVATE).getBoolean("completed", false)
-        if (completed && (agent.hasApiKey() || agent.hasGroqKey() || agent.hasOpenRouterKey())) {
+        if (completed && (agent.hasApiKey() || agent.hasGroqKey() || agent.hasOpenRouterKey()) && isAssistantSelected()) {
             openHud()
             return
         }
@@ -96,7 +96,13 @@ class FridayOnboardingActivity : ComponentActivity() {
             if (roles?.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT) == true) {
                 startActivity(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))
             } else {
-                Toast.makeText(this, "Android Assistant role is unavailable on this device.", Toast.LENGTH_LONG).show()
+                val fallback = Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)
+                if (fallback.resolveActivity(packageManager) != null) {
+                    Toast.makeText(this, "FRIDAY role picker is unavailable here. Open Voice Input settings and select FRIDAY if listed.", Toast.LENGTH_LONG).show()
+                    startActivity(fallback)
+                } else {
+                    Toast.makeText(this, "This Android build does not expose the Assistant role picker.", Toast.LENGTH_LONG).show()
+                }
             }
         } else {
             Toast.makeText(this, "Hands-free Assistant role needs Android 10 or newer.", Toast.LENGTH_LONG).show()
@@ -121,6 +127,11 @@ class FridayOnboardingActivity : ComponentActivity() {
     private fun continueToFriday() {
         if (!agent.hasApiKey() && !agent.hasGroqKey() && !agent.hasOpenRouterKey()) {
             Toast.makeText(this, "Connect at least one AI brain first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!isAssistantSelected()) {
+            Toast.makeText(this, "Pehle FRIDAY ko Android Assistant select kijiye. Hands-free wake usi bridge se start hota hai.", Toast.LENGTH_LONG).show()
+            openAssistantRole()
             return
         }
         val requiredPermissions = buildList {
