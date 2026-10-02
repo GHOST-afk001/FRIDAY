@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import android.service.voice.VoiceInteractionService
+import android.annotation.SuppressLint
 import android.graphics.Color
 import android.graphics.Typeface
 import android.view.Gravity
@@ -75,6 +76,7 @@ class FridayHudActivity : androidx.activity.ComponentActivity() {
         wakeStatus.setTextColor(if (assistant) Color.rgb(76, 255, 154) else Color.rgb(255, 183, 77))
     }
 
+    @SuppressLint("NewApi")
     private fun openAssistantSettings() {
         runCatching {
             val roles = getSystemService(android.app.role.RoleManager::class.java)
