@@ -15,7 +15,7 @@ class FridayMemory(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val lock = Any()
 
-    fun ownerName(): String = prefs.getString(KEY_OWNER_NAME, "Imroz").orEmpty().ifBlank { "Imroz" }
+    fun ownerName(): String = prefs.getString(KEY_OWNER_NAME, DEFAULT_OWNER_NAME).orEmpty().ifBlank { DEFAULT_OWNER_NAME }
 
     fun setOwnerName(name: String) {
         val clean = name.trim().take(60)
@@ -23,7 +23,6 @@ class FridayMemory(context: Context) {
         prefs.edit().putString(KEY_OWNER_NAME, clean).apply()
     }
 
-    /** Stores a durable user fact/preference that should survive future conversations. */
     fun rememberFact(fact: String): Boolean {
         val clean = fact.replace(Regex("\\s+"), " ").trim().take(MAX_FACT)
         if (clean.isBlank() || looksLikeSecret(clean)) return false
@@ -31,15 +30,29 @@ class FridayMemory(context: Context) {
             val facts = readJsonArray(KEY_FACTS)
             val normalized = clean.lowercase(Locale.ROOT)
             for (i in 0 until facts.length()) {
-                if (facts.optString(i).lowercase(Locale.ROOT) == normalized) {
-                    return true
-                }
+                if (facts.optString(i).lowercase(Locale.ROOT) == normalized) return true
             }
             facts.put(clean)
             while (facts.length() > MAX_FACTS) facts.remove(0)
             prefs.edit().putString(KEY_FACTS, facts.toString()).apply()
         }
         return true
+    }
+
+    fun learnFromUserUtterance(text: String) {
+        val value = text.replace(Regex("\\s+"), " ").trim()
+        if (value.isBlank()) return
+        val candidates = listOf(
+            Regex("^(?:i|main)\\s+(?:like|love|prefer|pasand karta hoon|pasand hai)\\s+(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^(?:mujhe|i)\\s+(?:pasand|favorite|favourite)\\s+(?:hai|is)\\s+(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^(?:my favorite|my favourite)\\s+(.+?)\\s+(?:is|hai)\\s+(.+)$", RegexOption.IGNORE_CASE)
+        )
+        candidates.firstNotNullOfOrNull { it.find(value) }?.let { match ->
+            val fact = if (match.groupValues.size > 2 && match.groupValues[2].isNotBlank())
+                "Favorite " + match.groupValues[1].trim() + " is " + match.groupValues[2].trim()
+            else "Preference: " + match.groupValues[1].trim()
+            rememberFact(fact)
+        }
     }
 
     fun forgetFacts() {
@@ -53,7 +66,7 @@ class FridayMemory(context: Context) {
 
     fun rememberConversation(role: String, text: String) {
         val clean = text.replace(Regex("\\s+"), " ").trim().take(MAX_MESSAGE)
-        if (clean.isBlank()) return
+        if (clean.isBlank() || looksLikeSecret(clean)) return
         synchronized(lock) {
             val history = readJsonArray(KEY_HISTORY)
             history.put(JSONObject().put("role", if (role == "assistant") "assistant" else "user").put("text", clean).put("time", System.currentTimeMillis()))
@@ -72,7 +85,6 @@ class FridayMemory(context: Context) {
         }
     }
 
-    /** Compact durable context injected into Gemini on every new request. */
     fun contextForBrain(): String {
         val name = ownerName()
         val facts = facts()
@@ -80,9 +92,15 @@ class FridayMemory(context: Context) {
         return buildString {
             append("Persistent FRIDAY memory:\n")
             append("- Owner name: ").append(name).append("\n")
+            append("- Current mode: ").append(mode()).append("\n")
             if (facts.isNotEmpty()) {
                 append("- Remembered facts/preferences:\n")
                 facts.forEach { append("  - ").append(it).append("\n") }
+            }
+            val savedNotes = notes().takeLast(8)
+            if (savedNotes.isNotEmpty()) {
+                append("- Saved notes:\n")
+                savedNotes.forEach { append("  - ").append(it).append("\n") }
             }
             if (recent.isNotEmpty()) {
                 append("- Recent conversation context:\n")
@@ -104,18 +122,52 @@ class FridayMemory(context: Context) {
         val lower = value.lowercase(Locale.ROOT)
         return lower.contains("api key") || lower.contains("apikey") ||
             lower.contains("password") || lower.contains("passcode") ||
-            lower.contains("otp") || lower.contains("one time password")
+            lower.contains("otp") || lower.contains("one time password") ||
+            lower.contains("authorization: bearer") || lower.contains("bearer ") ||
+            Regex("""(?i)(?:AIza[0-9A-Za-z_-]{20,}|gsk_[0-9A-Za-z_-]{20,}|sk-[0-9A-Za-z_-]{20,}|api[_-]?key\s*[=:])""").containsMatchIn(value)
     }
+
+    fun setMode(mode: String) {
+        val clean = mode.trim().lowercase(Locale.ROOT).take(30)
+        if (clean.isBlank()) return
+        prefs.edit().putString(KEY_MODE, clean).apply()
+    }
+
+    fun mode(): String = prefs.getString(KEY_MODE, "normal").orEmpty().ifBlank { "normal" }
+
+    fun addNote(note: String): Boolean {
+        val clean = note.replace(Regex("\\s+"), " ").trim().take(MAX_NOTE)
+        if (clean.isBlank() || looksLikeSecret(clean)) return false
+        synchronized(lock) {
+            val notes = readJsonArray(KEY_NOTES)
+            notes.put(JSONObject().put("text", clean).put("time", System.currentTimeMillis()))
+            while (notes.length() > MAX_NOTES) notes.remove(0)
+            prefs.edit().putString(KEY_NOTES, notes.toString()).apply()
+        }
+        return true
+    }
+
+    fun notes(): List<String> = synchronized(lock) {
+        val notes = readJsonArray(KEY_NOTES)
+        (0 until notes.length()).mapNotNull { notes.optJSONObject(it)?.optString("text")?.takeIf(String::isNotBlank) }
+    }
+
+    fun clearNotes() { prefs.edit().remove(KEY_NOTES).apply() }
 
     companion object {
         private const val PREFS = "friday_persistent_memory"
         private const val KEY_OWNER_NAME = "owner_name"
         private const val KEY_FACTS = "facts"
         private const val KEY_HISTORY = "history"
+        private const val KEY_MODE = "mode"
+        private const val KEY_NOTES = "notes"
+        private const val DEFAULT_OWNER_NAME = "Boss"
         private const val MAX_FACTS = 80
         private const val MAX_HISTORY = 120
         private const val MAX_FACT = 500
         private const val MAX_MESSAGE = 1200
         private const val MAX_CONTEXT = 18_000
+        private const val MAX_NOTES = 100
+        private const val MAX_NOTE = 800
     }
 }

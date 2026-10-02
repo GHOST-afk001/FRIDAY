@@ -69,6 +69,12 @@ class FridayCommandProcessorTest {
         assertEquals(FridayAction.YouTube, result.action)
     }
 
+    @Test fun naturalPhotoCommandRoutesToCamera() {
+        val result = processor.process("Friday photo le lo")
+        assertTrue(result.handledLocally)
+        assertEquals(FridayAction.Camera, result.action)
+    }
+
     @Test fun calculatorIsLocal() {
         val result = processor.process("Friday calculator kholo")
         assertTrue(result.handledLocally)
@@ -141,7 +147,7 @@ class FridayCommandProcessorTest {
         val result = processor.process("click Send")
         assertTrue(result.handledLocally)
         assertTrue(result.needsConfirmation)
-        assertEquals(FridayAction.AccessibilityCommand("click:send"), result.action)
+        assertEquals(FridayAction.AccessibilityCommand("click send"), result.action)
     }
 
     @Test fun accessibilityTapCommandIsGated() {
@@ -180,8 +186,85 @@ class FridayCommandProcessorTest {
         assertFalse(result.handledLocally)
     }
 
+    @Test fun scrollCommandsAreLocalAndGated() {
+        val up = processor.process("scroll up")
+        assertEquals(FridayAction.AccessibilityCommand("scroll up"), up.action)
+        assertTrue(up.needsConfirmation)
+
+        val down = processor.process("scroll down")
+        assertEquals(FridayAction.AccessibilityCommand("scroll down"), down.action)
+        assertTrue(down.needsConfirmation)
+    }
+
+    @Test fun typeTextCommandIsLocalAndGated() {
+        val result = processor.process("type hello boss")
+        assertEquals(FridayAction.AccessibilityCommand("type hello boss"), result.action)
+        assertTrue(result.needsConfirmation)
+    }
+
     @Test fun unknownTaskHandsOffToAi() {
         val result = processor.process("Germany shift hone ke options research karke batao")
         assertTrue(!result.handledLocally)
     }
+    @Test fun relativeWakeMeAlarmIsRecognized() {
+        val result = processor.process("wake me in 20 minutes")
+        assertTrue(result.action is FridayAction.AlarmAfter)
+        assertEquals(1200, (result.action as FridayAction.AlarmAfter).seconds)
+    }
+
+    @Test fun brightnessPercentIsParsed() {
+        val result = processor.process("brightness 50 percent")
+        assertTrue(result.handledLocally)
+        assertEquals(FridayAction.BrightnessSet(50), result.action)
+    }
+
+    @Test fun wifiOnIsParsed() {
+        val result = processor.process("turn wifi on")
+        assertTrue(result.handledLocally)
+        assertEquals(FridayAction.Wifi(true), result.action)
+    }
+
+    @Test fun mobileDataOffIsParsed() {
+        val result = processor.process("mobile data off")
+        assertTrue(result.handledLocally)
+        assertEquals(FridayAction.MobileData(false), result.action)
+    }
+
+    @Test fun mediaNextIsParsed() {
+        val result = processor.process("next song")
+        assertTrue(result.handledLocally)
+        assertEquals(FridayAction.MediaNext, result.action)
+    }
+
+
+    @Test fun wifiConnectionPhraseDoesNotAccidentallyTurnWifiOn() {
+        val result = processor.process("wifi connection status batao")
+        assertFalse(result.action is FridayAction.Wifi)
+    }
+
+    @Test fun powerSavingOnIsParsed() {
+        val result = processor.process("battery saver on")
+        assertTrue(result.action is FridayAction.PowerSaving)
+        assertEquals(true, (result.action as FridayAction.PowerSaving).enabled)
+    }
+
+    @Test fun newsCommandUsesKeylessRssAction() {
+        val result = processor.process("Friday news about India")
+        assertTrue(result.handledLocally)
+        assertEquals(FridayAction.News("india"), result.action)
+    }
+
+    @Test fun moodCommandUsesLocalKeylessAnalyzer() {
+        val result = processor.process("Friday analyze my mood")
+        assertTrue(result.handledLocally)
+        assertEquals(FridayAction.AnalyzeMood("analyze my mood"), result.action)
+    }
+
+    @Test fun weatherTomorrowIsLocal() {
+        val result = processor.process("weather in Delhi tomorrow")
+        assertTrue(result.action is FridayAction.Weather)
+        assertEquals(java.time.LocalDate.now().plusDays(1).toString(), (result.action as FridayAction.Weather).dateIso)
+        assertEquals("delhi", (result.action as FridayAction.Weather).location)
+    }
+
 }

@@ -35,6 +35,7 @@ class FridayAccessibilityService : AccessibilityService() {
         return try {
             val root = rootInActiveWindow ?: return false
             val entry = findByViewId(root, "$WHATSAPP_PACKAGE:id/entry")
+                ?: findEditableNode(root)
                 ?: return false
             val args = android.os.Bundle().apply {
                 putCharSequence(
@@ -42,13 +43,27 @@ class FridayAccessibilityService : AccessibilityService() {
                     replyText
                 )
             }
-            if (!entry.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
-            val send = findByViewId(root, "$WHATSAPP_PACKAGE:id/send") ?: return false
-            send.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            val setOk = entry.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args) ||
+                (entry.isFocused && entry.performAction(AccessibilityNodeInfo.ACTION_FOCUS) &&
+                    entry.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args))
+            if (!setOk) return false
+
+            val send = findByViewId(root, "$WHATSAPP_PACKAGE:id/send")
+                ?: findNode(root, "Send")
+                ?: findNode(root, "भेजें")
+                ?: findNodeByDescription(root, "Send")
+                ?: findNodeByDescription(root, "Send message")
+                ?: return false
+            performClick(send)
         } catch (_: Throwable) {
             false
         }
     }
+
+    private fun findEditableNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? =
+        findNodeRecursive(root) { node ->
+            node.isVisibleToUser && node.isEditable && node.isEnabled
+        }
 
     private fun findByViewId(root: AccessibilityNodeInfo, viewId: String): AccessibilityNodeInfo? {
         return try {
@@ -83,6 +98,89 @@ class FridayAccessibilityService : AccessibilityService() {
     fun goBack(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
     fun openRecents(): Boolean = performGlobalAction(GLOBAL_ACTION_RECENTS)
     fun openNotifications(): Boolean = performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+    fun openQuickSettings(): Boolean = performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
+
+    fun setQuickSetting(labels: List<String>, desiredEnabled: Boolean): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val wanted = labels.map { it.trim().lowercase() }.filter { it.isNotBlank() }
+        if (wanted.isEmpty()) return false
+        val node = findNodeRecursive(root) { candidate ->
+            if (!candidate.isVisibleToUser) return@findNodeRecursive false
+            val text = candidate.text?.toString()?.trim()?.lowercase().orEmpty()
+            val desc = candidate.contentDescription?.toString()?.trim()?.lowercase().orEmpty()
+            val haystack = "$text $desc"
+            wanted.any { haystack.contains(it) }
+        } ?: return false
+
+        val current = readToggleState(node) ?: return false
+        if (current == desiredEnabled) return true
+        return performClick(node)
+    }
+
+    private fun readToggleState(node: AccessibilityNodeInfo): Boolean? {
+        if (node.isCheckable) return node.isChecked
+
+        val parent = node.parent
+        if (parent?.isCheckable == true) return parent.isChecked
+
+        val stateText = listOfNotNull(
+            node.text?.toString(),
+            node.contentDescription?.toString(),
+            parent?.text?.toString(),
+            parent?.contentDescription?.toString()
+        ).joinToString(" ").lowercase()
+
+        return when {
+            Regex("""\b(on|enabled|active|turned on|चालू)\b""").containsMatchIn(stateText) -> true
+            Regex("""\b(off|disabled|inactive|turned off|बंद)\b""").containsMatchIn(stateText) -> false
+            stateText.contains("चालू") -> true
+            stateText.contains("बंद") -> false
+            else -> null
+        }
+    }
+
+    fun scroll(direction: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+        findNodeRecursive(root) { node ->
+            if (node.isVisibleToUser && node.isScrollable) {
+                candidates += node
+            }
+            false
+        }
+        val node = candidates.firstOrNull() ?: return false
+        val action = if (direction.equals("up", true)) AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD else AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+        return node.performAction(action)
+    }
+
+    fun typeText(value: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val node = findNodeRecursive(root) { it.isVisibleToUser && it.isEditable && it.isEnabled } ?: return false
+        val args = android.os.Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value)
+        }
+        return node.performAction(AccessibilityNodeInfo.ACTION_FOCUS) &&
+            node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+    }
+
+    fun swipe(direction: String): Boolean {
+        val metrics = resources.displayMetrics
+        val x = metrics.widthPixels / 2f
+        val y1 = metrics.heightPixels * 0.78f
+        val y2 = metrics.heightPixels * 0.22f
+        val path = Path().apply {
+            if (direction.equals("up", true)) {
+                moveTo(x, y1); lineTo(x, y2)
+            } else {
+                moveTo(x, y2); lineTo(x, y1)
+            }
+        }
+        return dispatchGesture(
+            GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 350)).build(),
+            null,
+            mainHandler
+        )
+    }
 
     fun tap(x: Float, y: Float): Boolean {
         val path = Path().apply { moveTo(x, y) }
@@ -137,7 +235,12 @@ class FridayAccessibilityService : AccessibilityService() {
         fun goBack(): Boolean = instance?.goBack() == true
         fun openRecents(): Boolean = instance?.openRecents() == true
         fun openNotifications(): Boolean = instance?.openNotifications() == true
+        fun openQuickSettings(): Boolean = instance?.openQuickSettings() == true
+        fun setQuickSetting(labels: List<String>, desiredEnabled: Boolean): Boolean = instance?.setQuickSetting(labels, desiredEnabled) == true
         fun tap(x: Float, y: Float): Boolean = instance?.tap(x, y) == true
+        fun scroll(direction: String): Boolean = instance?.scroll(direction) == true
+        fun typeText(value: String): Boolean = instance?.typeText(value) == true
+        fun swipe(direction: String): Boolean = instance?.swipe(direction) == true
         fun replyToWhatsApp(replyText: String): Boolean {
             val service = instance ?: return false
             return if (service.replyToWhatsApp(replyText)) true else {

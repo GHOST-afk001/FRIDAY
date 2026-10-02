@@ -9,14 +9,20 @@ import android.hardware.camera2.CameraManager
 import android.media.AudioManager
 import android.net.Uri
 import android.provider.AlarmClock
+import android.provider.CalendarContract
 import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.provider.Settings
 import android.os.Handler
 import android.os.Looper
+import androidx.core.content.FileProvider
+import java.io.File
+import java.util.Calendar
 import androidx.core.content.ContextCompat
 import com.friday.assistant.automation.FridayAutomation
 import com.friday.assistant.runtime.FridayRuntime
+import com.friday.assistant.ai.SecureApiKeyStore
+import com.friday.assistant.integrations.FridayPollinationsService
 
 class AppLauncher(private val context: Context) {
     fun launch(action: FridayAction): Boolean = try {
@@ -24,10 +30,20 @@ class AppLauncher(private val context: Context) {
             is FridayAction.Sequence -> action.actions.all { launch(it) }
             FridayAction.YouTube -> openPackageOrUrl("com.google.android.youtube", "https://www.youtube.com")
             is FridayAction.YouTubeSearch -> openYouTubeSearch(action.query)
+            is FridayAction.BrightnessSet -> setBrightnessPercent(action.percent)
+            is FridayAction.MediaPlayPause -> dispatchMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            is FridayAction.MediaNext -> dispatchMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
+            is FridayAction.MediaPrevious -> dispatchMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+            FridayAction.Calendar -> openCalendar()
+            FridayAction.EmailCompose -> openEmailCompose()
+            is FridayAction.BrightnessAdjust -> adjustBrightness(action.deltaPercent)
+            is FridayAction.Wifi -> toggleQuickSetting("wifi", action.enabled)
+            is FridayAction.MobileData -> toggleQuickSetting("mobile data", action.enabled)
+            is FridayAction.PowerSaving -> toggleQuickSetting("power saving", action.enabled)
             is FridayAction.SpotifySearch -> openSpotifySearch(action.query)
             FridayAction.Calculator -> openCalculator()
             FridayAction.Settings -> start(Intent(Settings.ACTION_SETTINGS))
-            FridayAction.Camera -> start(Intent(MediaStore.ACTION_IMAGE_CAPTURE))
+            FridayAction.Camera -> capturePhoto()
             FridayAction.Chrome -> openPackageOrUrl("com.android.chrome", "https://www.google.com")
             FridayAction.Messages -> openPackageOrUrl("com.google.android.apps.messaging", "sms:")
             FridayAction.WhatsApp -> openPackageOrUrl("com.whatsapp", "https://wa.me/")
@@ -38,15 +54,16 @@ class AppLauncher(private val context: Context) {
             FridayAction.VolumeDown -> adjustVolume(AudioManager.ADJUST_LOWER)
             is FridayAction.Timer -> start(Intent(AlarmClock.ACTION_SET_TIMER).apply { putExtra(AlarmClock.EXTRA_LENGTH, action.seconds); putExtra(AlarmClock.EXTRA_SKIP_UI, true) })
             is FridayAction.Alarm -> start(Intent(AlarmClock.ACTION_SET_ALARM).apply { putExtra(AlarmClock.EXTRA_HOUR, action.hour); putExtra(AlarmClock.EXTRA_MINUTES, action.minute); putExtra(AlarmClock.EXTRA_SKIP_UI, true) })
-            is FridayAction.AlarmAfter -> start(Intent(AlarmClock.ACTION_SET_TIMER).apply { putExtra(AlarmClock.EXTRA_LENGTH, action.seconds); putExtra(AlarmClock.EXTRA_SKIP_UI, true) })
+            is FridayAction.AlarmAfter -> setAlarmAfter(action.seconds)
+            is FridayAction.Weather -> false
             is FridayAction.MapQuery -> {
                 val uri = if (action.navigation) Uri.parse("google.navigation:q=${Uri.encode(action.query)}") else Uri.parse("geo:0,0?q=${Uri.encode(action.query)}")
                 start(Intent(Intent.ACTION_VIEW, uri))
             }
-            is FridayAction.DialNumber -> start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${action.number}")))
+            is FridayAction.DialNumber -> callNumber(action.number)
             is FridayAction.DialContact -> {
                 val number = findUniqueContactNumber(action.name) ?: return false
-                start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(number)}")))
+                callNumber(number)
             }
             is FridayAction.SmsContact -> {
                 val number = findUniqueContactNumber(action.name) ?: return false
@@ -68,7 +85,9 @@ class AppLauncher(private val context: Context) {
                 }
             }
             FridayAction.EmergencySos -> start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:112")))
-            FridayAction.RequestAssistantRole -> false
+            FridayAction.RequestAssistantRole -> requestAssistantRole()
+            is FridayAction.GenerateImage -> openGeneratedImage(action.prompt)
+            is FridayAction.News, is FridayAction.AnalyzeMood -> false
         }
     } catch (_: SecurityException) { false } catch (_: Exception) { false }
 
@@ -78,6 +97,76 @@ class AppLauncher(private val context: Context) {
         context.startActivity(intent); return true
     }
 
+    private fun dispatchMediaKey(keyCode: Int): Boolean {
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val down = android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, keyCode)
+        val up = android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, keyCode)
+        audio.dispatchMediaKeyEvent(down)
+        audio.dispatchMediaKeyEvent(up)
+        return true
+    }
+
+    private fun openCalendar(): Boolean = start(Intent(Intent.ACTION_VIEW).apply { data = CalendarContract.CONTENT_URI })
+
+    private fun openEmailCompose(): Boolean = start(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")))
+
+    private fun setBrightnessPercent(percent: Int): Boolean {
+        val value = percent.coerceIn(0, 100)
+        return try {
+            if (!Settings.System.canWrite(context)) {
+                start(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:" + context.packageName)))
+                return false
+            }
+            val brightness = (value * 255 / 100).coerceIn(0, 255)
+            Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, brightness)
+            Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
+            true
+        } catch (_: Throwable) { false }
+    }
+
+    private fun adjustBrightness(deltaPercent: Int): Boolean {
+        return try {
+            if (!Settings.System.canWrite(context)) {
+                start(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:" + context.packageName)))
+                return false
+            }
+            val current = Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128)
+            val currentPercent = current * 100 / 255
+            setBrightnessPercent((currentPercent + deltaPercent).coerceIn(0, 100))
+        } catch (_: Throwable) { false }
+    }
+
+    private fun setAlarmAfter(seconds: Int): Boolean {
+        if (seconds <= 0) return false
+        val target = Calendar.getInstance().apply { add(Calendar.SECOND, seconds) }
+        return start(Intent(AlarmClock.ACTION_SET_ALARM).apply {
+            putExtra(AlarmClock.EXTRA_HOUR, target.get(Calendar.HOUR_OF_DAY))
+            putExtra(AlarmClock.EXTRA_MINUTES, target.get(Calendar.MINUTE))
+            putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+        })
+    }
+
+    private fun toggleQuickSetting(kind: String, enabled: Boolean): Boolean {
+        if (FridayAutomation.isConnected()) {
+            val labels = when (kind) {
+                "wifi" -> listOf("Wi-Fi", "WiFi", "वाई-फाई", "वाईफाई")
+                "mobile data" -> listOf("Mobile data", "Mobile Data", "मोबाइल डेटा", "Data")
+                else -> listOf("Power saving", "Power saving mode", "Battery saver", "Power Saver", "पावर सेविंग", "बैटरी सेवर")
+            }
+            if (FridayAutomation.openQuickSettings()) {
+                if (FridayAutomation.setQuickSetting(labels, enabled)) return true
+            }
+        }
+        val intent = when (kind) {
+            "wifi" -> Intent(Settings.ACTION_WIFI_SETTINGS)
+            "mobile data" -> Intent(Settings.ACTION_DATA_ROAMING_SETTINGS)
+            else -> Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)
+        }
+        // Opening Settings is only a fallback for the user to complete manually.
+        // Do not report it as if the requested toggle actually changed state.
+        start(intent)
+        return false
+    }
     private fun openPackageOrUrl(packageName: String, fallbackUrl: String?): Boolean = openInstalledApp(packageName, packageName) || (fallbackUrl?.let { start(Intent(Intent.ACTION_VIEW, Uri.parse(it))) } ?: false)
 
     private fun openInstalledApp(packageOrLabel: String, label: String): Boolean {
@@ -132,9 +221,53 @@ class AppLauncher(private val context: Context) {
         val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.whatsapp") }
         val opened = start(intent) || start(Intent(Intent.ACTION_VIEW, uri))
         if (!opened) return false
-        Handler(Looper.getMainLooper()).postDelayed({ FridayAutomation.clickSend() }, 1800L)
+        scheduleWhatsAppReply(message, 1400L, 0)
         return true
     }
+
+    private fun scheduleWhatsAppReply(message: String, delayMs: Long, attempt: Int) {
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (FridayAutomation.replyToWhatsApp(message)) return@postDelayed
+            if (attempt < 2) scheduleWhatsAppReply(message, 1400L, attempt + 1)
+        }, delayMs)
+    }
+
+    private fun callNumber(number: String): Boolean {
+        val clean = number.filter { it.isDigit() || it == '+' }
+        if (clean.isBlank()) return false
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+            FridayRuntime.update("CALL BLOCKED", "Phone call permission is required for direct calling.", false)
+            return false
+        }
+        return start(Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(clean)}")))
+    }
+
+    private fun requestAssistantRole(): Boolean { return try {
+        if (android.os.Build.VERSION.SDK_INT < 29) return false
+        val roles = context.getSystemService(android.app.role.RoleManager::class.java) ?: return false
+        if (!roles.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT)) return false
+        start(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))
+    } catch (_: Throwable) { false }
+    }
+
+    private fun capturePhoto(): Boolean = runCatching {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return false
+        val output = File(context.cacheDir, "friday_photo_${System.currentTimeMillis()}.jpg")
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", output)
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            context.packageManager.queryIntentActivities(this, PackageManager.MATCH_DEFAULT_ONLY).forEach {
+                context.grantUriPermission(it.activityInfo.packageName, uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }
+        start(intent)
+    }.getOrDefault(false)
+
+    private fun openGeneratedImage(prompt: String): Boolean = runCatching {
+        val url = FridayPollinationsService(SecureApiKeyStore(context)).imageUrl(prompt)
+        start(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }.getOrDefault(false)
 
     private fun openCalculator(): Boolean {
         val selector = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_CALCULATOR)

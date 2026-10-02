@@ -5,14 +5,24 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 
-/** Crash-safe Android TTS wrapper for mixed Hindi + Indian English speech. */
+/**
+ * Hybrid TTS: local Kokoro hf_alpha first, Android TTS as a safe fallback.
+ * Kokoro synthesizes the response before playback so spoken audio does not break between chunks.
+ */
 class TTSManager(context: Context, private val onUnavailable: () -> Unit) : TextToSpeech.OnInitListener {
     private val appContext = context.applicationContext
     private val lock = Any()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val kokoro = KokoroLocalTts(appContext)
     private var tts: TextToSpeech? = null
     private var ready = false
     private var destroyed = false
@@ -22,6 +32,7 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
 
     init {
         initializeSafely()
+        scope.launch { kokoro.warmUp() }
     }
 
     private fun initializeSafely() {
@@ -56,12 +67,11 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
             queued?.second?.let { callback -> mainHandler.post(callback) }
             return
         }
-
         runCatching {
-            tts?.setSpeechRate(0.88f)
+            tts?.setSpeechRate(0.92f)
             tts?.setPitch(1.0f)
         }
-        queued?.let { speakNow(it.first, it.second, speechGeneration.incrementAndGet()) }
+        queued?.let { speak(it.first, it.second) }
     }
 
     fun speak(text: String, onDone: () -> Unit = {}) {
@@ -76,33 +86,52 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
                 return
             }
             completionCallbacks.clear()
+            pending = null
+        }
+
+        scope.launch {
+            val localWorked = runCatching { kokoro.speak(text) }.getOrDefault(false)
+            if (destroyed || speechGeneration.get() != generation) return@launch
+            if (localWorked) {
+                mainHandler.post { if (!destroyed && speechGeneration.get() == generation) onDone() }
+                return@launch
+            }
+            mainHandler.post {
+                if (destroyed || speechGeneration.get() != generation) return@post
+                speakAndroid(text, onDone, generation)
+            }
+        }
+    }
+
+    private fun speakAndroid(text: String, onDone: () -> Unit, generation: Long) {
+        val engine = synchronized(lock) {
+            if (destroyed) return
             if (!ready) {
                 pending = text to onDone
                 return
             }
-        }
-        runCatching { tts?.stop() }
-        speakNow(text, onDone, generation)
-    }
-
-    private fun speakNow(text: String, onDone: () -> Unit, generation: Long) {
-        val engine = synchronized(lock) { if (destroyed || !ready) return else tts }
-        if (engine == null) {
-            mainHandler.post { if (speechGeneration.get() == generation) onDone() }
+            tts
+        } ?: run {
+            mainHandler.post(onDone)
             return
         }
+
+        runCatching { engine.stop() }
         val segments = splitByScript(text)
         speakSegment(engine, segments, 0, onDone, generation)
     }
 
-    private fun speakSegment(engine: TextToSpeech, segments: List<String>, index: Int, onDone: () -> Unit, generation: Long) {
-        if (speechGeneration.get() != generation) return
+    private fun speakSegment(
+        engine: TextToSpeech,
+        segments: List<String>,
+        index: Int,
+        onDone: () -> Unit,
+        generation: Long
+    ) {
+        if (speechGeneration.get() != generation || destroyed) return
         if (index >= segments.size) {
             mainHandler.post { if (speechGeneration.get() == generation && !destroyed) onDone() }
             return
-        }
-        synchronized(lock) {
-            if (destroyed || speechGeneration.get() != generation) return
         }
 
         val segment = segments[index]
@@ -124,11 +153,14 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
         synchronized(lock) {
             if (destroyed || speechGeneration.get() != generation) return
             completionCallbacks[utteranceId] = {
-                if (speechGeneration.get() == generation && !destroyed) speakSegment(engine, segments, index + 1, onDone, generation)
+                if (speechGeneration.get() == generation && !destroyed) {
+                    speakSegment(engine, segments, index + 1, onDone, generation)
+                }
             }
         }
-        val queueMode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-        val result = runCatching { engine.speak(segment, queueMode, null, utteranceId) }.getOrDefault(TextToSpeech.ERROR)
+        val mode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+        val result = runCatching { engine.speak(segment, mode, null, utteranceId) }
+            .getOrDefault(TextToSpeech.ERROR)
         if (result != TextToSpeech.SUCCESS) complete(utteranceId)
     }
 
@@ -163,16 +195,18 @@ class TTSManager(context: Context, private val onUnavailable: () -> Unit) : Text
     }
 
     fun shutdown() {
-        val engine = synchronized(lock) {
+        synchronized(lock) {
             if (destroyed) return
             destroyed = true
             ready = false
             pending = null
             completionCallbacks.clear()
             speechGeneration.incrementAndGet()
-            tts.also { tts = null }
         }
-        runCatching { engine?.stop() }
-        runCatching { engine?.shutdown() }
+        scope.cancel()
+        runCatching { tts?.stop() }
+        runCatching { tts?.shutdown() }
+        tts = null
+        kokoro.shutdown()
     }
 }

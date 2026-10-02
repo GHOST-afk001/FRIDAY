@@ -12,7 +12,7 @@ object UniversalCommandRouter {
         val raw = input.trim()
         if (raw.isBlank()) return null
         val c = raw
-            .replace(Regex("^\\s*(?:hey\\s+)?friday\\b\\s*", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("^\\s*(?:(?:hey\\s+)?friday|baabu)\\b\\s*", RegexOption.IGNORE_CASE), "")
             .trim()
             .replace(Regex("\\s+"), " ")
         val lower = c.lowercase(Locale.ROOT)

@@ -12,6 +12,14 @@ import com.friday.assistant.commands.FridayCommandProcessor
 import com.friday.assistant.runtime.FridayRuntime
 import com.friday.assistant.security.ActionPolicyValidator
 import com.friday.assistant.security.ActionResultValidator
+import com.friday.assistant.weather.FridayWeatherService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.time.LocalDate
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -29,6 +37,7 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
     private var pendingConfirmation: FridayAction? = null
     private var interactionGeneration = 0L
     private var confirmationGeneration = 0L
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
@@ -55,7 +64,7 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
     private fun createVoiceManager(): VoiceManager = VoiceManager(appContext, object : VoiceManager.Listener {
         override fun onListening() {
             if (sessionActive.get() && !cleanedUp.get()) {
-                FridayRuntime.update("LISTENING", "Microphone is listening for Imroz Sir's command", true)
+                FridayRuntime.update("LISTENING", "Microphone is listening for Boss's command", true)
             }
         }
 
@@ -137,6 +146,19 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
     }
 
     private fun execute(action: FridayAction, successText: String = "Done, Boss.") {
+        if (action is FridayAction.Weather) {
+            FridayRuntime.update("WEATHER", "Fetching Open-Meteo weather data", true)
+            ioScope.launch {
+                val answer = runCatching {
+                    val date = action.dateIso?.let { LocalDate.parse(it) }
+                    FridayWeatherService(appContext).getWeather(FridayWeatherService.Request(action.location, date))
+                }.getOrElse { "Boss, weather service error aa gaya. Main guess nahi karungi." }
+                withContext(Dispatchers.Main.immediate) {
+                    if (sessionActive.get() && !cleanedUp.get()) respond(answer, finish = false)
+                }
+            }
+            return
+        }
         FridayRuntime.update("EXECUTING", "Running the requested Android action", true)
         val launched = runCatching { launcher.launch(action) }.getOrDefault(false)
         val observation = if (launched) ActionResultValidator.ExecutionObservation.HANDED_OFF
@@ -213,6 +235,7 @@ class FridayVoiceInteractionSession(private val appContext: Context) : VoiceInte
         sessionActive.set(false)
         clearPendingConfirmation()
         cleanupAndResumeWake()
+        ioScope.cancel()
         try { tts.shutdown() } catch (_: Exception) {}
         super.onDestroy()
     }

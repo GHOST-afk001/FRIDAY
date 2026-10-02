@@ -3,13 +3,15 @@ package com.friday.assistant.commands
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 class FridayCommandProcessor {
     fun process(input: String): FridayResponse {
         val raw = input.trim()
         if (raw.isBlank()) return FridayResponse("I didn't catch that. Please say it again.")
         parseWhatsappMessage(raw)?.let { (name, message) ->
-            return FridayResponse("${name.trim()} ko WhatsApp message bhej rahi hoon.", FridayAction.AccessibilityCommand("whatsapp_message|${name.trim()}|${message.trim()}"), needsConfirmation = false)
+            return FridayResponse("${name.trim()} ko WhatsApp message bhejne ke liye confirmation chahiye.", FridayAction.AccessibilityCommand("whatsapp_message|${name.trim()}|${message.trim()}"), needsConfirmation = true)
         }
         CompoundCommandParser.parse(raw, this)?.let { return it }
         return processWithoutCompound(raw)
@@ -20,15 +22,20 @@ class FridayCommandProcessor {
         val command = raw.lowercase(Locale.ROOT)
         if (command.isBlank()) return FridayResponse("I didn't catch that. Please say it again.")
         if (isGreeting(command)) return FridayResponse("Yes Boss. Main Friday hoon. Bataiye.")
-        if (command.contains("who are you") || command.contains("tum kaun") || command.contains("aap kaun")) return FridayResponse("Main Friday hoon, aapki personal Android assistant. Ready when you are, Boss.")
+        if (command.contains("who are you") || command.contains("tum kaun") || command.contains("aap kaun")) return FridayResponse("Hi, I'm Friday, a personal AI assistant. Ready when you are, Boss.")
 
-        val normalized = command.replace(Regex("^\\s*(?:hey\\s+)?friday\\b\\s*"), "").trim()
+        val normalized = command.replace(Regex("^\\s*(?:(?:hey\\s+)?friday|baabu)\\b\\s*"), "").trim()
         val hasHindiTimeWord = Regex("(^|\\s)टाइम(\\s|$)").containsMatchIn(normalized)
         if (Regex("(^|\\s)time(\\s|$)").containsMatchIn(normalized) || normalized.contains("kitne baje") || normalized.contains("samay") || hasHindiTimeWord) return FridayResponse("Abhi ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date())} baj rahe hain, Boss.")
         if (Regex("(^|\\s)date(\\s|$)").containsMatchIn(normalized) || normalized.contains("tarikh") || normalized.contains("tariq") || normalized.contains("तारीख") || normalized.contains("डेट")) return FridayResponse("Aaj ${DateFormat.getDateInstance(DateFormat.LONG).format(Date())} hai.")
         if (normalized.contains("standby") || normalized.contains("so jao") || normalized.contains("stop listening")) return FridayResponse("Understood Boss. Standby mode.")
 
         if (isEmergencySosCommand(normalized)) return FridayResponse("Emergency dialer mein 112 open karne ke liye confirmation chahiye.", FridayAction.EmergencySos, needsConfirmation = true)
+
+        parseWeather(normalized)?.let { return FridayResponse("Weather check kar rahi hoon, Boss.", it) }
+        parseNews(normalized)?.let { return FridayResponse("News check kar rahi hoon, Boss.", it) }
+        parseImageGeneration(normalized)?.let { return FridayResponse("Image generate kar rahi hoon, Boss.", it) }
+        parseMood(normalized)?.let { return FridayResponse("Mood analyze kar rahi hoon, Boss.", it) }
 
         parseAccessibilityCommand(normalized)?.let { return it }
 
@@ -44,11 +51,25 @@ class FridayCommandProcessor {
         if (normalized.contains("volume") && (normalized.contains("up") || normalized.contains("increase") || normalized.contains("badha"))) return FridayResponse("Volume badha rahi hoon.", FridayAction.VolumeUp)
         if (normalized.contains("volume") && (normalized.contains("down") || normalized.contains("decrease") || normalized.contains("kam"))) return FridayResponse("Volume kam kar rahi hoon.", FridayAction.VolumeDown)
 
+        parseBrightnessCommand(normalized)?.let { return it }
+        parseWifiCommand(normalized)?.let { return it }
+        parseMobileDataCommand(normalized)?.let { return it }
+        parsePowerSavingCommand(normalized)?.let { return it }
+        if (normalized.contains("play") || normalized.contains("pause") || normalized.contains("music chala") || normalized.contains("music roko")) return FridayResponse("Music control kar rahi hoon.", FridayAction.MediaPlayPause)
+        if (normalized.contains("next song") || normalized.contains("next track") || normalized.contains("agla gana") || normalized.contains("अगला गाना")) return FridayResponse("Next track.", FridayAction.MediaNext)
+        if (normalized.contains("previous song") || normalized.contains("previous track") || normalized.contains("pichla gana") || normalized.contains("पिछला गाना")) return FridayResponse("Previous track.", FridayAction.MediaPrevious)
+        if (normalized.contains("calendar") || normalized.contains("calender") || normalized.contains("schedule")) return FridayResponse("Calendar khol rahi hoon.", FridayAction.Calendar)
+        if (normalized == "email" || normalized == "compose email" || normalized == "mail" || normalized.contains("email kholo") || normalized.contains("mail kholo")) return FridayResponse("Email compose khol rahi hoon.", FridayAction.EmailCompose)
         parseYoutubeSearch(normalized)?.let { return FridayResponse("YouTube par ${it} search kar rahi hoon.", FridayAction.YouTubeSearch(it)) }
         if (normalized.contains("youtube")) return FridayResponse("YouTube khol rahi hoon.", FridayAction.YouTube)
         if (normalized.contains("calculator") || normalized.contains("कैलकुलेटर")) return FridayResponse("Calculator khol rahi hoon.", FridayAction.Calculator)
         if (normalized.contains("settings") || normalized.contains("सेटिंग")) return FridayResponse("Settings khol rahi hoon.", FridayAction.Settings)
-        if (normalized.contains("camera") || normalized.contains("कैमरा")) return FridayResponse("Camera khol rahi hoon.", FridayAction.Camera)
+        if (normalized.contains("camera") || normalized.contains("कैमरा") ||
+            normalized.contains("take a photo") || normalized.contains("take photo") ||
+            normalized.contains("photo le") || normalized.contains("photo lo") ||
+            normalized.contains("photo kheecho") || normalized.contains("photo click")) {
+            return FridayResponse("Camera khol rahi hoon, Boss.", FridayAction.Camera)
+        }
         if (normalized.contains("chrome")) return FridayResponse("Chrome khol rahi hoon.", FridayAction.Chrome)
         if (normalized.contains("whatsapp")) return FridayResponse("WhatsApp khol rahi hoon.", FridayAction.WhatsApp)
         if (normalized.contains("instagram")) return FridayResponse("Instagram khol rahi hoon.", FridayAction.Instagram)
@@ -59,10 +80,58 @@ class FridayCommandProcessor {
             val compact = target.filter { it.isDigit() || it == '+' }
             val isNumber = compact.length in 7..15 && target.all { it.isDigit() || it == '+' || it == ' ' || it == '-' }
             val action = if (isNumber) FridayAction.DialNumber(compact) else FridayAction.DialContact(target)
-            return FridayResponse("${target.trim()} ke liye dialer kholne ke liye confirmation chahiye.", action, needsConfirmation = true)
+            return FridayResponse("${target.trim()} ko call karne ke liye confirmation chahiye.", action, needsConfirmation = true)
         }
         parseSms(normalized, raw)?.let { (name, message) -> return FridayResponse("${name.trim()} ko message bhejne ke liye confirmation chahiye.", FridayAction.SmsContact(name.trim(), message), needsConfirmation = true) }
         return FridayResponse("", handledLocally = false)
+    }
+
+
+    private fun parseNews(c: String): FridayAction.News? {
+        val n = c.trim()
+        if (!(n.contains("news") || n.contains("khabar") || n.contains("headlines"))) return null
+        val query = Regex("^(?:news|khabar|headlines)(?:\\s+(?:about|on|for|regarding|par|ki)\\s+(.+))?$", RegexOption.IGNORE_CASE).find(n)?.groupValues?.getOrNull(1)?.trim()
+        return FridayAction.News(query?.takeIf { it.isNotBlank() })
+    }
+
+    private fun parseImageGeneration(c: String): FridayAction.GenerateImage? {
+        val m = Regex("^(?:generate|create|make|draw|banao|bana do)(?:\\s+(?:an|a|the))?\\s+(?:image|picture|photo|tasveer)\\s*(?:of|for|ki|ka|ke)?\\s*(.+)$", RegexOption.IGNORE_CASE).find(c.trim()) ?: return null
+        return m.groupValues[1].trim().takeIf { it.isNotBlank() }?.let { FridayAction.GenerateImage(it) }
+    }
+
+    private fun parseMood(c: String): FridayAction.AnalyzeMood? {
+        val n = c.trim()
+        if (!(n.contains("analyze my mood") || n.contains("analyse my mood") || n.contains("mera mood") || n.contains("my emotion"))) return null
+        return FridayAction.AnalyzeMood(n)
+    }
+
+    private fun parseWeather(c: String): FridayAction.Weather? {
+        val n = c.trim().replace(Regex("\\s+"), " ")
+        if (!(n.contains("weather") || n.contains("mausam") || n.contains("temperature") || n.contains("taapman") || n.contains("तापमान") || n.contains("मौसम"))) return null
+        val date = parseWeatherDate(n)
+        val location = Regex("(?:weather|mausam|temperature|तापमान|मौसम)\\s+(?:in|at|for|of|mein|me|par|pe)\\s+(.+?)(?=\\s+(?:today|aaj|tomorrow|kal|yesterday|on)\\b|$)", RegexOption.IGNORE_CASE).find(n)?.groupValues?.get(1)?.trim()
+            ?: Regex("(?:in|at|for|of|mein|me|par|pe)\\s+(.+?)(?=\\s+(?:today|aaj|tomorrow|kal|yesterday|on)\\b|$)", RegexOption.IGNORE_CASE).find(n)?.groupValues?.get(1)?.trim()
+        return FridayAction.Weather(location?.takeIf { it.isNotBlank() }, date?.toString())
+    }
+
+    private fun parseWeatherDate(n: String): LocalDate? {
+        val today = LocalDate.now()
+        val lower = n.lowercase(Locale.ROOT)
+        if (lower.contains("day after tomorrow") || lower.contains("parson") || lower.contains("परसों")) return today.plusDays(2)
+        if (lower.contains("yesterday") || lower.contains("kal jo") || lower.contains("kal tha") || lower.contains("kal thi")) return today.minusDays(1)
+        if (lower.contains("tomorrow") || lower.contains("kal")) return today.plusDays(1)
+        if (lower.contains("today") || lower.contains("aaj") || lower.contains("abhi") || lower.contains("current")) return today
+        Regex("\\b(20\\d{2})[-/](\\d{1,2})[-/](\\d{1,2})\\b").find(n)?.let {
+            return runCatching { LocalDate.of(it.groupValues[1].toInt(), it.groupValues[2].toInt(), it.groupValues[3].toInt()) }.getOrNull()
+        }
+        Regex("\\b(\\d{1,2})[-/](\\d{1,2})[-/](20\\d{2})\\b").find(n)?.let {
+            return runCatching { LocalDate.of(it.groupValues[3].toInt(), it.groupValues[2].toInt(), it.groupValues[1].toInt()) }.getOrNull()
+        }
+        val months = mapOf("january" to 1, "jan" to 1, "february" to 2, "feb" to 2, "march" to 3, "mar" to 3, "april" to 4, "apr" to 4, "may" to 5, "june" to 6, "jun" to 6, "july" to 7, "jul" to 7, "august" to 8, "aug" to 8, "september" to 9, "sep" to 9, "october" to 10, "oct" to 10, "november" to 11, "nov" to 11, "december" to 12, "dec" to 12)
+        val m = Regex("\\b(\\d{1,2})\\s+([A-Za-z]+)(?:\\s+(20\\d{2}))?\\b", RegexOption.IGNORE_CASE).find(n) ?: return null
+        val month = months[m.groupValues[2].lowercase(Locale.ROOT)] ?: return null
+        val year = m.groupValues[3].toIntOrNull() ?: today.year
+        return runCatching { LocalDate.of(year, month, m.groupValues[1].toInt()) }.getOrNull()
     }
 
     private fun parseAccessibilityCommand(c: String): FridayResponse? {
@@ -72,11 +141,17 @@ class FridayCommandProcessor {
             normalized in setOf("go back", "back", "peeche jao", "वापस जाओ") -> "back"
             normalized in setOf("open recents", "recent apps", "recent kholo", "recent apps kholo", "रीसेंट खोलो") -> "recents"
             normalized in setOf("open notifications", "notifications kholo", "notification kholo", "नोटिफिकेशन खोलो") -> "notifications"
-            normalized.startsWith("click ") && normalized.length > 6 -> "click:${normalized.substringAfter("click ").trim()}"
+            normalized.startsWith("click ") && normalized.length > 6 -> "click ${normalized.substringAfter("click ").trim()}"
             normalized.startsWith("tap ") && normalized.length > 4 -> "tap ${normalized.substringAfter("tap ").trim()}"
+            normalized == "scroll up" || normalized == "upar scroll karo" -> "scroll up"
+            normalized == "scroll down" || normalized == "neeche scroll karo" -> "scroll down"
+            normalized == "swipe up" -> "swipe up"
+            normalized == "swipe down" -> "swipe down"
+            normalized.startsWith("type ") && normalized.length > 5 -> "type ${normalized.substringAfter("type ").trim()}"
+            normalized.startsWith("text ") && normalized.length > 5 -> "type ${normalized.substringAfter("text ").trim()}"
             else -> return null
         }
-        return FridayResponse("I need confirmation before controlling another app's visible UI.", FridayAction.AccessibilityCommand(command), needsConfirmation = true)
+        return FridayResponse("Ye automation action karne se pehle confirmation chahiye.", FridayAction.AccessibilityCommand(command), needsConfirmation = true)
     }
 
     private fun isGreeting(c: String) = c == "hello" || c == "hello friday" || c == "hi friday" || c == "namaste" || c == "नमस्ते"
@@ -89,6 +164,47 @@ class FridayCommandProcessor {
     private fun isMessagesAppCommand(c: String): Boolean {
         val normalized = c.trim().replace(Regex("\\s+"), " ")
         return normalized in setOf("messages", "message app", "open messages", "open message app", "open the messages app", "open the message app", "messages app kholo", "message app kholo", "messages kholo", "messages khol do", "message app khol do", "messages खोलो", "मैसेज खोलो")
+    }
+
+    private fun parseBrightnessCommand(c: String): FridayResponse? {
+        val n = c.trim().replace(Regex("\\s+"), " ")
+        if (!(n.contains("brightness") || n.contains("screen bright") || n.contains("ब्राइटनेस") || n.contains("रोशनी"))) return null
+        if (n.contains("increase") || n.contains("up") || n.contains("bright karo") || n.contains("badha") || n.contains("बढ़ा")) return FridayResponse("Brightness badha rahi hoon.", FridayAction.BrightnessAdjust(10))
+        if (n.contains("decrease") || n.contains("down") || n.contains("dim") || n.contains("kam karo") || n.contains("कम")) return FridayResponse("Brightness kam kar rahi hoon.", FridayAction.BrightnessAdjust(-10))
+        val percent = Regex("(\\d{1,3})\\s*(?:%|percent|percentage)", RegexOption.IGNORE_CASE).find(n)?.groupValues?.get(1)?.toIntOrNull()
+            ?: Regex("(?:brightness|ब्राइटनेस|रोशनी)\\s+(?:to|at|par|pe)\\s+(\\d{1,3})\\b", RegexOption.IGNORE_CASE).find(n)?.groupValues?.get(1)?.toIntOrNull()
+        val directNumber = Regex("(?:brightness|ब्राइटनेस|रोशनी)\\s+(\\d{1,3})\\b", RegexOption.IGNORE_CASE).find(n)?.groupValues?.get(1)?.toIntOrNull()
+        return (percent ?: directNumber)?.coerceIn(0,100)?.let { FridayResponse("Brightness $it% kar rahi hoon.", FridayAction.BrightnessSet(it)) }
+    }
+
+    private fun parseWifiCommand(c: String): FridayResponse? {
+        if (!(c.contains("wifi") || c.contains("wi-fi") || c.contains("वाईफाई"))) return null
+        val enabled = when {
+            hasCommandWord(c, "off", "बंद", "band", "disable", "ऑफ") -> false
+            hasCommandWord(c, "on", "चालू", "chalu", "enable", "ऑन") -> true
+            else -> return null
+        }
+        return FridayResponse(if (enabled) "Wi-Fi on kar rahi hoon." else "Wi-Fi off kar rahi hoon.", FridayAction.Wifi(enabled))
+    }
+
+    private fun parseMobileDataCommand(c: String): FridayResponse? {
+        if (!(c.contains("mobile data") || c.contains("mobile internet") || c.contains("data"))) return null
+        val enabled = when {
+            hasCommandWord(c, "off", "बंद", "band", "disable", "ऑफ") -> false
+            hasCommandWord(c, "on", "चालू", "chalu", "enable", "ऑन") -> true
+            else -> return null
+        }
+        return FridayResponse(if (enabled) "Mobile data on kar rahi hoon." else "Mobile data off kar rahi hoon.", FridayAction.MobileData(enabled))
+    }
+
+    private fun parsePowerSavingCommand(c: String): FridayResponse? {
+        if (!(c.contains("power saving") || c.contains("battery saver") || c.contains("power saver") || c.contains("battery saving"))) return null
+        val enabled = when {
+            hasCommandWord(c, "off", "बंद", "disable", "band", "ऑफ") -> false
+            hasCommandWord(c, "on", "चालू", "enable", "chalu", "ऑन") -> true
+            else -> return null
+        }
+        return FridayResponse(if (enabled) "Power saving on kar rahi hoon." else "Power saving off kar rahi hoon.", FridayAction.PowerSaving(enabled))
     }
 
     private fun parseYoutubeSearch(c: String): String? {
@@ -127,7 +243,7 @@ class FridayCommandProcessor {
 
     private fun parseAlarm(c: String): FridayAction? {
         if (!(c.contains("alarm") || c.contains("अलार्म") || c.contains("wake me"))) return null
-        val relative = Regex("(?:alarm|अलार्म)\\s+(?:after|in|me|mein|baad|ke baad|में|बाद)\\s+(\\d+)\\s*(hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs|घंटा|घंटे|मिनट|सेकंड)", RegexOption.IGNORE_CASE).find(c)
+        val relative = Regex("(?:alarm|अलार्म|wake me)\\s+(?:after|in|me|mein|baad|ke baad|में|बाद)\\s+(\\d+)\\s*(hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs|घंटा|घंटे|मिनट|सेकंड)", RegexOption.IGNORE_CASE).find(c)
             ?: Regex("(?:alarm|अलार्म)\\s+(\\d+)\\s*(hour|hours|hr|hrs|minute|minutes|min|mins|second|seconds|sec|secs|घंटा|घंटे|मिनट|सेकंड)\\s*(?:baad|later|mein|में|बाद)", RegexOption.IGNORE_CASE).find(c)
         if (relative != null) {
             val value = relative.groupValues[1].toLongOrNull() ?: return null
@@ -180,6 +296,13 @@ class FridayCommandProcessor {
         )
         val source = if (normalizedRaw.isNotBlank()) normalizedRaw else c
         return forms.firstNotNullOfOrNull { it.find(source)?.groupValues?.let { g -> g[1].trim() to g[2].trim() } }
+    }
+
+    private fun hasCommandWord(input: String, vararg words: String): Boolean {
+        return words.any { word ->
+            if (word.any { it.code > 127 }) input.contains(word)
+            else Regex("(?<![A-Za-z0-9])" + Regex.escape(word) + "(?![A-Za-z0-9])", RegexOption.IGNORE_CASE).containsMatchIn(input)
+        }
     }
 
     private fun prettyDuration(seconds: Int): String = when {

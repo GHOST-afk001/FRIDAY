@@ -31,12 +31,19 @@ class FridayVoiceInteractionService : VoiceInteractionService() {
     override fun onReady() {
         super.onReady()
         if (destroyed) return
-        // Intentionally do not start FridayWakeCoordinator here.
-        // This callback is system-managed and can happen before the launcher has ever
-        // been opened. Native wake/ONNX startup is deferred to a safe explicit path.
+        // The wake detector is isolated and failure-safe; it starts only after Android
+        // has selected FRIDAY as the active assistant.
+        runCatching { FridayWakeCoordinator.start(this) }
+            .onFailure {
+                FridayRuntime.update(
+                    "WAKE START FAILED",
+                    it.message ?: "FRIDAY wake runtime could not start",
+                    false
+                )
+            }
         FridayRuntime.update(
             "ASSISTANT READY",
-            "FRIDAY Assistant ready; native wake runtime deferred",
+            "FRIDAY Assistant ready; hands-free wake listener enabled",
             true
         )
     }

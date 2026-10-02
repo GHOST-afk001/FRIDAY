@@ -1,5 +1,6 @@
 package com.friday.assistant
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
@@ -20,6 +21,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -57,7 +60,7 @@ class FridayOnboardingActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         agent = FridayAgent(applicationContext)
         val completed = getSharedPreferences("friday_onboarding", MODE_PRIVATE).getBoolean("completed", false)
-        if (completed && agent.hasApiKey()) {
+        if (completed && (agent.hasApiKey() || agent.hasGroqKey() || agent.hasOpenRouterKey()) && isAssistantSelected()) {
             openHud()
             return
         }
@@ -76,13 +79,30 @@ class FridayOnboardingActivity : ComponentActivity() {
 
     private fun openAccessibility() = runCatching { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
 
+    private fun openNotificationAccess() = runCatching {
+        startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+    }
+
+    private fun isNotificationAccessEnabled(): Boolean = runCatching {
+        val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners").orEmpty()
+        enabled.split(':').any {
+            it.equals(ComponentName(this, com.friday.assistant.runtime.FridayNotificationListenerService::class.java).flattenToString(), true)
+        }
+    }.getOrDefault(false)
+
     private fun openAssistantRole() = runCatching {
         if (android.os.Build.VERSION.SDK_INT >= 29) {
             val roles = getSystemService(android.app.role.RoleManager::class.java)
             if (roles?.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT) == true) {
                 startActivity(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))
             } else {
-                Toast.makeText(this, "Android Assistant role is unavailable on this device.", Toast.LENGTH_LONG).show()
+                val fallback = Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)
+                if (fallback.resolveActivity(packageManager) != null) {
+                    Toast.makeText(this, "FRIDAY role picker is unavailable here. Open Voice Input settings and select FRIDAY if listed.", Toast.LENGTH_LONG).show()
+                    startActivity(fallback)
+                } else {
+                    Toast.makeText(this, "This Android build does not expose the Assistant role picker.", Toast.LENGTH_LONG).show()
+                }
             }
         } else {
             Toast.makeText(this, "Hands-free Assistant role needs Android 10 or newer.", Toast.LENGTH_LONG).show()
@@ -105,13 +125,47 @@ class FridayOnboardingActivity : ComponentActivity() {
     }.getOrDefault(false)
 
     private fun continueToFriday() {
-        if (!agent.hasApiKey()) {
-            Toast.makeText(this, "Connect Gemini brain first.", Toast.LENGTH_SHORT).show()
+        if (!agent.hasApiKey() && !agent.hasGroqKey() && !agent.hasOpenRouterKey()) {
+            Toast.makeText(this, "Connect at least one AI brain first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!isAssistantSelected()) {
+            Toast.makeText(this, "Pehle FRIDAY ko Android Assistant select kijiye. Hands-free wake usi bridge se start hota hai.", Toast.LENGTH_LONG).show()
+            openAssistantRole()
+            return
+        }
+        val requiredPermissions = buildList {
+            if (android.os.Build.VERSION.SDK_INT >= 23 &&
+                checkSelfPermission(Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) add(Manifest.permission.RECORD_AUDIO)
+            if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) add(Manifest.permission.POST_NOTIFICATIONS)
+            if (checkSelfPermission(Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) add(Manifest.permission.CAMERA)
+            if (checkSelfPermission(Manifest.permission.READ_CONTACTS) != android.content.pm.PackageManager.PERMISSION_GRANTED) add(Manifest.permission.READ_CONTACTS)
+            if (checkSelfPermission(Manifest.permission.CALL_PHONE) != android.content.pm.PackageManager.PERMISSION_GRANTED) add(Manifest.permission.CALL_PHONE)
+        }
+        if (requiredPermissions.isNotEmpty()) {
+            requestPermissions(requiredPermissions.toTypedArray(), PERMISSION_REQUEST_CODE)
+            Toast.makeText(this, "FRIDAY ko microphone permission chahiye for hands-free wake.", Toast.LENGTH_LONG).show()
             return
         }
         getSharedPreferences("friday_onboarding", MODE_PRIVATE).edit().putBoolean("completed", true).apply()
         openHud()
     }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            if (grantResults.isNotEmpty() && grantResults.all { it == android.content.pm.PackageManager.PERMISSION_GRANTED }) {
+                Toast.makeText(this, "Permissions ready. Ab FRIDAY start kar sakte hain.", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Microphone permission ke bina hands-free wake available nahi hoga.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    companion object { private const val PERMISSION_REQUEST_CODE = 7041 }
 
     override fun onDestroy() {
         if (::agent.isInitialized) agent.close()
@@ -121,16 +175,28 @@ class FridayOnboardingActivity : ComponentActivity() {
     @Composable
     private fun Onboarding() {
         var key by remember { mutableStateOf("") }
+        var groqKey by remember { mutableStateOf("") }
+        var openRouterKey by remember { mutableStateOf("") }
+        var ipToken by remember { mutableStateOf("") }
+        var pollinationsKey by remember { mutableStateOf("") }
+        var pollinationsSaved by remember { mutableStateOf(agent.hasPollinationsKey()) }
         var saved by remember { mutableStateOf(agent.hasApiKey()) }
+        var groqSaved by remember { mutableStateOf(agent.hasGroqKey()) }
+        var openRouterSaved by remember { mutableStateOf(agent.hasOpenRouterKey()) }
         var accessibility by remember { mutableStateOf(isAccessibilityEnabled()) }
         var assistantSelected by remember { mutableStateOf(isAssistantSelected()) }
+        var notificationAccess by remember { mutableStateOf(isNotificationAccessEnabled()) }
         val orbState by FridayStateFlow.state.collectAsState()
 
         LaunchedEffect(Unit) {
             while (true) {
                 saved = agent.hasApiKey()
+                groqSaved = agent.hasGroqKey()
+                openRouterSaved = agent.hasOpenRouterKey()
                 accessibility = isAccessibilityEnabled()
                 assistantSelected = isAssistantSelected()
+                notificationAccess = isNotificationAccessEnabled()
+                pollinationsSaved = agent.hasPollinationsKey()
                 delay(700)
             }
         }
@@ -145,7 +211,10 @@ class FridayOnboardingActivity : ComponentActivity() {
         ) {
             Surface(Modifier.fillMaxSize(), color = Color(0xFF02040A)) {
                 Column(
-                    Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 14.dp),
+                    Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 18.dp, vertical = 14.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -168,9 +237,16 @@ class FridayOnboardingActivity : ComponentActivity() {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text("SYSTEM BRIDGES", color = Color(0xFF35E8FF), fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
 
-                            StatusRow("GEMINI BRAIN", saved, if (saved) "CONNECTED" else "API KEY REQUIRED")
+                            StatusRow("GEMINI BRAIN • PRIMARY", saved, if (saved) "CONNECTED" else "REQUIRED")
+                            StatusRow("GROQ BRAIN • SECONDARY", groqSaved, if (groqSaved) "CONNECTED" else "OPTIONAL")
+                            StatusRow("OPENROUTER BRAIN • 3RD", openRouterSaved, if (openRouterSaved) "CONNECTED" else "OPTIONAL")
+                            StatusRow("REST COUNTRIES", true, "NO KEY REQUIRED")
+                            StatusRow("LOCAL MOOD ANALYZER", true, "NO KEY REQUIRED")
+                            StatusRow("RSS NEWS", true, "NO KEY REQUIRED")
                             StatusRow("AUTOMATION", accessibility, if (accessibility) "ONLINE" else "PERMISSION REQUIRED")
                             StatusRow("ANDROID ASSISTANT", assistantSelected, if (assistantSelected) "ACTIVE" else "SELECT FRIDAY")
+                            StatusRow("NOTIFICATION ACCESS", notificationAccess, if (notificationAccess) "ONLINE" else "OPTIONAL")
+                            StatusRow("POLLINATIONS • IMAGES", pollinationsSaved, if (pollinationsSaved) "CONNECTED" else "OPTIONAL")
 
                             if (!saved) {
                                 OutlinedTextField(
@@ -194,9 +270,84 @@ class FridayOnboardingActivity : ComponentActivity() {
                                 ) { Text("CONNECT GEMINI BRAIN") }
                             }
 
+                                               OutlinedTextField(
+                                value = groqKey,
+                                onValueChange = { groqKey = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Groq API key (secondary brain)") },
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    if (groqKey.isNotBlank()) {
+                                        agent.configureGroqKey(groqKey.trim())
+                                        groqKey = ""
+                                        groqSaved = agent.hasGroqKey()
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("CONNECT GROQ BRAIN") }
+
+         OutlinedTextField(
+                                value = openRouterKey,
+                                onValueChange = { openRouterKey = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("OpenRouter API key (fallback brain)") },
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    if (openRouterKey.isNotBlank()) {
+                                        agent.configureOpenRouterKey(openRouterKey.trim())
+                                        openRouterKey = ""
+                                        openRouterSaved = agent.hasOpenRouterKey()
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("CONNECT OPENROUTER") }
+
+                            OutlinedTextField(
+                                value = ipToken,
+                                onValueChange = { ipToken = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("IPinfo token (optional)") },
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    if (ipToken.isNotBlank()) {
+                                        agent.configureIpInfoToken(ipToken.trim())
+                                        ipToken = ""
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("SAVE IPINFO TOKEN") }
+
+                            OutlinedTextField(
+                                value = pollinationsKey,
+                                onValueChange = { pollinationsKey = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Pollinations key (optional)") },
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            OutlinedButton(onClick = {
+                                if (pollinationsKey.isNotBlank()) { agent.configurePollinationsKey(pollinationsKey.trim()); pollinationsKey = ""; pollinationsSaved = agent.hasPollinationsKey() }
+                            }, modifier = Modifier.fillMaxWidth()) { Text("SAVE POLLINATIONS KEY") }
+
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = ::openAppInfo, modifier = Modifier.weight(1f)) { Text("APP INFO") }
                                 OutlinedButton(onClick = ::openAccessibility, modifier = Modifier.weight(1f)) { Text("ACCESS") }
+                            }
+                            OutlinedButton(onClick = ::openNotificationAccess, modifier = Modifier.fillMaxWidth()) {
+                                Text(if (notificationAccess) "NOTIFICATION ACCESS ACTIVE" else "ENABLE NOTIFICATION ACCESS")
                             }
                             OutlinedButton(onClick = ::openAssistantRole, modifier = Modifier.fillMaxWidth()) {
                                 Text(if (assistantSelected) "ANDROID ASSISTANT ACTIVE" else "SELECT FRIDAY AS ASSISTANT")
@@ -207,7 +358,7 @@ class FridayOnboardingActivity : ComponentActivity() {
                     Spacer(Modifier.height(10.dp))
                     Button(
                         onClick = ::continueToFriday,
-                        enabled = saved,
+                        enabled = saved || groqSaved || openRouterSaved,
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                         shape = RoundedCornerShape(14.dp)
                     ) {
@@ -215,7 +366,7 @@ class FridayOnboardingActivity : ComponentActivity() {
                     }
                     Spacer(Modifier.height(5.dp))
                     Text(
-                        if (assistantSelected) "HANDS-FREE READY • SAY “HEY FRIDAY”" else "SELECT FRIDAY AS ASSISTANT FOR HANDS-FREE WAKE",
+                        if (assistantSelected) "HANDS-FREE READY • SAY “FRIDAY” OR “HEY FRIDAY”" else "SELECT FRIDAY AS ASSISTANT FOR HANDS-FREE WAKE",
                         color = if (assistantSelected) Color(0xFF4CFF9A) else Color(0xFF607985),
                         fontSize = 8.sp,
                         fontWeight = FontWeight.Bold,

@@ -79,17 +79,11 @@ class VoiceManager(
     private fun createRecognizer() {
         if (destroyed || recognizer != null) return
 
-        recognizer = runCatching {
-            SpeechRecognizer.createSpeechRecognizer(appContext)
-        }.getOrNull()
-        usingOnDevice = false
-
+        // Prefer Android's on-device recognizer when available. It avoids a network
+        // round-trip for short commands and keeps simple phone actions responsive.
         if (
-            recognizer == null &&
             Build.VERSION.SDK_INT >= 31 &&
-            runCatching {
-                SpeechRecognizer.isOnDeviceRecognitionAvailable(appContext)
-            }.getOrDefault(false)
+            runCatching { SpeechRecognizer.isOnDeviceRecognitionAvailable(appContext) }.getOrDefault(false)
         ) {
             recognizer = runCatching {
                 SpeechRecognizer.createOnDeviceSpeechRecognizer(appContext)
@@ -97,12 +91,18 @@ class VoiceManager(
             usingOnDevice = recognizer != null
         }
 
-        val current = recognizer
-        if (current == null) {
-            listener.onError("Android SpeechRecognizer is unavailable. Install or enable a speech recognition service.")
-            return
+        if (recognizer == null) {
+            recognizer = runCatching {
+                SpeechRecognizer.createSpeechRecognizer(appContext)
+            }.getOrNull()
+            usingOnDevice = false
         }
 
+        val current = recognizer
+        if (current == null) {
+            listener.onError("Android speech recognition service is unavailable.")
+            return
+        }
         current.setRecognitionListener(listenerFor(current, generation))
     }
 

@@ -16,7 +16,12 @@ class GeminiProvider(context: Context) {
     @Volatile private var activeConnection: HttpURLConnection? = null
 
     fun isConfigured(): Boolean = runCatching { !keyStore.read().isNullOrBlank() }.getOrDefault(false)
-    fun setApiKey(key: String) = keyStore.save(key.trim())
+    fun setApiKey(key: String): Boolean = runCatching {
+        val clean = key.trim()
+        if (clean.isBlank()) return false
+        keyStore.save(clean)
+        true
+    }.getOrDefault(false)
     fun clearApiKey() = keyStore.clear()
     fun cancel() { activeConnection?.disconnect() }
 
@@ -89,8 +94,8 @@ class GeminiProvider(context: Context) {
 
     companion object {
         private const val SYSTEM_PROMPT = """
-You are FRIDAY, Imroz Sir's personal Android AI assistant. Address him as Imroz Sir or Boss. Understand Hindi, Hinglish and English naturally.
-You are the reasoning brain; Android's local executor is your hands. For phone actions, use android_command. Only request supported actions. Never claim an action succeeded unless the executor confirms success. Respect confirmation requirements for calls, messages and cross-app control. Never bypass Android permissions, authentication, security or privacy boundaries.
+You are FRIDAY, the user's personal Android AI assistant. Address the user as Boss. Understand Hindi, Hinglish and English naturally.
+You are the reasoning brain; Android's local executor is your hands. For phone actions, use android_command. Only request supported actions. Request exactly one android_command per turn; wait for its result before requesting another. Never claim an action succeeded unless the executor confirms success. Respect confirmation requirements for calls, messages and cross-app control. Never bypass Android permissions, authentication, security or privacy boundaries.
 For normal questions, answer naturally and concisely. Keep spoken responses short and clear for TTS. Do not pretend to have live web access.
 """
     }
